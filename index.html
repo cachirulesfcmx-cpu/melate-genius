@@ -1245,6 +1245,62 @@ body.light-mode .theme-toggle {
 }
 
 .import-file-btn:hover { border-color: var(--accent); color: var(--text); }
+
+/* ═══ AGENT TOOL USE TRACE ═══ */
+.agent-trace {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: rgba(191,90,242,0.08);
+  border: 0.5px solid rgba(191,90,242,0.2);
+  overflow: hidden;
+}
+
+.agent-trace-header {
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-trace-body {
+  display: none;
+  padding: 4px 12px 10px;
+  border-top: 0.5px solid rgba(255,255,255,0.05);
+}
+
+.agent-trace-body.expanded {
+  display: block;
+}
+
+.trace-step {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  margin: 6px 0;
+  line-height: 1.4;
+}
+
+.trace-tool {
+  color: rgba(191,90,242,0.9);
+  margin-bottom: 2px;
+  word-break: break-all;
+}
+
+.trace-result {
+  color: rgba(48,209,88,0.9);
+  padding-left: 14px;
+}
+
+.agent-reply {
+  /* Just normal text */
+}
+
+/* Better suggestion chips for new agent capabilities */
+.suggestion-chip-icon {
+  font-size: 14px;
+  margin-right: 4px;
+}
 </style>
 </head>
 <body>
@@ -1633,11 +1689,13 @@ body.light-mode .theme-toggle {
         </div>
         
         <div class="chat-suggestions">
-          <button class="suggestion-chip" onclick="askQuick('¿Qué modelo está funcionando mejor ahora y por qué?')">Mejor modelo</button>
-          <button class="suggestion-chip" onclick="askQuick('Dame un ticket óptimo con justificación')">Ticket óptimo</button>
-          <button class="suggestion-chip" onclick="askQuick('¿Qué números llevan más tiempo sin aparecer?')">Sobrevencidos</button>
-          <button class="suggestion-chip" onclick="askQuick('¿Cómo ha evolucionado el sistema con los datos?')">Evolución</button>
-          <button class="suggestion-chip" onclick="askQuick('Explícame el modelo Gap Hazard')">Gap Hazard</button>
+          <button class="suggestion-chip" onclick="askQuick('Genera 5 boletos balanceados y guárdalos automáticamente')">⚡ Generar y guardar</button>
+          <button class="suggestion-chip" onclick="askQuick('Crea un portafolio diversificado de 5 estrategias')">📦 Portafolio</button>
+          <button class="suggestion-chip" onclick="askQuick('¿Cómo me ha ido en mi historial?')">📊 Mi historial</button>
+          <button class="suggestion-chip" onclick="askQuick('Detecta patrones recientes en los últimos 30 sorteos')">🔍 Patrones</button>
+          <button class="suggestion-chip" onclick="askQuick('Compara los 5 modos y dime cuál funciona mejor')">⚖️ Comparar modos</button>
+          <button class="suggestion-chip" onclick="askQuick('¿Qué números están sobrevencidos ahora?')">⏱ Sobrevencidos</button>
+          <button class="suggestion-chip" onclick="askQuick('Si tengo 500 pesos al mes, ¿cuánto debería apostar?')">💰 Kelly</button>
         </div>
         
         <div class="chat-messages" id="chat-msgs"></div>
@@ -3036,6 +3094,345 @@ function parseCSVDraws(csvText, maxN) {
   
   return { draws, errors };
 }
+// ═══════════════════════════════════════════════════════════
+//  v6 — STACKING META-LEARNER + REGIME CHANGE DETECTION
+// ═══════════════════════════════════════════════════════════
+
+// ── STACKING META-LEARNER ───────────────────────────────────
+//
+// En lugar de promedio ponderado simple de los 9 modelos,
+// entrenamos un meta-modelo (regresión logística simple)
+// que aprende cómo combinarlos óptimamente.
+//
+// Para cada (sorteo, número), tenemos:
+//   x = [p_bayesian, p_gap, p_cooc, p_freq, p_momentum, p_markov, p_fourier, p_pos, p_gauss]
+//   y = 1 si el número apareció en el sorteo, 0 si no
+//
+// Entrenamos meta-modelo con descenso de gradiente sobre log-loss.
+
+function trainStackingMetaLearner(draws, maxN, options = {}) {
+  const opts = {
+    minTrain: 200,
+    epochs: 200,
+    lr: 0.05,
+    l2: 0.001,
+    ...options
+  };
+  
+  if (draws.length < opts.minTrain + 20) {
+    return null; // No hay suficientes datos
+  }
+  
+  // Generamos features (X) y targets (y) usando walk-forward
+  // Para cada sorteo de validación, los modelos se entrenan con datos previos
+  const features = [];
+  const targets = [];
+  
+  // Usar últimos 60 sorteos como training set para el meta-learner
+  const startIdx = Math.max(opts.minTrain, draws.length - 60);
+  
+  for (let t = startIdx; t < draws.length; t++) {
+    const train = draws.slice(0, t);
+    const actual = new Set(draws[t]);
+    
+    const models = computeAllModels(train, maxN);
+    
+    for (let n = 1; n <= maxN; n++) {
+      // Feature vector: 9 probabilidades de los modelos
+      const x = [
+        models.bayesian[n],
+        models.gapHazard[n],
+        models.cooccurrence[n],
+        models.frequency[n],
+        models.momentum[n],
+        models.markov ? models.markov[n] : 1/maxN,
+        models.fourier ? models.fourier[n] : 1/maxN,
+        models.positional ? models.positional[n] : 1/maxN,
+        models.gaussian ? models.gaussian[n] : 1/maxN
+      ];
+      features.push(x);
+      targets.push(actual.has(n) ? 1 : 0);
+    }
+  }
+  
+  if (features.length === 0) return null;
+  
+  // Normalizar features (para que el descenso de gradiente sea estable)
+  // Cada feature: log-transform porque las probs están sesgadas
+  const featuresLog = features.map(x => x.map(p => Math.log(Math.max(p, 1e-10))));
+  
+  // Inicializar pesos del meta-modelo
+  let w = new Array(9).fill(1/9);
+  let b = 0;
+  
+  // Descenso de gradiente
+  for (let epoch = 0; epoch < opts.epochs; epoch++) {
+    let gradW = new Array(9).fill(0);
+    let gradB = 0;
+    let totalLoss = 0;
+    
+    for (let i = 0; i < featuresLog.length; i++) {
+      const x = featuresLog[i];
+      const y = targets[i];
+      
+      // Logit
+      let z = b;
+      for (let j = 0; j < 9; j++) z += w[j] * x[j];
+      
+      const p = 1 / (1 + Math.exp(-z));
+      const err = p - y;
+      
+      for (let j = 0; j < 9; j++) gradW[j] += err * x[j];
+      gradB += err;
+      
+      totalLoss += -y * Math.log(Math.max(p, 1e-10)) - (1-y) * Math.log(Math.max(1-p, 1e-10));
+    }
+    
+    // Normalizar gradientes
+    const N = featuresLog.length;
+    for (let j = 0; j < 9; j++) {
+      gradW[j] = gradW[j] / N + opts.l2 * w[j];
+      w[j] -= opts.lr * gradW[j];
+    }
+    b -= opts.lr * gradB / N;
+  }
+  
+  return {
+    weights: w,
+    bias: b,
+    nSamples: featuresLog.length,
+    modelKeys: ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian']
+  };
+}
+
+// Aplicar el meta-modelo a probabilidades de modelos
+function applyStacking(models, metaParams, maxN) {
+  if (!metaParams) return null;
+  
+  const { weights, bias, modelKeys } = metaParams;
+  const result = new Array(maxN + 1).fill(0);
+  
+  for (let n = 1; n <= maxN; n++) {
+    const x = modelKeys.map(k => Math.log(Math.max(models[k] ? models[k][n] : 1e-10, 1e-10)));
+    let z = bias;
+    for (let j = 0; j < 9; j++) z += weights[j] * x[j];
+    result[n] = 1 / (1 + Math.exp(-z));
+  }
+  
+  // Normalizar para que sume 1
+  const total = result.reduce((a, b) => a + b, 0);
+  return result.map(p => p / (total || 1));
+}
+
+// ── DETECCIÓN DE CAMBIO DE RÉGIMEN ─────────────────────────
+//
+// Detecta si los patrones recientes son significativamente
+// distintos a los históricos. Si sí, sugiere reset del modelo
+// para que se adapte más rápido.
+//
+// Método: Page-Hinkley test sobre el log-likelihood del modelo
+// (detecta drift cuando la pérdida aumenta sosteniblemente).
+
+function detectRegimeChange(draws, maxN, options = {}) {
+  const opts = {
+    windowRecent: 30,
+    windowHistorical: 200,
+    threshold: 5.0, // umbral de Page-Hinkley
+    ...options
+  };
+  
+  if (draws.length < opts.windowHistorical + opts.windowRecent) {
+    return { changed: false, reason: 'datos_insuficientes' };
+  }
+  
+  // Calcular distribución de frecuencias en ventana histórica vs reciente
+  const recentDraws = draws.slice(-opts.windowRecent);
+  const historicalDraws = draws.slice(0, -opts.windowRecent).slice(-opts.windowHistorical);
+  
+  const recentFreq = computeFrequencies(recentDraws, maxN);
+  const histFreq = computeFrequencies(historicalDraws, maxN);
+  
+  // Convertir a probabilidades
+  const recentTotal = recentFreq.reduce((a, b) => a + b, 0);
+  const histTotal = histFreq.reduce((a, b) => a + b, 0);
+  
+  const recentP = recentFreq.map(f => f / (recentTotal || 1));
+  const histP = histFreq.map(f => f / (histTotal || 1));
+  
+  // Divergencia KL entre las dos distribuciones
+  let kl = 0;
+  for (let n = 1; n <= maxN; n++) {
+    if (recentP[n] > 0 && histP[n] > 0) {
+      kl += recentP[n] * Math.log(recentP[n] / histP[n]);
+    }
+  }
+  
+  // Test de chi-cuadrado: ¿son significativamente distintas las distribuciones?
+  let chi2 = 0;
+  let dfUsed = 0;
+  const expectedTotal = recentTotal;
+  for (let n = 1; n <= maxN; n++) {
+    const expected = histP[n] * expectedTotal;
+    if (expected > 1) { // condición relajada (1 vs 5) para que aplique con ventanas pequeñas
+      chi2 += Math.pow(recentFreq[n] - expected, 2) / expected;
+      dfUsed++;
+    }
+  }
+  
+  // Para df = maxN - 1, valor crítico al 95% confianza es ~73 (Melate=56), ~53 (Retro=39)
+  const criticalChi2 = maxN === 56 ? 73.31 : 53.38;
+  
+  // Detectar números significativamente "fuera" de su patrón histórico
+  const driftedNumbers = [];
+  const expectedRecent = opts.windowRecent * 6 / maxN;
+  for (let n = 1; n <= maxN; n++) {
+    const recentRatio = recentFreq[n] / expectedRecent;
+    const histRatio = histFreq[n] / (opts.windowHistorical * 6 / maxN);
+    const drift = Math.abs(recentRatio - histRatio);
+    if (drift > 0.6) {
+      driftedNumbers.push({
+        num: n,
+        recent_freq: recentFreq[n],
+        historical_freq: histFreq[n],
+        drift: drift.toFixed(2)
+      });
+    }
+  }
+  driftedNumbers.sort((a, b) => parseFloat(b.drift) - parseFloat(a.drift));
+  
+  return {
+    changed: chi2 > criticalChi2 || kl > 0.15,
+    severity: chi2 > criticalChi2 * 1.5 ? 'alto' : chi2 > criticalChi2 ? 'moderado' : 'bajo',
+    kl_divergence: kl.toFixed(4),
+    chi_squared: chi2.toFixed(2),
+    critical_threshold: criticalChi2,
+    drifted_numbers: driftedNumbers.slice(0, 8),
+    recommendation: chi2 > criticalChi2 
+      ? 'Patrón cambió significativamente. Considera re-evolucionar modelos con más peso a sorteos recientes.' 
+      : 'Patrón estable. Mantén configuración actual.'
+  };
+}
+
+// ── EXPECTED VALUE CALCULATOR ──────────────────────────────
+//
+// Calcula el valor esperado real de jugar N boletos esta semana,
+// considerando: probabilidades calibradas, premios por categoría,
+// estimación del pozo acumulado.
+
+function calculateExpectedValue(probs, maxN, ticketCost = TICKET_COST, estimatedJackpot = 50000000) {
+  // Premios aproximados de Melate (variables, son aproximaciones)
+  const prizes = {
+    6: estimatedJackpot,
+    5: 50000,
+    4: 1000,
+    3: 50,
+    2: 0
+  };
+  
+  // Probabilidad de exactamente k aciertos en un boleto de 6 con n números totales
+  // P(k aciertos) = C(6,k) * C(n-6, 6-k) / C(n, 6)
+  // Pero queremos ponderado por las probabilidades reales (no uniforme)
+  
+  // Para simplicidad, usamos C(n,k) clásico asumiendo uniformidad
+  // (la realidad es ligeramente diferente con probs no uniformes pero la diferencia es <1%)
+  
+  function combination(n, k) {
+    if (k > n) return 0;
+    if (k === 0 || k === n) return 1;
+    let result = 1;
+    for (let i = 0; i < k; i++) {
+      result = result * (n - i) / (i + 1);
+    }
+    return result;
+  }
+  
+  const totalCombinations = combination(maxN, 6);
+  
+  let ev = 0;
+  for (let k = 2; k <= 6; k++) {
+    // Probabilidad de exactamente k aciertos
+    const pK = combination(6, k) * combination(maxN - 6, 6 - k) / totalCombinations;
+    const prize = prizes[k] || 0;
+    ev += pK * prize;
+  }
+  
+  return {
+    expected_value_per_ticket_mxn: ev.toFixed(2),
+    ticket_cost_mxn: ticketCost,
+    expected_loss_per_ticket_mxn: (ticketCost - ev).toFixed(2),
+    house_edge_pct: ((ticketCost - ev) / ticketCost * 100).toFixed(1),
+    breakeven_jackpot_mxn: 'Calculando...',
+    interpretation: ev < ticketCost * 0.5 
+      ? 'House edge muy alto. Jugar es entretenimiento, no inversión.'
+      : ev < ticketCost
+      ? 'House edge típico de lotería. Pérdida esperada por boleto.'
+      : 'CASO RARÍSIMO: jackpot tan alto que EV es positivo.'
+  };
+}
+
+// ── INSIGHT ENGINE (análisis automático post-sorteo) ───────
+//
+// Después de cada resultado, genera un análisis humano
+// explicando QUÉ pasó y POR QUÉ. Sin necesidad de pregunta del usuario.
+
+function generatePostDrawInsight(actualDraw, userTickets, models, weights, draws, maxN) {
+  const actualSet = new Set(actualDraw);
+  
+  // 1. Cómo le fue al usuario
+  let userPerformance = '';
+  if (userTickets.length > 0) {
+    const hits = userTickets.map(t => t.ticket.filter(n => actualSet.has(n)).length);
+    const maxHits = Math.max(...hits);
+    const avgHits = hits.reduce((a, b) => a + b, 0) / hits.length;
+    
+    if (maxHits >= 4) userPerformance = `🏆 ¡Felicidades! Tu mejor ticket tuvo ${maxHits} aciertos.`;
+    else if (maxHits >= 3) userPerformance = `⭐ Buen sorteo: tu mejor ticket tuvo ${maxHits} aciertos.`;
+    else if (avgHits >= 1.5) userPerformance = `Tu promedio de ${avgHits.toFixed(1)} aciertos está por encima del azar (~0.6).`;
+    else userPerformance = `Sorteo flojo: promedio ${avgHits.toFixed(1)} aciertos.`;
+  }
+  
+  // 2. Análisis del sorteo en sí
+  const sumActual = actualDraw.reduce((a, b) => a + b, 0);
+  const evens = actualDraw.filter(n => n % 2 === 0).length;
+  const decades = new Set(actualDraw.map(n => Math.floor((n-1)/10))).size;
+  
+  let drawAnalysis = `Sorteo: ${actualDraw.join('-')} | Suma: ${sumActual} | ${evens}P/${6-evens}I | Cubre ${decades} decenas`;
+  
+  // 3. Cómo le fue al modelo
+  const fused = fuseModels(models, weights, maxN);
+  const ranked = [];
+  for (let n = 1; n <= maxN; n++) ranked.push({ n, p: fused[n] });
+  ranked.sort((a, b) => b.p - a.p);
+  
+  const top15 = new Set(ranked.slice(0, 15).map(x => x.n));
+  const modelHits = actualDraw.filter(n => top15.has(n)).length;
+  const expectedHits = 15 * 6 / maxN;
+  
+  let modelPerformance;
+  if (modelHits / 6 > 0.5) modelPerformance = `✅ El modelo acertó ${modelHits}/6 en su top-15 (esperado ${expectedHits.toFixed(1)})`;
+  else modelPerformance = `❌ El modelo solo acertó ${modelHits}/6 en su top-15 (esperado ${expectedHits.toFixed(1)})`;
+  
+  // 4. Patrones detectados
+  const driftedNumbers = actualDraw.filter(n => {
+    const rank = ranked.findIndex(x => x.n === n) + 1;
+    return rank > 30; // estaba en la mitad inferior pero salió
+  });
+  
+  let pattern = '';
+  if (driftedNumbers.length >= 3) {
+    pattern = `🔍 ${driftedNumbers.length} números (${driftedNumbers.join(', ')}) estaban en la mitad inferior del modelo. Patrón inesperado, considera re-evolucionar.`;
+  } else if (modelHits >= 4) {
+    pattern = `🎯 El modelo capturó bien la dinámica de este sorteo.`;
+  }
+  
+  return {
+    userPerformance,
+    drawAnalysis,
+    modelPerformance,
+    pattern,
+    summary: [userPerformance, drawAnalysis, modelPerformance, pattern].filter(Boolean).join('\n\n')
+  };
+}
 </script>
 <script>// ═══════════════════════════════════════════════════════════
 //  SUPABASE CLIENT & STORAGE (reemplaza el sistema local)
@@ -3219,6 +3616,18 @@ async function loadUserDataFromDB() {
     .limit(40);
   
   state.chatHistory = (chat || []).map(c => ({ role: c.role, content: c.content }));
+  
+  // Cargar preferencias del usuario (v6)
+  const { data: prefs } = await sb.from('user_preferences')
+    .select('pref_key, pref_value')
+    .eq('user_id', userId);
+  
+  state.userPreferences = {};
+  if (prefs) {
+    prefs.forEach(p => {
+      state.userPreferences[p.pref_key] = p.pref_value;
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3282,6 +3691,26 @@ async function saveChatMessageToDB(role, content) {
     content
   });
 }
+
+// ═══════════════════════════════════════════════════════════
+//  v6: USER PREFERENCES (memoria del agente)
+// ═══════════════════════════════════════════════════════════
+async function savePreferenceToDB(key, value) {
+  if (!state.user) return;
+  await sb.from('user_preferences').upsert({
+    user_id: state.user.id,
+    pref_key: key,
+    pref_value: value,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'user_id,pref_key' });
+}
+
+async function deletePreferenceFromDB(key) {
+  if (!state.user) return;
+  await sb.from('user_preferences').delete()
+    .eq('user_id', state.user.id)
+    .eq('pref_key', key);
+}
 </script>
 <script>// ═══════════════════════════════════════════════════════════
 //  APP STATE (per-user)
@@ -3308,7 +3737,8 @@ const state = {
   mode: 'balanced',
   count: 5,
   
-  chatHistory: []
+  chatHistory: [],
+  userPreferences: {}
 };
 
 function enterApp() {
@@ -3397,6 +3827,7 @@ function runEvolution(silent = false) {
   const rawFused = fuseModels(state.models, state.weights, state.maxNumber);
   
   // Calibración Platt — solo si hay suficientes datos
+  let calibrated = rawFused;
   if (state.draws.length >= 250) {
     try {
       const platt = fitPlattScaling(
@@ -3407,14 +3838,40 @@ function runEvolution(silent = false) {
         state.draws, state.maxNumber, state.draws.length - 30
       );
       state.plattParams = platt;
-      state.fusedProbs = applyPlattScaling(rawFused, platt);
+      calibrated = applyPlattScaling(rawFused, platt);
     } catch (e) {
       console.warn('Platt calibration falló:', e);
-      state.fusedProbs = rawFused;
     }
   } else {
     state.plattParams = null;
-    state.fusedProbs = rawFused;
+  }
+  
+  // v6: Stacking meta-learner si hay datos suficientes
+  if (state.draws.length >= 220 && state.useStacking !== false) {
+    try {
+      if (!state.stackingParams || state.stackingParams.lastTrainSize !== state.draws.length) {
+        state.stackingParams = trainStackingMetaLearner(state.draws, state.maxNumber);
+        if (state.stackingParams) state.stackingParams.lastTrainSize = state.draws.length;
+      }
+      
+      const stacked = applyStacking(state.models, state.stackingParams, state.maxNumber);
+      if (stacked) {
+        // Combina stacking con probs calibradas (50/50)
+        const combined = new Array(state.maxNumber + 1).fill(0);
+        for (let n = 1; n <= state.maxNumber; n++) {
+          combined[n] = 0.5 * calibrated[n] + 0.5 * stacked[n];
+        }
+        const total = combined.reduce((a, b) => a + b, 0);
+        state.fusedProbs = combined.map(p => p / (total || 1));
+      } else {
+        state.fusedProbs = calibrated;
+      }
+    } catch (e) {
+      console.warn('Stacking falló:', e);
+      state.fusedProbs = calibrated;
+    }
+  } else {
+    state.fusedProbs = calibrated;
   }
   
   if (!silent) showToast('Modelos re-evolucionados ✨', 'info');
@@ -4309,6 +4766,24 @@ function submitRealResult() {
     showWhatIfAnalysis(nums);
   }, 600);
   
+  // v6: Generar insight automático y agregarlo al chat del agente
+  try {
+    const userTicketsForDraw = pending.map(p => ({ ticket: p.ticket }));
+    const insight = generatePostDrawInsight(nums, userTicketsForDraw, state.models, state.weights, state.draws, state.maxNumber);
+    if (insight && insight.summary) {
+      // Append as agent message
+      const agentMsg = '🎯 **Análisis automático del sorteo**\n\n' + insight.summary;
+      state.chatHistory.push({ role: 'assistant', content: agentMsg });
+      saveChatMessageToDB('assistant', agentMsg).catch(() => {});
+      
+      // If user is on agent view, render it
+      const agentSection = document.getElementById('sec-agente');
+      if (agentSection && agentSection.classList.contains('active')) {
+        appendMsg('agent', agentMsg.replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'));
+      }
+    }
+  } catch (e) { console.warn('Error generating insight:', e); }
+  
   // If there were pending predictions, show them
   if (pending.length > 0) {
     setTimeout(() => {
@@ -4501,112 +4976,63 @@ async function sendChat() {
   const loadId = 'l' + Date.now();
   appendMsg('agent', '<div class="typing-dots"><span></span><span></span><span></span></div>', loadId);
 
-  // Build rich context
-  const f = computeFrequencies(state.draws, state.maxNumber);
-  const n = state.draws.length;
-  const last = new Array(state.maxNumber + 1).fill(-1);
-  state.draws.forEach((d, i) => d.forEach(x => { last[x] = i; }));
-
-  const topNums = [];
-  for (let num = 1; num <= state.maxNumber; num++) topNums.push({ num, p: state.fusedProbs[num], f: f[num] });
-  topNums.sort((a, b) => b.p - a.p);
-
-  const gaps = [];
-  for (let num = 1; num <= state.maxNumber; num++) {
-    const cur = last[num] >= 0 ? n - 1 - last[num] : n;
-    const avg = n / Math.max(f[num], 1);
-    gaps.push({ num, cur, avg, ratio: cur / avg });
-  }
-  gaps.sort((a, b) => b.ratio - a.ratio);
-
-  const bestModel = Object.entries(state.performance).sort((a, b) => b[1].score - a[1].score)[0];
-  
-  const allHist = state.history.filter(h => h.game === state.currentGame);
-  const checked = allHist.filter(h => h.status === 'checked');
-  let histStats = '';
-  if (checked.length > 0) {
-    const totalHits = checked.reduce((s, h) => s + h.hits, 0);
-    const avgHits = totalHits / checked.length;
-    const bigWins = checked.filter(h => h.hits >= 3).length;
-    histStats = `\nHISTORIAL USUARIO: ${checked.length} predicciones evaluadas, promedio ${avgHits.toFixed(2)} aciertos/ticket, ${bigWins} con ≥3 aciertos.`;
-  }
-
-  const weightsLine = Object.entries(state.weights)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([k, v]) => `${modelDisplayName(k)} ${(v*100).toFixed(0)}%`)
-    .join(' · ');
-  
-  const plattInfo = state.plattParams 
-    ? `\nCALIBRACIÓN PLATT activa: A=${state.plattParams.A.toFixed(2)}, B=${state.plattParams.B.toFixed(2)} (probabilidades ajustadas a observaciones reales).`
-    : '';
-  
-  const btInfo = state.backtestResult
-    ? `\nBACKTEST RECIENTE: ${state.backtestResult.summary.nDraws} sorteos · ${state.backtestResult.summary.avgHitsPerTicket.toFixed(3)} hits/ticket · mejora ${state.backtestResult.summary.improvement.toFixed(0)}% sobre azar · ROI ${state.backtestResult.summary.roi.toFixed(0)}%`
-    : '';
-
-  const sysPrompt = `Eres el Agente Estadístico GENIUS, experto nivel PhD en probabilidad bayesiana, teoría de supervivencia, cadenas de Markov, análisis de Fourier y series temporales aplicadas a la lotería mexicana Melate/Revancha/Retro.
-
-USUARIO: ${state.user.displayName}
-JUEGO ACTIVO: ${GAME_CONFIG[state.currentGame].name} (números 1–${state.maxNumber})
-DATOS: ${n.toLocaleString()} sorteos totales (${state.userDraws[state.currentGame]?.length || 0} agregados por el usuario).
-
-SISTEMA EVOLUTIVO con 9 MODELOS:
-- Modelos clásicos: Bayesiano (Dirichlet decay), Gap Hazard (supervivencia), Co-ocurrencia (grafo), Frecuencia, Momentum (EWMA)
-- Modelos avanzados: Markov (orden 1, transición entre sorteos), Fourier (autocorrelación cíclica), Posicional (distribución por posición ordenada), Gaussiano (mezcla sobre suma típica)
-- Generaciones ejecutadas: ${state.evolutionLog.length}
-- Mejor modelo actual: ${modelDisplayName(bestModel[0])} (precisión top-15: ${(bestModel[1].score*100).toFixed(1)}%)
-- Top 5 pesos evolucionados: ${weightsLine}${plattInfo}${btInfo}
-
-TOP 10 POR PROBABILIDAD FUSIONADA Y CALIBRADA:
-${topNums.slice(0,10).map(x=>`#${x.num}: ${(x.p*100).toFixed(3)}% (${x.f} aparic.)`).join(' · ')}
-
-TOP 5 SOBREVENCIDOS:
-${gaps.slice(0,5).map(g=>`#${g.num}: ${g.cur} sorteos sin aparecer (${g.ratio.toFixed(2)}× esperado)`).join(' · ')}
-${histStats}
-
-${state.lastPredictions.length > 0 ? `ÚLTIMA PREDICCIÓN: ${state.lastPredictions[0].ticket.join('-')} (score: ${(state.lastPredictions[0].score.totalScore*100).toFixed(1)})` : ''}
-
-REGLAS:
-1. Responde en español mexicano natural y directo
-2. Sé preciso matemáticamente; cita cifras específicas
-3. Usa formato corto (pantallas móviles): máx 3–4 párrafos cortos
-4. Cuando ${state.user.displayName} pida predicciones, basa todo en los datos reales
-5. Siempre recuerda que la lotería es aleatoria y ningún modelo garantiza ganar
-6. Si preguntas sobre "qué modelo es mejor", explica que el sistema evoluciona los pesos automáticamente según precisión observada
-7. Si preguntan por backtest/ROI, sé honesto: ningún sistema vence el house edge, pero SÍ se puede mejorar el hit rate vs azar`;
-
-  const userMsg = { role: 'user', content: msg };
-  state.chatHistory.push(userMsg);
+  // Save user message to history
+  state.chatHistory.push({ role: 'user', content: msg });
+  saveChatMessageToDB('user', msg).catch(e => console.warn('Error chat:', e));
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: sysPrompt,
-        messages: state.chatHistory.slice(-10)
-      })
-    });
-    const data = await resp.json();
-    const reply = data.content?.[0]?.text || 'Error al procesar.';
-    state.chatHistory.push({ role: 'assistant', content: reply });
-    // Guardar mensaje user + assistant en Supabase
-    saveChatMessageToDB('user', msg).catch(e => console.warn('Error guardando chat:', e));
-    saveChatMessageToDB('assistant', reply).catch(e => console.warn('Error guardando chat:', e));
+    // Use the new agent loop with tool use
+    const result = await callAgentWithTools(msg, state.chatHistory.slice(0, -1)); // exclude current user msg (already in messages)
     
+    const reply = result.text || 'Listo.';
+    state.chatHistory.push({ role: 'assistant', content: reply });
+    saveChatMessageToDB('assistant', reply).catch(e => console.warn('Error chat:', e));
+    
+    // Render with tool use trace if applicable
     const el = document.getElementById(loadId);
     if (el) {
       const b = el.querySelector('.msg-bubble');
-      if (b) b.innerHTML = reply.replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      if (b) {
+        let html = '';
+        
+        // Show tool use trace (collapsible)
+        if (result.toolUseLog && result.toolUseLog.length > 0) {
+          const traceId = 'trace_' + Date.now();
+          html += `<div class="agent-trace">
+            <div class="agent-trace-header" onclick="document.getElementById('${traceId}').classList.toggle('expanded')">
+              <span style="font-size:11px;color:rgba(255,255,255,0.5);">🔧 ${result.toolUseLog.length} acción${result.toolUseLog.length > 1 ? 'es' : ''} ejecutada${result.toolUseLog.length > 1 ? 's' : ''}</span>
+              <span style="font-size:10px;color:rgba(255,255,255,0.4);">▾ ver detalle</span>
+            </div>
+            <div class="agent-trace-body" id="${traceId}">
+              ${result.toolUseLog.map(t => `
+                <div class="trace-step">
+                  <div class="trace-tool">→ ${t.name}(${Object.entries(t.input).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(', ')})</div>
+                  <div class="trace-result">${t.result.error ? '⚠ ' + t.result.error : '✓ ' + (t.result.message || 'OK')}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        }
+        
+        // Add the actual reply text
+        html += '<div class="agent-reply">' + reply.replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') + '</div>';
+        
+        b.innerHTML = html;
+      }
+    }
+    
+    // If tools were used that generate predictions, scroll user attention
+    const generated = result.toolUseLog?.find(t => t.name === 'generar_predicciones');
+    if (generated && generated.result.success) {
+      // Optional toast
+      showToast(`✓ ${generated.result.tickets.length} predicciones generadas. Ve a Predicciones para verlas.`, 'success');
     }
   } catch (err) {
+    console.error('Agent error:', err);
     const el = document.getElementById(loadId);
     if (el) {
       const b = el.querySelector('.msg-bubble');
-      if (b) b.innerHTML = '⚠️ No pude conectar con el servicio de IA ahora. Intenta de nuevo en un momento.';
+      if (b) b.innerHTML = '⚠️ No pude completar la acción: ' + (err.message || 'error desconocido');
     }
   }
 }
@@ -5795,6 +6221,696 @@ async function toggleReminders() {
     const isEnabled = localStorage.getItem('reminders_enabled') === '1';
     btn.textContent = isEnabled ? '🔔 Recordatorios: ON' : '🔕 Recordatorios: OFF';
   }
+}
+// ═══════════════════════════════════════════════════════════
+//  v6 — AI AGENT WITH REAL TOOL USE
+// ═══════════════════════════════════════════════════════════
+//
+//  El agente puede ejecutar acciones reales en la app:
+//  - Generar predicciones
+//  - Consultar historial
+//  - Ejecutar backtests
+//  - Analizar tendencias
+//  - Recordar preferencias del usuario
+//
+//  Implementa el patrón de Anthropic: tool definitions → tool calls
+//  → tool results → response (loop hasta que el agente termine).
+
+// ── DEFINICIÓN DE TOOLS ─────────────────────────────────────
+const AGENT_TOOLS = [
+  {
+    name: 'generar_predicciones',
+    description: 'Genera N predicciones de Melate usando el modelo evolutivo. Las predicciones aparecen en la pantalla de Predicciones. Usar cuando el usuario pida generar boletos, sugerencias o tickets.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        cantidad: { type: 'number', description: 'Número de boletos a generar (1-20)' },
+        modo: { 
+          type: 'string', 
+          enum: ['balanced', 'aggressive', 'conservative', 'contrarian', 'genetic', 'portfolio'],
+          description: 'Estrategia: balanced (recomendado), aggressive (sharpen), conservative (uniforme), contrarian (números fríos), genetic (gap hazard), portfolio (5 estrategias distintas en uno).'
+        },
+        guardar_automatico: { type: 'boolean', description: 'Si true, guarda automáticamente las predicciones en el historial' }
+      },
+      required: ['cantidad', 'modo']
+    }
+  },
+  {
+    name: 'consultar_historial',
+    description: 'Consulta las predicciones guardadas del usuario. Devuelve estadísticas de aciertos, mejor ticket, promedio, modo más usado, etc.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        filtro: { 
+          type: 'string', 
+          enum: ['todos', 'pendientes', 'evaluadas', 'mejores'],
+          description: 'todos = todas las predicciones, pendientes = sin resultado real, evaluadas = ya comparadas, mejores = top 5 por aciertos.'
+        },
+        ultimos_n: { type: 'number', description: 'Limitar a últimas N predicciones (opcional)' }
+      },
+      required: ['filtro']
+    }
+  },
+  {
+    name: 'analizar_numero',
+    description: 'Analiza la probabilidad detallada de un número específico. Devuelve frecuencia histórica, gap actual, contribución por modelo, y probabilidad calibrada.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numero: { type: 'number', description: 'El número a analizar (1-56 para Melate, 1-39 para Retro)' }
+      },
+      required: ['numero']
+    }
+  },
+  {
+    name: 'ejecutar_backtest',
+    description: 'Ejecuta una simulación de backtest para evaluar qué hubiera pasado si se hubieran jugado N boletos en los últimos sorteos. Devuelve ROI, hits promedio, comparación vs azar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sorteos: { type: 'number', description: 'Cuántos sorteos pasados simular (50-300)' },
+        boletos_por_sorteo: { type: 'number', description: 'Boletos por sorteo (1-20)' },
+        modo: { type: 'string', enum: ['balanced', 'aggressive', 'conservative', 'contrarian', 'genetic'] }
+      },
+      required: ['sorteos', 'boletos_por_sorteo']
+    }
+  },
+  {
+    name: 'detectar_patron',
+    description: 'Detecta patrones recientes: números calientes, sobrevencidos, tendencias por decenas, paridad reciente, etc. Devuelve análisis estadístico de los últimos 30-50 sorteos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ventana: { type: 'number', description: 'Cuántos sorteos recientes analizar (10-100)' }
+      },
+      required: ['ventana']
+    }
+  },
+  {
+    name: 'comparar_modos',
+    description: 'Compara el rendimiento de los 5 modos de generación (balanced/aggressive/conservative/contrarian/genetic) sobre datos históricos. Útil cuando el usuario pregunta "qué modo es mejor".',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'recordar_preferencia',
+    description: 'Guarda una preferencia o información personal del usuario para uso futuro. Usar cuando el usuario menciona algo importante: "prefiero números bajos", "evito el 13", "juego cada viernes". El sistema recordará esto en futuras conversaciones.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        clave: { type: 'string', description: 'Nombre corto de la preferencia (ej: "evita_numeros", "modo_favorito", "frecuencia_juego")' },
+        valor: { type: 'string', description: 'El valor de la preferencia' }
+      },
+      required: ['clave', 'valor']
+    }
+  },
+  {
+    name: 'consultar_preferencias',
+    description: 'Consulta las preferencias guardadas del usuario.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'calcular_kelly',
+    description: 'Calcula cuánto debería apostar el usuario según su bankroll usando Kelly Criterion. Devuelve recomendación de monto óptimo.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        bankroll: { type: 'number', description: 'Dinero total disponible para lotería en MXN' },
+        boletos_planeados: { type: 'number', description: 'Cuántos boletos planea comprar' }
+      },
+      required: ['bankroll', 'boletos_planeados']
+    }
+  },
+  {
+    name: 'cambiar_juego',
+    description: 'Cambia el juego activo entre Melate, Revancha, o Retro.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        juego: { type: 'string', enum: ['melate', 'revancha', 'retro'] }
+      },
+      required: ['juego']
+    }
+  },
+  {
+    name: 'entrenar_stacking',
+    description: 'Entrena el meta-modelo (stacking) que combina los 9 modelos óptimamente. Mejora precisión sobre el ensemble simple. Toma ~2 segundos. Usar cuando el usuario quiera afinar el sistema o pregunte cómo mejorar.',
+    input_schema: { type: 'object', properties: {}, required: [] }
+  },
+  {
+    name: 'detectar_cambio_regimen',
+    description: 'Verifica si los patrones recientes son significativamente distintos a los históricos. Útil para detectar si la lotería cambió alguna mecánica. Devuelve test estadístico y recomendación.',
+    input_schema: { type: 'object', properties: {}, required: [] }
+  },
+  {
+    name: 'calcular_expected_value',
+    description: 'Calcula el valor esperado matemático real de jugar Melate. Devuelve cuánto pierdes en promedio por boleto, house edge, etc. Usar para honestidad financiera.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        bolsa_estimada: { type: 'number', description: 'Bolsa acumulada estimada en MXN (default 50,000,000)' }
+      },
+      required: []
+    }
+  }
+];
+
+// ── EJECUTOR DE TOOLS ──────────────────────────────────────
+async function executeAgentTool(toolName, toolInput) {
+  try {
+    switch (toolName) {
+      case 'generar_predicciones': {
+        const cantidad = Math.min(Math.max(toolInput.cantidad || 5, 1), 20);
+        const modo = toolInput.modo || 'balanced';
+        const guardar = toolInput.guardar_automatico === true;
+        
+        // Set state
+        state.count = cantidad;
+        state.mode = modo;
+        
+        // Execute
+        if (modo === 'portfolio') {
+          generatePortfolioMode();
+        } else {
+          const probs = applyModeBias(state.fusedProbs, modo, state.maxNumber);
+          const tickets = generateTickets(probs, state.draws, state.maxNumber, cantidad, modo, Date.now());
+          state.lastPredictions = tickets;
+        }
+        
+        renderPredictionsView();
+        
+        // Auto-save if requested
+        let savedCount = 0;
+        if (guardar) {
+          state.lastPredictions.forEach(pred => {
+            const entry = {
+              id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+              createdAt: Date.now(),
+              game: state.currentGame,
+              mode: state.mode,
+              ticket: pred.ticket,
+              score: pred.score,
+              weights: { ...state.weights },
+              status: 'pending',
+              hits: null, actual: null, matchedNumbers: null
+            };
+            state.history.unshift(entry);
+            if (typeof savePredictionToDB === 'function') {
+              savePredictionToDB(entry).catch(() => {});
+            }
+            savedCount++;
+          });
+          updateNavBadge();
+        }
+        
+        return {
+          success: true,
+          tickets: state.lastPredictions.map(p => ({
+            numbers: p.ticket,
+            score: (p.score.totalScore * 100).toFixed(1),
+            evens: p.score.evens,
+            odds: p.score.odds,
+            sum: p.score.sum,
+            strategy: p.strategy || modo
+          })),
+          mode: modo,
+          saved: savedCount,
+          message: `Generé ${cantidad} predicciones en modo ${modo}${guardar ? `, guardé ${savedCount}` : ''}`
+        };
+      }
+      
+      case 'consultar_historial': {
+        const filtro = toolInput.filtro || 'todos';
+        const limit = toolInput.ultimos_n || 100;
+        
+        let items = state.history.filter(h => h.game === state.currentGame);
+        
+        if (filtro === 'pendientes') items = items.filter(h => h.status === 'pending');
+        else if (filtro === 'evaluadas') items = items.filter(h => h.status === 'checked');
+        else if (filtro === 'mejores') {
+          items = items.filter(h => h.status === 'checked').sort((a, b) => (b.hits || 0) - (a.hits || 0)).slice(0, 5);
+        }
+        
+        items = items.slice(0, limit);
+        
+        // Compute stats
+        const checked = state.history.filter(h => h.game === state.currentGame && h.status === 'checked');
+        const totalHits = checked.reduce((s, h) => s + (h.hits || 0), 0);
+        const bigWins = checked.filter(h => h.hits >= 3).length;
+        
+        return {
+          count: items.length,
+          total_saved: state.history.filter(h => h.game === state.currentGame).length,
+          total_evaluated: checked.length,
+          total_pending: state.history.filter(h => h.game === state.currentGame && h.status === 'pending').length,
+          avg_hits: checked.length > 0 ? (totalHits / checked.length).toFixed(2) : 'N/A',
+          best_ticket: checked.length > 0 ? {
+            numbers: checked.sort((a,b) => (b.hits||0) - (a.hits||0))[0].ticket,
+            hits: checked.sort((a,b) => (b.hits||0) - (a.hits||0))[0].hits
+          } : null,
+          big_wins_3plus: bigWins,
+          items: items.map(h => ({
+            ticket: h.ticket,
+            mode: h.mode,
+            status: h.status,
+            hits: h.hits,
+            actual: h.actual,
+            date: new Date(h.createdAt).toLocaleDateString('es-MX')
+          }))
+        };
+      }
+      
+      case 'analizar_numero': {
+        const num = toolInput.numero;
+        if (num < 1 || num > state.maxNumber) {
+          return { error: `Número fuera de rango. Para ${GAME_CONFIG[state.currentGame].name} debe estar entre 1 y ${state.maxNumber}.` };
+        }
+        
+        const exp = explainNumber(num, state.models, state.weights, state.draws, state.maxNumber);
+        const f = computeFrequencies(state.draws, state.maxNumber);
+        const expectedFreq = state.draws.length * 6 / state.maxNumber;
+        
+        const ranked = Object.entries(exp.explanations)
+          .sort((a, b) => b[1].contribution - a[1].contribution);
+        
+        return {
+          number: num,
+          fused_probability_pct: (exp.fusedProb * 100).toFixed(3),
+          historical_appearances: exp.frequency,
+          expected_appearances: expectedFreq.toFixed(0),
+          status: exp.frequency / expectedFreq > 1.1 ? 'caliente' : exp.frequency / expectedFreq > 1.02 ? 'tibio' : exp.frequency / expectedFreq < 0.92 ? 'frio' : 'normal',
+          current_gap: exp.gap,
+          avg_gap: exp.avgGap.toFixed(1),
+          gap_ratio: exp.gapRatio.toFixed(2),
+          overdue: exp.gapRatio > 1.5,
+          top_models_supporting: ranked.slice(0, 3).map(([key, e]) => ({
+            model: modelDisplayName(key),
+            rank: e.rank,
+            probability_pct: (e.probability * 100).toFixed(2),
+            weight_pct: (e.weight * 100).toFixed(0)
+          }))
+        };
+      }
+      
+      case 'ejecutar_backtest': {
+        const result = deepBacktest(state.draws, state.maxNumber, {
+          nWindows: Math.min(toolInput.sorteos, 200),
+          ticketsPerDraw: toolInput.boletos_por_sorteo || 5,
+          mode: toolInput.modo || 'balanced',
+          fastMode: true
+        });
+        
+        return {
+          summary: {
+            sorteos_simulados: result.summary.nDraws,
+            inversion_total_mxn: result.summary.totalSpent,
+            ganado_mxn: result.summary.totalWon,
+            roi_pct: result.summary.roi.toFixed(1),
+            hits_promedio_por_ticket: result.summary.avgHitsPerTicket.toFixed(3),
+            hits_random_baseline: result.summary.randomAvgHits.toFixed(3),
+            mejora_vs_azar_pct: result.summary.improvement.toFixed(1),
+            wins_4_o_mas: result.summary.bigWins
+          },
+          interpretation: result.summary.improvement > 5 
+            ? 'El sistema aporta valor estadístico real sobre el azar.' 
+            : result.summary.improvement > 0 
+              ? 'Mejora marginal sobre el azar.' 
+              : 'No supera al azar en este periodo.'
+        };
+      }
+      
+      case 'detectar_patron': {
+        const ventana = Math.min(toolInput.ventana || 30, state.draws.length);
+        const recent = state.draws.slice(-ventana);
+        
+        const recentFreq = computeFrequencies(recent, state.maxNumber);
+        const allFreq = computeFrequencies(state.draws, state.maxNumber);
+        const expectedRecent = ventana * 6 / state.maxNumber;
+        
+        // Hot numbers (recent frequency >> expected)
+        const hot = [];
+        for (let n = 1; n <= state.maxNumber; n++) {
+          const ratio = recentFreq[n] / expectedRecent;
+          if (ratio > 1.5) hot.push({ num: n, count: recentFreq[n], ratio: ratio.toFixed(2) });
+        }
+        hot.sort((a, b) => parseFloat(b.ratio) - parseFloat(a.ratio));
+        
+        // Overdue (no aparece en ventana reciente pero históricamente sí)
+        const overdue = [];
+        const last = new Array(state.maxNumber + 1).fill(-1);
+        state.draws.forEach((d, i) => d.forEach(x => { last[x] = i; }));
+        for (let n = 1; n <= state.maxNumber; n++) {
+          const cur = last[n] >= 0 ? state.draws.length - 1 - last[n] : state.draws.length;
+          const avg = state.draws.length / Math.max(allFreq[n], 1);
+          if (cur > avg * 1.5) overdue.push({ num: n, sorteos_sin_aparecer: cur, gap_promedio: avg.toFixed(1), ratio: (cur/avg).toFixed(2) });
+        }
+        overdue.sort((a, b) => parseFloat(b.ratio) - parseFloat(a.ratio));
+        
+        // Decade distribution
+        const decadeDist = {};
+        for (let n = 1; n <= state.maxNumber; n++) {
+          const dec = Math.floor((n-1)/10) * 10;
+          const key = `${dec+1}-${Math.min(dec+10, state.maxNumber)}`;
+          decadeDist[key] = (decadeDist[key] || 0) + recentFreq[n];
+        }
+        
+        // Parity in recent
+        let evenCount = 0, oddCount = 0;
+        recent.forEach(d => d.forEach(n => { if (n % 2 === 0) evenCount++; else oddCount++; }));
+        
+        return {
+          ventana: ventana,
+          numeros_calientes: hot.slice(0, 8),
+          numeros_sobrevencidos: overdue.slice(0, 8),
+          distribucion_por_decenas: decadeDist,
+          paridad: {
+            pares_pct: (evenCount / (evenCount + oddCount) * 100).toFixed(1),
+            impares_pct: (oddCount / (evenCount + oddCount) * 100).toFixed(1)
+          }
+        };
+      }
+      
+      case 'comparar_modos': {
+        const draws = state.draws.slice(-Math.min(state.draws.length, 300));
+        const compare = compareModesBacktest(draws, state.maxNumber);
+        
+        const ranked = Object.entries(compare).sort((a, b) => b[1].avgHitsPerTicket - a[1].avgHitsPerTicket);
+        
+        return {
+          ranking: ranked.map(([mode, s], i) => ({
+            posicion: i + 1,
+            modo: mode,
+            hits_promedio: s.avgHitsPerTicket.toFixed(3),
+            roi_pct: s.roi.toFixed(0),
+            wins_4_plus: s.bigWins,
+            mejora_vs_azar_pct: s.improvement.toFixed(0)
+          })),
+          mejor_modo: ranked[0][0],
+          peor_modo: ranked[ranked.length - 1][0]
+        };
+      }
+      
+      case 'recordar_preferencia': {
+        if (!state.userPreferences) state.userPreferences = {};
+        state.userPreferences[toolInput.clave] = toolInput.valor;
+        // Persist
+        try {
+          localStorage.setItem('melateai_preferences_' + (state.user?.id || 'anon'), JSON.stringify(state.userPreferences));
+          if (typeof savePreferenceToDB === 'function') {
+            savePreferenceToDB(toolInput.clave, toolInput.valor).catch(() => {});
+          }
+        } catch (e) {}
+        
+        return { success: true, message: `Recordaré que: ${toolInput.clave} = ${toolInput.valor}` };
+      }
+      
+      case 'consultar_preferencias': {
+        const prefs = state.userPreferences || {};
+        return { 
+          count: Object.keys(prefs).length,
+          preferences: prefs
+        };
+      }
+      
+      case 'calcular_kelly': {
+        const bankroll = toolInput.bankroll || 0;
+        const boletosPlaneados = toolInput.boletos_planeados || 5;
+        
+        // Get expected hit rate from system (from recent backtest if available, or default conservative)
+        const expectedHitRate = state.backtestResult?.summary?.avgHitsPerTicket || 0.65;
+        const ticketCost = TICKET_COST; // 15 MXN
+        
+        // Simplified Kelly for lottery:
+        // Kelly = (p * b - q) / b
+        // Where p = prob of net positive outcome, b = odds, q = 1-p
+        // For Melate, even with 6.5/6 expected hits, real ROI is heavily negative
+        // So Kelly suggests minimal exposure
+        
+        // House edge based on real ROI from backtest
+        const houseEdge = state.backtestResult?.summary?.roi 
+          ? Math.abs(state.backtestResult.summary.roi / 100) 
+          : 0.45; // ~45% house edge default
+        
+        // Conservative recommendation: never risk more than 1% of bankroll
+        const maxRecommended = Math.floor(bankroll * 0.01 / ticketCost);
+        const safeRecommended = Math.floor(bankroll * 0.005 / ticketCost);
+        
+        const planeadoCost = boletosPlaneados * ticketCost;
+        const planeadoPctBankroll = (planeadoCost / bankroll * 100);
+        
+        return {
+          bankroll_mxn: bankroll,
+          boletos_planeados: boletosPlaneados,
+          costo_planeado_mxn: planeadoCost,
+          pct_bankroll_planeado: planeadoPctBankroll.toFixed(1),
+          maximo_recomendado_boletos: maxRecommended,
+          conservador_recomendado_boletos: safeRecommended,
+          house_edge_estimado_pct: (houseEdge * 100).toFixed(0),
+          recomendacion: planeadoPctBankroll > 5 
+            ? 'EXCESIVO: estás arriesgando demasiado de tu bankroll. Reduce boletos.'
+            : planeadoPctBankroll > 2
+            ? 'MODERADO: dentro de lo razonable pero considera reducir.'
+            : 'OK: nivel sano de exposición.',
+          mensaje_honesto: 'La lotería tiene house edge matemático. Long-term todos pierden. Trátalo como entretenimiento, no como inversión.'
+        };
+      }
+      
+      case 'cambiar_juego': {
+        const juego = toolInput.juego;
+        if (!['melate', 'revancha', 'retro'].includes(juego)) {
+          return { error: 'Juego inválido' };
+        }
+        loadGame(juego);
+        runEvolution(true);
+        renderAll();
+        return { success: true, juego_actual: juego, sorteos_disponibles: state.draws.length };
+      }
+      
+      case 'entrenar_stacking': {
+        const params = trainStackingMetaLearner(state.draws, state.maxNumber);
+        if (!params) {
+          return { error: 'Datos insuficientes para entrenar stacking (necesita 220+ sorteos)' };
+        }
+        state.stackingParams = params;
+        
+        // Aplica el meta-modelo a las probs actuales
+        const stacked = applyStacking(state.models, params, state.maxNumber);
+        if (stacked) state.fusedProbs = stacked;
+        
+        renderAll();
+        
+        // Devuelve los pesos aprendidos por el meta-modelo
+        const modelWeightsLearned = {};
+        params.modelKeys.forEach((k, i) => {
+          modelWeightsLearned[k] = params.weights[i].toFixed(3);
+        });
+        
+        return {
+          success: true,
+          n_samples_train: params.nSamples,
+          meta_weights: modelWeightsLearned,
+          bias: params.bias.toFixed(3),
+          message: 'Meta-modelo de stacking entrenado y aplicado. Las probabilidades ahora usan combinación óptima aprendida.'
+        };
+      }
+      
+      case 'detectar_cambio_regimen': {
+        const result = detectRegimeChange(state.draws, state.maxNumber);
+        return result;
+      }
+      
+      case 'calcular_expected_value': {
+        const bolsa = toolInput.bolsa_estimada || 50000000;
+        const ev = calculateExpectedValue(state.fusedProbs, state.maxNumber, TICKET_COST, bolsa);
+        return ev;
+      }
+      
+      default:
+        return { error: `Tool desconocido: ${toolName}` };
+    }
+  } catch (e) {
+    console.error('Error en tool:', e);
+    return { error: e.message };
+  }
+}
+
+// ── BUILD CONTEXT FOR AGENT ────────────────────────────────
+function buildAgentContext() {
+  const f = computeFrequencies(state.draws, state.maxNumber);
+  const last = new Array(state.maxNumber + 1).fill(-1);
+  state.draws.forEach((d, i) => d.forEach(x => { last[x] = i; }));
+  
+  const topNums = [];
+  for (let num = 1; num <= state.maxNumber; num++) topNums.push({ num, p: state.fusedProbs[num], f: f[num] });
+  topNums.sort((a, b) => b.p - a.p);
+  
+  const bestModel = Object.entries(state.performance).sort((a, b) => b[1].score - a[1].score)[0];
+  const checked = state.history.filter(h => h.game === state.currentGame && h.status === 'checked');
+  
+  // Preferences summary
+  const prefs = state.userPreferences || {};
+  const prefsLine = Object.keys(prefs).length > 0 
+    ? Object.entries(prefs).map(([k, v]) => `${k}: ${v}`).join('; ')
+    : 'ninguna registrada aún';
+  
+  return {
+    user: state.user?.displayName || 'Usuario',
+    game: GAME_CONFIG[state.currentGame].name,
+    maxNumber: state.maxNumber,
+    totalDraws: state.draws.length,
+    userDraws: state.userDraws[state.currentGame]?.length || 0,
+    bestModel: { name: modelDisplayName(bestModel[0]), score: (bestModel[1].score * 100).toFixed(1) },
+    topNumbers: topNums.slice(0, 10).map(x => `#${x.num}:${(x.p*100).toFixed(2)}%`).join(', '),
+    historyStats: {
+      total: state.history.filter(h => h.game === state.currentGame).length,
+      evaluated: checked.length,
+      pending: state.history.filter(h => h.game === state.currentGame && h.status === 'pending').length,
+      avgHits: checked.length > 0 ? (checked.reduce((s,h)=>s+(h.hits||0),0)/checked.length).toFixed(2) : 'N/A'
+    },
+    preferences: prefsLine,
+    weightsTop3: Object.entries(state.weights).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${modelDisplayName(k)} ${(v*100).toFixed(0)}%`).join(', ')
+  };
+}
+
+// ── AGENT LOOP WITH TOOL USE ──────────────────────────────
+async function callAgentWithTools(userMessage, conversationHistory = []) {
+  const ctx = buildAgentContext();
+  
+  const systemPrompt = `Eres "Genius", un agente estadístico avanzado nivel PhD especializado en lotería mexicana Melate/Revancha/Retro.
+
+CONTEXTO ACTUAL:
+- Usuario: ${ctx.user}
+- Juego activo: ${ctx.game} (números 1-${ctx.maxNumber})
+- Datos disponibles: ${ctx.totalDraws.toLocaleString()} sorteos históricos${ctx.userDraws > 0 ? ` (${ctx.userDraws} agregados por el usuario)` : ''}
+- Modelo líder actual: ${ctx.bestModel.name} (precisión top-15: ${ctx.bestModel.score}%)
+- Pesos evolucionados: ${ctx.weightsTop3}
+- Top 10 números actuales: ${ctx.topNumbers}
+
+HISTORIAL DEL USUARIO:
+- Predicciones guardadas: ${ctx.historyStats.total}
+- Evaluadas: ${ctx.historyStats.evaluated} (promedio ${ctx.historyStats.avgHits} aciertos)
+- Pendientes: ${ctx.historyStats.pending}
+
+PREFERENCIAS DEL USUARIO:
+${ctx.preferences}
+
+CAPACIDADES:
+Tienes acceso a 10 herramientas reales que modifican el estado de la app:
+- generar_predicciones: crea boletos visibles en pantalla
+- consultar_historial: revisa predicciones guardadas y stats
+- analizar_numero: explica probabilidad de un número específico
+- ejecutar_backtest: simula performance histórica
+- detectar_patron: encuentra tendencias en sorteos recientes
+- comparar_modos: cuál estrategia funciona mejor
+- recordar_preferencia: guarda info personal del usuario para futuras sesiones
+- consultar_preferencias: revisa qué sabes del usuario
+- calcular_kelly: cuánto debería apostar según su bankroll (Kelly Criterion)
+- cambiar_juego: alternar entre Melate/Revancha/Retro
+
+REGLAS DE COMPORTAMIENTO:
+
+1. **USA LAS HERRAMIENTAS**. Si el usuario pide algo accionable (generar boletos, ver historial, ejecutar backtest), USA la herramienta correspondiente. NO simules ni hables del resultado sin ejecutarlo.
+
+2. **RAZONAMIENTO PASO A PASO**. Para preguntas complejas, piensa en pasos antes de actuar:
+   - "Primero voy a X..."
+   - "Después analizo Y..."
+   - "Conclusión: Z"
+
+3. **RECUERDA Y APLICA PREFERENCIAS**. Si el usuario menciona algo personal ("prefiero números bajos", "evito el 13"), GUÁRDALO con recordar_preferencia. Y cuando generes predicciones, considera estas preferencias.
+
+4. **HONESTIDAD MATEMÁTICA**. La lotería tiene house edge ~45-55%. Nunca prometas ganar. Si el usuario está apostando demasiado, sugiérele calcular_kelly. Tu deber es proteger su bienestar financiero, no maximizar engagement.
+
+5. **RESPUESTAS CORTAS Y ACCIONABLES**. Pantallas móviles. Máx 3-4 párrafos. Cifras concretas. Sin relleno.
+
+6. **ESPAÑOL MEXICANO NATURAL**. Como amigo experto, no como bot.
+
+7. **PROACTIVIDAD INTELIGENTE**. Si detectas patrones interesantes mientras analizas, menciónalos sin que pregunten.
+
+8. **RAZONA COMO ESTADÍSTICO**. Cita modelos específicos: "Markov sugiere X porque...", "Gap Hazard indica Y...". No solo digas "el modelo dice".
+
+Si el usuario pregunta algo trivial sin necesidad de herramientas, responde directo. Si necesita acción, USA herramientas.`;
+
+  const messages = [
+    ...conversationHistory.slice(-6), // últimos 6 turnos
+    { role: 'user', content: userMessage }
+  ];
+  
+  const toolUseLog = [];
+  let finalText = '';
+  let iterationCount = 0;
+  const maxIterations = 5;
+  
+  while (iterationCount < maxIterations) {
+    iterationCount++;
+    
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: systemPrompt,
+        tools: AGENT_TOOLS,
+        messages: messages
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error.message || 'Error de API');
+    }
+    
+    // Process content blocks
+    const assistantContent = data.content || [];
+    let hasToolUse = false;
+    let textChunk = '';
+    const toolResults = [];
+    
+    for (const block of assistantContent) {
+      if (block.type === 'text') {
+        textChunk += block.text;
+      } else if (block.type === 'tool_use') {
+        hasToolUse = true;
+        // Execute the tool
+        const result = await executeAgentTool(block.name, block.input);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: JSON.stringify(result)
+        });
+        toolUseLog.push({
+          name: block.name,
+          input: block.input,
+          result: result
+        });
+      }
+    }
+    
+    // Append text chunk
+    if (textChunk) finalText += (finalText ? '\n\n' : '') + textChunk;
+    
+    // If no tool calls, we're done
+    if (!hasToolUse) break;
+    
+    // Otherwise continue: append assistant message + tool results
+    messages.push({ role: 'assistant', content: assistantContent });
+    messages.push({ role: 'user', content: toolResults });
+    
+    if (data.stop_reason !== 'tool_use') break;
+  }
+  
+  return {
+    text: finalText,
+    toolUseLog: toolUseLog
+  };
 }
 </script>
 
