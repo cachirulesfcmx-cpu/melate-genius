@@ -3720,7 +3720,7 @@ const state = {
   user: null,
   currentGame: 'melate',
   draws: [],
-  userDraws: [],
+  userDraws: { melate: [], revancha: [], retro: [] },
   maxNumber: 56,
   
   models: null,          // precomputed M1-M9 outputs
@@ -3741,7 +3741,7 @@ const state = {
   userPreferences: {}
 };
 
-function enterApp() {
+async function enterApp() {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app-main').style.display = 'flex';
   
@@ -3750,10 +3750,14 @@ function enterApp() {
   document.getElementById('user-avatar').textContent = initials;
   document.getElementById('user-name').textContent = state.user.displayName.split(' ')[0];
   
-  // Load user data
-  loadUserData();
+  // Load user data from Supabase (idempotent — handleLogin/Signup already loads, but checkSession path doesn't)
+  try {
+    await loadUserDataFromDB();
+  } catch (e) {
+    console.warn('Error loading user data:', e);
+  }
   
-  // Init app
+  // Init app (sync from here on, base data is in BASE_DRAWS)
   initApp();
 }
 
@@ -4976,6 +4980,20 @@ async function sendChat() {
   const loadId = 'l' + Date.now();
   appendMsg('agent', '<div class="typing-dots"><span></span><span></span><span></span></div>', loadId);
 
+  // Check if app is ready
+  if (!state.fusedProbs || !state.models) {
+    const el = document.getElementById(loadId);
+    if (el) {
+      const b = el.querySelector('.msg-bubble');
+      if (b) b.innerHTML = '⏳ El sistema todavía se está inicializando. Espera unos segundos y vuelve a intentar.';
+    }
+    // Try to re-initialize if it failed
+    if (state.draws && state.draws.length > 0) {
+      try { runEvolution(true); } catch(e) { console.error('Re-init error:', e); }
+    }
+    return;
+  }
+  
   // Save user message to history
   state.chatHistory.push({ role: 'user', content: msg });
   saveChatMessageToDB('user', msg).catch(e => console.warn('Error chat:', e));
@@ -5073,7 +5091,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const hasSession = await checkSession();
     if (hasSession) {
-      enterApp();
+      await enterApp();
       return;
     }
   } catch (e) { console.warn('Error verificando sesión:', e); }
@@ -6384,6 +6402,14 @@ const AGENT_TOOLS = [
 
 // ── EJECUTOR DE TOOLS ──────────────────────────────────────
 async function executeAgentTool(toolName, toolInput) {
+  // Verificar que el estado esté listo
+  if (!state.fusedProbs || !state.models || !state.weights) {
+    return { 
+      error: 'El sistema aún se está inicializando. Espera unos segundos y vuelve a intentar.',
+      hint: 'state_not_ready'
+    };
+  }
+  
   try {
     switch (toolName) {
       case 'generar_predicciones': {
@@ -6743,6 +6769,23 @@ async function executeAgentTool(toolName, toolInput) {
 
 // ── BUILD CONTEXT FOR AGENT ────────────────────────────────
 function buildAgentContext() {
+  // Defensive: if state not ready, return minimal context
+  if (!state.fusedProbs || !state.models || !state.weights || !state.performance) {
+    return {
+      user: state.user?.displayName || 'Usuario',
+      game: state.currentGame ? GAME_CONFIG[state.currentGame].name : 'Melate',
+      maxNumber: state.maxNumber || 56,
+      totalDraws: state.draws?.length || 0,
+      userDraws: 0,
+      bestModel: { name: 'inicializando', score: '0.0' },
+      topNumbers: 'sistema cargando',
+      historyStats: { total: 0, evaluated: 0, pending: 0, avgHits: 'N/A' },
+      preferences: 'sistema cargando',
+      weightsTop3: 'sistema cargando',
+      notReady: true
+    };
+  }
+  
   const f = computeFrequencies(state.draws, state.maxNumber);
   const last = new Array(state.maxNumber + 1).fill(-1);
   state.draws.forEach((d, i) => d.forEach(x => { last[x] = i; }));
