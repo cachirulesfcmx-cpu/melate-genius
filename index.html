@@ -2045,6 +2045,441 @@ body.light-mode .theme-toggle {
   overflow-y: auto;
 }
 
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PROGOL ADVANCED — Sesiones 4 y 5                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+.advanced-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.action-btn-mini {
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 10px 8px;
+  color: rgba(255,255,255,0.85);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: all 0.15s;
+}
+
+.action-btn-mini:active {
+  transform: scale(0.97);
+  background: rgba(0,122,255,0.15);
+}
+
+/* === ALTERNATIVAS === */
+.alt-intro {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+
+.alt-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.alt-card {
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.alt-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.alt-icono { font-size: 18px; }
+.alt-name { font-size: 14px; font-weight: 600; }
+
+.alt-desc {
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 10px;
+}
+
+.alt-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.alt-stat {
+  text-align: center;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.alt-stat-num { font-size: 14px; font-weight: 700; color: #0a84ff; }
+.alt-stat-lbl { font-size: 9px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+
+.alt-dif {
+  margin-bottom: 8px;
+}
+
+.alt-dif-bar {
+  background: rgba(255,255,255,0.06);
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.alt-dif-fill {
+  background: linear-gradient(90deg, #ff453a, #ffd60a, #30d158);
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.alt-dif-text {
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 4px;
+  text-align: center;
+}
+
+.alt-marcas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+
+.alt-marca-mini {
+  background: rgba(0,122,255,0.15);
+  border: 0.5px solid rgba(0,122,255,0.3);
+  color: #fff;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+
+.alt-marca-mini.multi {
+  background: rgba(255,214,10,0.15);
+  border-color: rgba(255,214,10,0.3);
+}
+
+.alt-apply-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #0a84ff, #0066d6);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* === BACKTEST === */
+.bt-intro {
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.bt-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bt-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.bt-block {
+  background: rgba(0,0,0,0.2);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+
+.bt-block.highlight {
+  background: rgba(48,209,88,0.15);
+  border: 0.5px solid rgba(48,209,88,0.3);
+}
+
+.bt-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0a84ff;
+}
+
+.bt-block.highlight .bt-num { color: #30d158; }
+
+.bt-lbl {
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 2px;
+}
+
+.bt-section {
+  border-top: 0.5px solid rgba(255,255,255,0.06);
+  padding-top: 10px;
+}
+
+.bt-section-title {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.bt-disclaimer {
+  font-size: 10px;
+  color: rgba(255,214,10,0.7);
+  background: rgba(255,214,10,0.05);
+  border-radius: 8px;
+  padding: 8px;
+  text-align: center;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+/* === CARGAR RESULTADOS === */
+.cr-intro {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.cr-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.result-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+}
+
+.result-num {
+  min-width: 32px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.7);
+}
+
+.result-buttons {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.result-btn {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.7);
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.result-btn.selected {
+  background: linear-gradient(135deg, #0a84ff, #0066d6);
+  border-color: #0a84ff;
+  color: #fff;
+}
+
+.result-btn[data-marca="E"].selected {
+  background: linear-gradient(135deg, #ffd60a, #cc9900);
+  color: #000;
+}
+
+.result-btn[data-marca="V"].selected {
+  background: linear-gradient(135deg, #ff453a, #d6362d);
+}
+
+.cr-success {
+  background: rgba(48,209,88,0.1);
+  border: 0.5px solid rgba(48,209,88,0.3);
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.cr-success-title {
+  font-weight: 600;
+  color: #30d158;
+  margin-bottom: 8px;
+}
+
+.cr-evaluaciones {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cr-eval-title {
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 4px;
+}
+
+.cr-eval-row {
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.cr-eval-row.win {
+  background: rgba(48,209,88,0.1);
+  border: 0.5px solid rgba(48,209,88,0.3);
+}
+
+.cr-eval-meta {
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 2px;
+}
+
+.cr-no-quinielas {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  text-align: center;
+  padding: 8px;
+}
+
+.positive { color: #30d158; }
+.negative { color: #ff453a; }
+
+/* === PERFORMANCE === */
+.perf-empty {
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+  text-align: center;
+  padding: 20px;
+  line-height: 1.5;
+}
+
+.perf-section {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.06);
+}
+
+.perf-section:last-child { border-bottom: none; }
+
+.perf-section-title {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.perf-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.perf-block {
+  background: rgba(0,0,0,0.2);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+
+.perf-block.negative-block {
+  background: rgba(255,69,58,0.05);
+  border: 0.5px solid rgba(255,69,58,0.2);
+}
+
+.perf-num {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.perf-num.positive { color: #30d158; }
+.perf-num.negative { color: #ff453a; }
+
+.perf-lbl {
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 2px;
+}
+
+.perf-est-row {
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 6px;
+}
+
+.perf-est-name {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.perf-est-stats {
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  margin-top: 2px;
+}
+
+.perf-best {
+  background: rgba(255,214,10,0.08);
+  border: 0.5px solid rgba(255,214,10,0.2);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+}
+
+.perf-interp {
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.perf-marca-row {
+  display: flex;
+  justify-content: space-around;
+  font-size: 11px;
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 8px;
+}
+
 </style>
 </head>
 <body>
@@ -8473,6 +8908,12 @@ function renderEmptyProgolState(tipo, config, stats) {
       <button class="link-button" onclick="verHistorialProgol()">
         📂 Ver mis quinielas guardadas
       </button>
+      <button class="link-button" onclick="mostrarPanelPerformance()">
+        📈 Mi performance
+      </button>
+      <button class="link-button" onclick="mostrarPanelBacktest()">
+        📊 Backtest del modelo
+      </button>
     </div>
   `;
 }
@@ -8544,6 +8985,21 @@ function renderActiveQuiniela(tipo, config) {
       <button class="action-btn primary big" onclick="guardarQuinielaUsuario()">
         💾 Guardar esta quiniela
       </button>
+      
+      <div class="advanced-actions">
+        <button class="action-btn-mini" onclick="mostrarPanelAlternativas()">
+          🎯 Comparar 6 alternativas
+        </button>
+        <button class="action-btn-mini" onclick="mostrarPanelBacktest()">
+          📊 Backtest del modelo
+        </button>
+        <button class="action-btn-mini" onclick="mostrarPanelCargarResultados()">
+          📥 Cargar resultados reales
+        </button>
+        <button class="action-btn-mini" onclick="mostrarPanelPerformance()">
+          📈 Mi performance
+        </button>
+      </div>
     </div>
   `;
 }
@@ -9719,6 +10175,1088 @@ window.analizarConIA = async function() {
   
   await ejecutarAgenteProgol();
 };
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  PROGOL ADVANCED — Sesiones 4 y 5
+//  Generador avanzado + Tracking + Aprendizaje continuo
+// ═══════════════════════════════════════════════════════════════════
+
+// ───────────────────────────────────────────────────────────────────
+//  SESIÓN 4: GENERADOR AVANZADO
+// ───────────────────────────────────────────────────────────────────
+
+// ═══ MÚLTIPLES QUINIELAS ALTERNATIVAS ═══
+//
+// En lugar de UNA quiniela óptima, generamos N alternativas con
+// diferentes filosofías:
+//   - "Lógica" — sigue las probabilidades exactas
+//   - "Anti-empate" — penaliza los empates (juega L o V cuando incierto)
+//   - "Pro-empate" — favorece empates (típico de cuando hay muchos clásicos)
+//   - "Anti-favorito" — toma riesgo en partidos donde el favorito es claro
+//   - "Anti-público" — evita las marcas que "todo el mundo" elige
+
+function generarQuinielasAlternativas(partidosAnalisis, presupuestoMaxMXN, costoBase) {
+  const variantes = [];
+  
+  if (!partidosAnalisis || partidosAnalisis.length === 0) return variantes;
+  
+  // 1. LÓGICA — quiniela óptima estándar
+  const logica = recomendarQuinielaReducida(partidosAnalisis, presupuestoMaxMXN, costoBase, 
+    { umbralDoble: 0.50, umbralTriple: 0.38 });
+  variantes.push({
+    nombre: 'Lógica',
+    descripcion: 'Sigue las probabilidades calibradas exactamente',
+    icono: '📊',
+    ...logica
+  });
+  
+  // 2. ANTI-EMPATE — favorece L o V donde hay incertidumbre
+  const partidosAntiE = partidosAnalisis.map(p => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    return {
+      ...p,
+      probabilidades: {
+        L: probs.L * 1.15,  // +15% boost
+        E: probs.E * 0.55,  // -45% penalty
+        V: probs.V * 1.15
+      }
+    };
+  });
+  // Re-normalizar
+  partidosAntiE.forEach(p => {
+    const t = p.probabilidades.L + p.probabilidades.E + p.probabilidades.V;
+    p.probabilidades.L /= t;
+    p.probabilidades.E /= t;
+    p.probabilidades.V /= t;
+  });
+  const antiE = recomendarQuinielaReducida(partidosAntiE, presupuestoMaxMXN, costoBase);
+  variantes.push({
+    nombre: 'Anti-empate',
+    descripcion: 'Apuesta a resultados decisivos, evita empates dudosos',
+    icono: '⚔️',
+    ...antiE
+  });
+  
+  // 3. PRO-EMPATE — útil cuando hay muchos clásicos o ligas balanceadas
+  const partidosProE = partidosAnalisis.map(p => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    return {
+      ...p,
+      probabilidades: {
+        L: probs.L * 0.85,
+        E: probs.E * 1.40,
+        V: probs.V * 0.85
+      }
+    };
+  });
+  partidosProE.forEach(p => {
+    const t = p.probabilidades.L + p.probabilidades.E + p.probabilidades.V;
+    p.probabilidades.L /= t;
+    p.probabilidades.E /= t;
+    p.probabilidades.V /= t;
+  });
+  const proE = recomendarQuinielaReducida(partidosProE, presupuestoMaxMXN, costoBase);
+  variantes.push({
+    nombre: 'Pro-empate',
+    descripcion: 'Apuesta por más empates (útil con muchos clásicos)',
+    icono: '🤝',
+    ...proE
+  });
+  
+  // 4. ANTI-FAVORITO — toma riesgos donde el favorito es muy claro
+  // (Filosofía: si todos van con el favorito, mejor pegamos a la sorpresa)
+  const partidosAntiFav = partidosAnalisis.map(p => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    const max = Math.max(probs.L, probs.E, probs.V);
+    const min = Math.min(probs.L, probs.E, probs.V);
+    
+    // Solo invertir si hay favorito MUY claro (>60%)
+    if (max > 0.60) {
+      return {
+        ...p,
+        probabilidades: {
+          L: probs.L === max ? probs.L * 0.7 : probs.L * 1.15,
+          E: probs.E === max ? probs.E * 0.7 : probs.E * 1.15,
+          V: probs.V === max ? probs.V * 0.7 : probs.V * 1.15
+        }
+      };
+    }
+    return { ...p, probabilidades: probs };
+  });
+  partidosAntiFav.forEach(p => {
+    const t = p.probabilidades.L + p.probabilidades.E + p.probabilidades.V;
+    p.probabilidades.L /= t;
+    p.probabilidades.E /= t;
+    p.probabilidades.V /= t;
+  });
+  const antiFav = recomendarQuinielaReducida(partidosAntiFav, presupuestoMaxMXN, costoBase);
+  variantes.push({
+    nombre: 'Anti-favorito',
+    descripcion: 'Apuesta a sorpresas en partidos con favorito claro',
+    icono: '🎲',
+    ...antiFav
+  });
+  
+  // 5. CONSERVADORA — solo singles en candados, dobles en muy inciertos
+  const conservadora = recomendarQuinielaReducida(partidosAnalisis, presupuestoMaxMXN, costoBase,
+    { umbralDoble: 0.42, umbralTriple: 0.30 });
+  variantes.push({
+    nombre: 'Conservadora',
+    descripcion: 'Maximiza singles en candados, mínimo riesgo',
+    icono: '🛡️',
+    ...conservadora
+  });
+  
+  // 6. AGRESIVA — más triples para máxima cobertura
+  const agresiva = recomendarQuinielaReducida(partidosAnalisis, presupuestoMaxMXN, costoBase,
+    { umbralDoble: 0.58, umbralTriple: 0.45 });
+  variantes.push({
+    nombre: 'Agresiva',
+    descripcion: 'Máxima cobertura con triples en inciertos',
+    icono: '🔥',
+    ...agresiva
+  });
+  
+  return variantes;
+}
+
+// ═══ ANÁLISIS "ANTI-PROMEDIO" ═══
+//
+// La gracia de Progol es que el premio se reparte. Si pegas a 13 con la
+// misma quiniela que 5,000 personas, repartes el premio. Si pegas con
+// una quiniela rara, te lo quedas casi todo.
+//
+// Esta función estima qué tan "típica" es una quiniela vs lo que el
+// público promedio juega.
+
+function calcularDiferenciacion(marcas, partidosAnalisis) {
+  // Estimación heurística de qué juega el público promedio:
+  // - El público sigue al favorito en ~70% de los casos
+  // - Ignora la prob de empate (la subestima en ~10%)
+  // - Sobre-estima al equipo "popular" (Real Madrid, Barça, América)
+  
+  const equiposPopulares = [
+    'real madrid', 'barcelona', 'manchester united', 'liverpool', 'chelsea',
+    'bayern', 'psg', 'juventus', 'milan', 'inter',
+    'américa', 'cruz azul', 'chivas', 'guadalajara', 'tigres', 'monterrey',
+    'pumas', 'atlas', 'león', 'toluca'
+  ];
+  
+  let totalDif = 0;
+  let nPartidos = 0;
+  
+  for (let i = 0; i < marcas.length; i++) {
+    const marca = marcas[i];
+    const partido = partidosAnalisis[i];
+    if (!partido || !partido.probabilidades) continue;
+    
+    const probs = partido.probabilidades;
+    const localPopular = equiposPopulares.some(e => 
+      partido.local.toLowerCase().includes(e));
+    const visitPopular = equiposPopulares.some(e => 
+      partido.visitante.toLowerCase().includes(e));
+    
+    // Estimar prob que el público juegue cada marca
+    let pubL = probs.L;
+    let pubE = probs.E * 0.85; // público subestima empates
+    let pubV = probs.V;
+    
+    if (localPopular) pubL *= 1.15;
+    if (visitPopular) pubV *= 1.15;
+    
+    // El público amplifica al favorito
+    const max = Math.max(pubL, pubE, pubV);
+    if (pubL === max) pubL *= 1.20;
+    else if (pubE === max) pubE *= 1.20;
+    else pubV *= 1.20;
+    
+    const t = pubL + pubE + pubV;
+    pubL /= t; pubE /= t; pubV /= t;
+    
+    // Probabilidad que el público haya jugado AL MENOS UNA de mis marcas
+    let pPubAlguna = 0;
+    if (Array.isArray(marca)) {
+      marca.forEach(m => {
+        if (m === 'L') pPubAlguna += pubL;
+        else if (m === 'E') pPubAlguna += pubE;
+        else if (m === 'V') pPubAlguna += pubV;
+      });
+    } else {
+      if (marca === 'L') pPubAlguna = pubL;
+      else if (marca === 'E') pPubAlguna = pubE;
+      else if (marca === 'V') pPubAlguna = pubV;
+    }
+    
+    // Diferenciación = 1 - prob que el público juegue lo mismo
+    totalDif += (1 - pPubAlguna);
+    nPartidos++;
+  }
+  
+  const difPromedio = nPartidos > 0 ? totalDif / nPartidos : 0;
+  
+  return {
+    diferenciacion: difPromedio,
+    porcentaje: (difPromedio * 100).toFixed(1),
+    interpretacion: difPromedio > 0.65 ? 'muy diferenciada' :
+                    difPromedio > 0.55 ? 'moderadamente diferenciada' :
+                    difPromedio > 0.45 ? 'algo común' : 'muy común'
+  };
+}
+
+// ═══ BACKTEST DEL MODELO ═══
+//
+// Toma las últimas N jornadas históricas y simula qué hubiera pasado
+// si hubiéramos jugado con el sistema. NO usa el agente IA (no es viable
+// hacerlo en histórico) pero usa las probabilidades base por posición.
+
+async function ejecutarBacktestProgol(nJornadas = 50, costoBoletoBase = 15) {
+  if (!progolState.jornadasHistoricas || progolState.jornadasHistoricas.length === 0) {
+    return { error: 'No hay histórico cargado' };
+  }
+  
+  // Tomar las últimas N jornadas tipo progol
+  const jornadas = progolState.jornadasHistoricas
+    .filter(j => j.tipo === 'progol' && Array.isArray(j.resultados))
+    .slice(0, nJornadas);
+  
+  if (jornadas.length === 0) {
+    return { error: 'No hay jornadas Progol en el histórico' };
+  }
+  
+  let totalGastado = 0;
+  let totalGanado = 0;
+  const aciertosPorJornada = []; // distribución
+  let jornadasCon13Plus = 0;
+  let jornadasCon12Plus = 0;
+  let jornadasCon11Plus = 0;
+  let mejorAciertos = 0;
+  
+  // Para cada jornada
+  for (const jornada of jornadas) {
+    // Crear "partidos" sintéticos solo con posición (no nombres)
+    const partidos = [];
+    for (let i = 0; i < jornada.resultados.length; i++) {
+      partidos.push({
+        numero: i + 1,
+        local: `P${i+1}_local`,
+        visitante: `P${i+1}_visit`,
+        probabilidades: analizarPartidoBase(i + 1, 'progol')
+      });
+    }
+    
+    // Generar quiniela óptima con presupuesto promedio
+    const quiniela = recomendarQuinielaReducida(partidos, 60, costoBoletoBase);
+    totalGastado += quiniela.costo;
+    
+    // Verificar contra el resultado real
+    // Como tenemos múltiples marcas, contamos máximo aciertos posibles
+    let maxAciertos = 0;
+    for (let i = 0; i < jornada.resultados.length; i++) {
+      const realResult = jornada.resultados[i];
+      const misMarcas = quiniela.marcas[i];
+      if (Array.isArray(misMarcas) && misMarcas.includes(realResult)) {
+        maxAciertos++;
+      }
+    }
+    
+    aciertosPorJornada.push(maxAciertos);
+    if (maxAciertos > mejorAciertos) mejorAciertos = maxAciertos;
+    if (maxAciertos >= 13) jornadasCon13Plus++;
+    if (maxAciertos >= 12) jornadasCon12Plus++;
+    if (maxAciertos >= 11) jornadasCon11Plus++;
+    
+    // Estimación gruesa de premios (solo orientativo)
+    if (maxAciertos === 14) totalGanado += 5000000; // promedio bolsa
+    else if (maxAciertos === 13) totalGanado += 50000;
+    else if (maxAciertos === 12) totalGanado += 1000;
+    else if (maxAciertos === 11) totalGanado += 100;
+  }
+  
+  const promedioAciertos = aciertosPorJornada.reduce((a,b) => a+b, 0) / aciertosPorJornada.length;
+  const random14 = 14 / 3; // baseline aleatorio
+  
+  // Distribución
+  const distribucion = {};
+  for (let k = 0; k <= 14; k++) distribucion[k] = 0;
+  aciertosPorJornada.forEach(a => distribucion[a]++);
+  
+  return {
+    n_jornadas: jornadas.length,
+    promedio_aciertos: promedioAciertos.toFixed(2),
+    baseline_random: random14.toFixed(2),
+    mejora_vs_random: ((promedioAciertos - random14) / random14 * 100).toFixed(1) + '%',
+    mejor_jornada: mejorAciertos,
+    jornadas_con_11_plus: jornadasCon11Plus,
+    jornadas_con_12_plus: jornadasCon12Plus,
+    jornadas_con_13_plus: jornadasCon13Plus,
+    pct_11_plus: (jornadasCon11Plus / jornadas.length * 100).toFixed(1) + '%',
+    pct_12_plus: (jornadasCon12Plus / jornadas.length * 100).toFixed(1) + '%',
+    pct_13_plus: (jornadasCon13Plus / jornadas.length * 100).toFixed(1) + '%',
+    total_gastado_mxn: totalGastado,
+    total_ganado_estimado_mxn: totalGanado,
+    distribucion_aciertos: distribucion,
+    rango_aciertos: {
+      min: Math.min(...aciertosPorJornada),
+      max: mejorAciertos,
+      mediana: aciertosPorJornada.sort((a,b) => a-b)[Math.floor(aciertosPorJornada.length/2)]
+    }
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────
+//  SESIÓN 5: TRACKING & APRENDIZAJE
+// ───────────────────────────────────────────────────────────────────
+
+// ═══ CARGAR RESULTADOS REALES Y EVALUAR QUINIELAS ═══
+
+async function cargarResultadosJornada(numeroJornada, tipo, resultadosArr) {
+  if (!sb || !state.user) return { error: 'Supabase no disponible' };
+  
+  // Validar
+  const config = PROGOL_CONFIG[tipo];
+  if (resultadosArr.length !== config.nPartidos) {
+    return { 
+      error: `Se esperaban ${config.nPartidos} resultados para ${config.name}, recibidos ${resultadosArr.length}` 
+    };
+  }
+  
+  for (const r of resultadosArr) {
+    if (!['L', 'E', 'V'].includes(r)) {
+      return { error: `Resultado inválido: "${r}". Usa L, E o V.` };
+    }
+  }
+  
+  // Guardar en histórico
+  const { data: existing } = await sb
+    .from('pg_historico_jornadas')
+    .select('id')
+    .eq('numero_jornada', numeroJornada)
+    .eq('tipo', tipo)
+    .maybeSingle();
+  
+  if (existing) {
+    // Update
+    await sb.from('pg_historico_jornadas')
+      .update({ resultados: resultadosArr })
+      .eq('id', existing.id);
+  } else {
+    // Insert
+    await sb.from('pg_historico_jornadas').insert({
+      numero_jornada: numeroJornada,
+      tipo,
+      n_partidos: config.nPartidos,
+      resultados: resultadosArr,
+      fecha: new Date().toISOString().split('T')[0]
+    });
+  }
+  
+  // Evaluar todas las quinielas pendientes del usuario para esta jornada
+  const { data: quinielas } = await sb
+    .from('pg_quinielas_guardadas')
+    .select('*')
+    .eq('user_id', state.user.id)
+    .eq('numero_jornada', numeroJornada)
+    .eq('tipo', tipo)
+    .eq('status', 'pendiente');
+  
+  const evaluaciones = [];
+  
+  for (const q of (quinielas || [])) {
+    const marcas = q.marcas;
+    let aciertos = 0;
+    const detalleAciertos = [];
+    
+    for (let i = 0; i < resultadosArr.length; i++) {
+      const real = resultadosArr[i];
+      const misMarcas = marcas[i];
+      const acerte = Array.isArray(misMarcas) && misMarcas.includes(real);
+      if (acerte) aciertos++;
+      detalleAciertos.push({
+        partido: i + 1,
+        mis_marcas: misMarcas,
+        resultado_real: real,
+        acerte
+      });
+    }
+    
+    // Estimar premio (rangos aproximados; el real depende de bolsa y ganadores)
+    let premioEstimado = 0;
+    if (aciertos === 14) premioEstimado = 5000000;
+    else if (aciertos === 13) premioEstimado = 50000;
+    else if (aciertos === 12) premioEstimado = 1500;
+    else if (aciertos === 11) premioEstimado = 150;
+    
+    // Update en BD
+    await sb.from('pg_quinielas_guardadas')
+      .update({
+        status: 'resuelta',
+        aciertos,
+        premio: premioEstimado,
+        resuelto_at: new Date().toISOString()
+      })
+      .eq('id', q.id);
+    
+    evaluaciones.push({
+      quiniela_id: q.id,
+      estrategia: q.estrategia,
+      combinaciones: q.combinaciones,
+      costo: q.costo,
+      aciertos,
+      premio_estimado: premioEstimado,
+      ganancia_neta: premioEstimado - q.costo,
+      detalle: detalleAciertos
+    });
+  }
+  
+  // Si hay análisis del agente, guardar en pg_aprendizaje
+  await guardarAprendizajeJornada(numeroJornada, tipo, resultadosArr);
+  
+  return {
+    success: true,
+    jornada: numeroJornada,
+    tipo,
+    resultados_guardados: resultadosArr,
+    quinielas_evaluadas: evaluaciones.length,
+    evaluaciones
+  };
+}
+
+// ═══ APRENDIZAJE: comparar predicciones del agente vs realidad ═══
+
+async function guardarAprendizajeJornada(numeroJornada, tipo, resultadosReales) {
+  if (!sb || !state.user) return;
+  
+  // Buscar la quiniela activa con análisis del agente
+  const { data: quinielaActiva } = await sb
+    .from('pg_quiniela_activa')
+    .select('analisis, partidos')
+    .eq('user_id', state.user.id)
+    .eq('numero_jornada', numeroJornada)
+    .eq('tipo', tipo)
+    .maybeSingle();
+  
+  if (!quinielaActiva || !quinielaActiva.analisis || !quinielaActiva.analisis.partidos) {
+    return; // no había análisis del agente
+  }
+  
+  const analisisPartidos = quinielaActiva.analisis.partidos;
+  const aprendizajeRows = [];
+  
+  for (let i = 0; i < resultadosReales.length; i++) {
+    const real = resultadosReales[i];
+    const ana = analisisPartidos.find(a => a.numero === i + 1);
+    if (!ana) continue;
+    
+    const probReal = ana[`prob_${real}`] || 
+                     (real === 'L' ? ana.prob_L : real === 'E' ? ana.prob_E : ana.prob_V);
+    
+    const probMaxMarca = Math.max(ana.prob_L || 0, ana.prob_E || 0, ana.prob_V || 0);
+    const marcaPredicha = (ana.prob_L === probMaxMarca) ? 'L' : 
+                         (ana.prob_E === probMaxMarca) ? 'E' : 'V';
+    const acerte = marcaPredicha === real;
+    
+    // Log loss del partido
+    const logLoss = -Math.log(Math.max(probReal || 0.01, 0.01));
+    
+    // Tipo de error si falló
+    let tipoError = null;
+    if (!acerte) {
+      if (probMaxMarca > 0.55) tipoError = 'favorito_perdio';
+      else if (real === 'E' && marcaPredicha !== 'E') tipoError = 'empate_no_previsto';
+      else if (real === 'V' && marcaPredicha === 'L') tipoError = 'visit_sorpresa';
+      else tipoError = 'otro';
+    }
+    
+    aprendizajeRows.push({
+      user_id: state.user.id,
+      numero_jornada: numeroJornada,
+      numero_partido: i + 1,
+      prob_local_predicha: ana.prob_L,
+      prob_empate_predicha: ana.prob_E,
+      prob_visitante_predicha: ana.prob_V,
+      marca_recomendada: marcaPredicha,
+      resultado_real: real,
+      acertado: acerte,
+      error_log_likelihood: logLoss,
+      tipo_error: tipoError
+    });
+  }
+  
+  if (aprendizajeRows.length > 0) {
+    await sb.from('pg_aprendizaje').insert(aprendizajeRows);
+  }
+}
+
+// ═══ ANÁLISIS DE PERFORMANCE DEL USUARIO ═══
+
+async function obtenerPerformanceUsuario() {
+  if (!sb || !state.user) return null;
+  
+  // Quinielas resueltas
+  const { data: quinielas } = await sb
+    .from('pg_quinielas_guardadas')
+    .select('*')
+    .eq('user_id', state.user.id)
+    .eq('status', 'resuelta')
+    .order('created_at', { ascending: false });
+  
+  if (!quinielas || quinielas.length === 0) {
+    return { 
+      total_quinielas: 0, 
+      mensaje: 'Aún no tienes quinielas resueltas' 
+    };
+  }
+  
+  const totalGastado = quinielas.reduce((s, q) => s + (q.costo || 0), 0);
+  const totalGanado = quinielas.reduce((s, q) => s + (q.premio || 0), 0);
+  const promedioAciertos = quinielas.reduce((s, q) => s + (q.aciertos || 0), 0) / quinielas.length;
+  
+  // Por estrategia
+  const porEstrategia = {};
+  quinielas.forEach(q => {
+    if (!porEstrategia[q.estrategia]) {
+      porEstrategia[q.estrategia] = { count: 0, aciertos: 0, gastado: 0, ganado: 0 };
+    }
+    porEstrategia[q.estrategia].count++;
+    porEstrategia[q.estrategia].aciertos += (q.aciertos || 0);
+    porEstrategia[q.estrategia].gastado += (q.costo || 0);
+    porEstrategia[q.estrategia].ganado += (q.premio || 0);
+  });
+  
+  Object.keys(porEstrategia).forEach(k => {
+    const e = porEstrategia[k];
+    e.promedio_aciertos = (e.aciertos / e.count).toFixed(2);
+    e.roi_pct = e.gastado > 0 ? ((e.ganado - e.gastado) / e.gastado * 100).toFixed(1) : '0';
+  });
+  
+  // Mejor jornada
+  const mejorJornada = quinielas.reduce((best, q) => 
+    (q.aciertos > (best.aciertos || 0) ? q : best), {});
+  
+  return {
+    total_quinielas: quinielas.length,
+    total_gastado_mxn: totalGastado,
+    total_ganado_mxn: totalGanado,
+    ganancia_neta_mxn: totalGanado - totalGastado,
+    roi_pct: totalGastado > 0 ? ((totalGanado - totalGastado) / totalGastado * 100).toFixed(1) : '0',
+    promedio_aciertos: promedioAciertos.toFixed(2),
+    mejor_jornada: mejorJornada.aciertos ? {
+      jornada: mejorJornada.numero_jornada,
+      aciertos: mejorJornada.aciertos,
+      premio: mejorJornada.premio
+    } : null,
+    por_estrategia: porEstrategia,
+    quinielas_recientes: quinielas.slice(0, 10).map(q => ({
+      jornada: q.numero_jornada,
+      tipo: q.tipo,
+      aciertos: q.aciertos,
+      costo: q.costo,
+      premio: q.premio,
+      ganancia: (q.premio || 0) - (q.costo || 0)
+    }))
+  };
+}
+
+// ═══ ANÁLISIS DE TIPOS DE ERROR DEL AGENTE ═══
+
+async function analizarErroresAgente() {
+  if (!sb || !state.user) return null;
+  
+  const { data } = await sb
+    .from('pg_aprendizaje')
+    .select('*')
+    .eq('user_id', state.user.id);
+  
+  if (!data || data.length === 0) {
+    return { 
+      total: 0, 
+      mensaje: 'Aún no hay datos de aprendizaje. Carga resultados de jornadas pasadas que tenían análisis del agente.' 
+    };
+  }
+  
+  const total = data.length;
+  const aciertos = data.filter(r => r.acertado).length;
+  const accuracy = aciertos / total;
+  
+  // Por tipo de error
+  const errorPorTipo = {};
+  data.filter(r => !r.acertado).forEach(r => {
+    const t = r.tipo_error || 'desconocido';
+    errorPorTipo[t] = (errorPorTipo[t] || 0) + 1;
+  });
+  
+  // Calibración: ¿son confiables las probs altas?
+  const probsAltas = data.filter(r => 
+    Math.max(r.prob_local_predicha || 0, r.prob_empate_predicha || 0, r.prob_visitante_predicha || 0) > 0.6
+  );
+  const accProbsAltas = probsAltas.length > 0 
+    ? probsAltas.filter(r => r.acertado).length / probsAltas.length 
+    : 0;
+  
+  // Avg log loss
+  const avgLogLoss = data.reduce((s, r) => s + (r.error_log_likelihood || 0), 0) / total;
+  
+  // Por marca real
+  const porMarcaReal = { L: { total: 0, acertados: 0 }, E: { total: 0, acertados: 0 }, V: { total: 0, acertados: 0 } };
+  data.forEach(r => {
+    if (porMarcaReal[r.resultado_real]) {
+      porMarcaReal[r.resultado_real].total++;
+      if (r.acertado) porMarcaReal[r.resultado_real].acertados++;
+    }
+  });
+  
+  return {
+    total_predicciones: total,
+    aciertos,
+    accuracy_pct: (accuracy * 100).toFixed(1),
+    log_loss_promedio: avgLogLoss.toFixed(3),
+    accuracy_en_alta_confianza: (accProbsAltas * 100).toFixed(1) + '%',
+    n_predicciones_alta_confianza: probsAltas.length,
+    errores_por_tipo: errorPorTipo,
+    accuracy_por_marca_real: {
+      Local: porMarcaReal.L.total > 0 ? (porMarcaReal.L.acertados / porMarcaReal.L.total * 100).toFixed(1) + '%' : 'N/A',
+      Empate: porMarcaReal.E.total > 0 ? (porMarcaReal.E.acertados / porMarcaReal.E.total * 100).toFixed(1) + '%' : 'N/A',
+      Visit: porMarcaReal.V.total > 0 ? (porMarcaReal.V.acertados / porMarcaReal.V.total * 100).toFixed(1) + '%' : 'N/A'
+    },
+    interpretacion: 
+      accuracy > 0.55 ? 'El modelo está superando significativamente al azar (33%)' :
+      accuracy > 0.45 ? 'El modelo supera moderadamente al azar' :
+      accuracy > 0.40 ? 'El modelo apenas supera al azar' :
+      'El modelo no está agregando valor sostenible'
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI: PANEL DE QUINIELAS ALTERNATIVAS
+// ═══════════════════════════════════════════════════════════════════
+
+function mostrarPanelAlternativas() {
+  if (!progolState.partidosActivos || progolState.partidosActivos.length === 0) {
+    showToast('Primero carga una quiniela', 'error');
+    return;
+  }
+  
+  const sinAnalizar = progolState.partidosActivos.filter(p => !p.probabilidades).length;
+  if (sinAnalizar > 0) {
+    showToast(`Faltan ${sinAnalizar} partidos por analizar. Usa "🤖 Analizar con IA" primero.`, 'error');
+    return;
+  }
+  
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  
+  // Generar las 6 alternativas
+  const presupuesto = parseInt(prompt('Presupuesto máximo en MXN:', '90')) || 90;
+  const alternativas = generarQuinielasAlternativas(progolState.partidosActivos, presupuesto, config.costo);
+  
+  // Calcular diferenciación de cada una
+  alternativas.forEach(alt => {
+    const dif = calcularDiferenciacion(alt.marcas, progolState.partidosActivos);
+    alt.diferenciacion = dif;
+  });
+  
+  // Render modal con todas
+  const html = `
+    <h3>🎯 Quinielas Alternativas</h3>
+    <div class="alt-intro">Comparación de 6 estrategias diferentes con tu presupuesto de $${presupuesto}.</div>
+    
+    <div class="alt-cards">
+      ${alternativas.map((a, idx) => `
+        <div class="alt-card" data-idx="${idx}">
+          <div class="alt-header">
+            <div class="alt-icono">${a.icono}</div>
+            <div class="alt-name">${a.nombre}</div>
+          </div>
+          <div class="alt-desc">${a.descripcion}</div>
+          
+          <div class="alt-stats">
+            <div class="alt-stat">
+              <div class="alt-stat-num">${a.combinaciones}</div>
+              <div class="alt-stat-lbl">boletos</div>
+            </div>
+            <div class="alt-stat">
+              <div class="alt-stat-num">$${a.costo}</div>
+              <div class="alt-stat-lbl">costo</div>
+            </div>
+            <div class="alt-stat">
+              <div class="alt-stat-num">${(a.probabilidades.probAlMenos13 * 100).toFixed(2)}%</div>
+              <div class="alt-stat-lbl">P(13/14)</div>
+            </div>
+          </div>
+          
+          <div class="alt-dif">
+            <div class="alt-dif-bar">
+              <div class="alt-dif-fill" style="width:${a.diferenciacion.porcentaje}%"></div>
+            </div>
+            <div class="alt-dif-text">Diferenciación: ${a.diferenciacion.porcentaje}% — ${a.diferenciacion.interpretacion}</div>
+          </div>
+          
+          <div class="alt-marcas">
+            ${a.marcas.map((m, i) => 
+              `<span class="alt-marca-mini ${m.length > 1 ? 'multi' : ''}" title="P${i+1}: ${m.join('/')}">${m.join('')}</span>`
+            ).join('')}
+          </div>
+          
+          <button class="alt-apply-btn" onclick="aplicarAlternativa(${idx})">
+            Usar esta quiniela
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  
+  showModal(html);
+  
+  // Guardar globalmente para que aplicarAlternativa pueda accederlas
+  window._alternativasActuales = alternativas;
+}
+
+function aplicarAlternativa(idx) {
+  const alt = window._alternativasActuales?.[idx];
+  if (!alt) return;
+  
+  progolState.marcasUsuario = alt.marcas.map(m => Array.isArray(m) ? m : [m]);
+  
+  // Cerrar modal y re-render
+  document.getElementById('global-modal')?.remove();
+  renderProgolView();
+  
+  showToast(`✓ Quiniela "${alt.nombre}" aplicada — ${alt.combinaciones} boletos por $${alt.costo}`, 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI: BACKTEST DEL MODELO
+// ═══════════════════════════════════════════════════════════════════
+
+async function mostrarPanelBacktest() {
+  showModal(`
+    <h3>📊 Backtest del Modelo</h3>
+    <div class="bt-intro">
+      Simula qué hubiera pasado si hubieras jugado con el sistema en las últimas jornadas históricas.
+      <br><br>
+      <strong>Importante</strong>: este backtest usa SOLO probabilidades base (por posición). 
+      No usa el agente IA porque no es viable hacer 50× análisis web. 
+      El resultado real con análisis IA debería ser mejor.
+    </div>
+    <div id="bt-status">Calculando...</div>
+  `);
+  
+  // Esperar a que se renderice
+  setTimeout(async () => {
+    const statusEl = document.getElementById('bt-status');
+    if (!statusEl) return;
+    
+    statusEl.innerHTML = '<div class="loading-msg">⏳ Procesando 50 jornadas...</div>';
+    
+    const result = await ejecutarBacktestProgol(50, 15);
+    
+    if (result.error) {
+      statusEl.innerHTML = `<div class="error-msg">❌ ${result.error}</div>`;
+      return;
+    }
+    
+    statusEl.innerHTML = `
+      <div class="bt-results">
+        <div class="bt-row">
+          <div class="bt-block">
+            <div class="bt-num">${result.promedio_aciertos}</div>
+            <div class="bt-lbl">aciertos promedio</div>
+          </div>
+          <div class="bt-block">
+            <div class="bt-num">${result.baseline_random}</div>
+            <div class="bt-lbl">azar puro (33%)</div>
+          </div>
+          <div class="bt-block highlight">
+            <div class="bt-num">+${result.mejora_vs_random}</div>
+            <div class="bt-lbl">mejora</div>
+          </div>
+        </div>
+        
+        <div class="bt-section">
+          <div class="bt-section-title">Frecuencia de aciertos</div>
+          <div class="bt-row">
+            <div class="bt-block">
+              <div class="bt-num">${result.jornadas_con_11_plus}</div>
+              <div class="bt-lbl">≥11 (${result.pct_11_plus})</div>
+            </div>
+            <div class="bt-block">
+              <div class="bt-num">${result.jornadas_con_12_plus}</div>
+              <div class="bt-lbl">≥12 (${result.pct_12_plus})</div>
+            </div>
+            <div class="bt-block">
+              <div class="bt-num">${result.jornadas_con_13_plus}</div>
+              <div class="bt-lbl">≥13 (${result.pct_13_plus})</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="bt-section">
+          <div class="bt-section-title">Resumen económico (estimado)</div>
+          <div class="bt-row">
+            <div class="bt-block">
+              <div class="bt-num">$${result.total_gastado_mxn.toLocaleString()}</div>
+              <div class="bt-lbl">gastado en ${result.n_jornadas} jornadas</div>
+            </div>
+            <div class="bt-block">
+              <div class="bt-num">$${result.total_ganado_estimado_mxn.toLocaleString()}</div>
+              <div class="bt-lbl">ganado (estimado)</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="bt-disclaimer">
+          ⚠️ Estimaciones aproximadas. El premio real depende de la bolsa de cada jornada y el número de ganadores.
+        </div>
+      </div>
+    `;
+  }, 100);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI: CARGAR RESULTADOS REALES
+// ═══════════════════════════════════════════════════════════════════
+
+function mostrarPanelCargarResultados() {
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  
+  let camposHtml = '';
+  for (let i = 1; i <= config.nPartidos; i++) {
+    camposHtml += `
+      <div class="result-input-row">
+        <div class="result-num">P${i}</div>
+        <div class="result-buttons">
+          <button class="result-btn" data-num="${i}" data-marca="L" onclick="setResultadoReal(${i}, 'L')">L</button>
+          <button class="result-btn" data-num="${i}" data-marca="E" onclick="setResultadoReal(${i}, 'E')">E</button>
+          <button class="result-btn" data-num="${i}" data-marca="V" onclick="setResultadoReal(${i}, 'V')">V</button>
+        </div>
+      </div>
+    `;
+  }
+  
+  showModal(`
+    <h3>📥 Cargar Resultados Reales</h3>
+    <div class="cr-intro">
+      Carga los resultados oficiales de una jornada que ya se jugó.
+      Esto evaluará tus quinielas guardadas y guardará en el histórico.
+    </div>
+    
+    <div class="form-input-row">
+      <label>Jornada:</label>
+      <input type="number" id="cr-jornada" placeholder="ej: 2331" />
+    </div>
+    
+    <div class="cr-grid">${camposHtml}</div>
+    
+    <button class="big-action-btn" onclick="guardarResultadosReales()">
+      ✓ Guardar y evaluar quinielas
+    </button>
+    
+    <div id="cr-status"></div>
+  `);
+  
+  window._resultadosReales = {};
+}
+
+function setResultadoReal(numero, marca) {
+  if (!window._resultadosReales) window._resultadosReales = {};
+  window._resultadosReales[numero] = marca;
+  
+  // Actualizar UI
+  document.querySelectorAll(`.result-btn[data-num="${numero}"]`).forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.marca === marca);
+  });
+}
+
+async function guardarResultadosReales() {
+  const jornadaInput = document.getElementById('cr-jornada');
+  const status = document.getElementById('cr-status');
+  
+  const numeroJornada = parseInt(jornadaInput?.value) || 0;
+  if (!numeroJornada) {
+    status.innerHTML = '<div class="error-msg">❌ Ingresa el número de jornada</div>';
+    return;
+  }
+  
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  const resultados = window._resultadosReales || {};
+  
+  const arr = [];
+  for (let i = 1; i <= config.nPartidos; i++) {
+    if (!resultados[i]) {
+      status.innerHTML = `<div class="error-msg">❌ Falta el resultado del partido #${i}</div>`;
+      return;
+    }
+    arr.push(resultados[i]);
+  }
+  
+  status.innerHTML = '<div class="loading-msg">⏳ Guardando y evaluando...</div>';
+  
+  const result = await cargarResultadosJornada(numeroJornada, tipo, arr);
+  
+  if (result.error) {
+    status.innerHTML = `<div class="error-msg">❌ ${result.error}</div>`;
+    return;
+  }
+  
+  let evaluacionesHtml = '';
+  if (result.evaluaciones && result.evaluaciones.length > 0) {
+    evaluacionesHtml = `
+      <div class="cr-evaluaciones">
+        <div class="cr-eval-title">Tus quinielas evaluadas:</div>
+        ${result.evaluaciones.map(e => `
+          <div class="cr-eval-row ${e.aciertos >= 11 ? 'win' : ''}">
+            <div class="cr-eval-info">
+              <strong>${e.aciertos}/${arr.length} aciertos</strong> (${e.estrategia})
+            </div>
+            <div class="cr-eval-meta">
+              ${e.combinaciones} boletos · costo $${e.costo} · ganancia: 
+              <span class="${e.ganancia_neta >= 0 ? 'positive' : 'negative'}">$${e.ganancia_neta.toLocaleString()}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } else {
+    evaluacionesHtml = `<div class="cr-no-quinielas">No tenías quinielas guardadas para esta jornada.</div>`;
+  }
+  
+  status.innerHTML = `
+    <div class="cr-success">
+      <div class="cr-success-title">✓ Resultados guardados</div>
+      ${evaluacionesHtml}
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI: PERFORMANCE DEL USUARIO
+// ═══════════════════════════════════════════════════════════════════
+
+async function mostrarPanelPerformance() {
+  showModal(`
+    <h3>📈 Mi Performance</h3>
+    <div id="perf-content"><div class="loading-msg">Cargando estadísticas...</div></div>
+  `);
+  
+  const perf = await obtenerPerformanceUsuario();
+  const errores = await analizarErroresAgente();
+  
+  const content = document.getElementById('perf-content');
+  if (!content) return;
+  
+  if (!perf || perf.total_quinielas === 0) {
+    content.innerHTML = `
+      <div class="perf-empty">
+        Aún no tienes quinielas resueltas.
+        <br><br>
+        Primero carga una quiniela, juégala, y cuando termine la jornada usa "📥 Cargar resultados reales" para evaluarla.
+      </div>
+    `;
+    return;
+  }
+  
+  const roi = parseFloat(perf.roi_pct);
+  const roiClass = roi >= 0 ? 'positive' : 'negative';
+  
+  let estrategiaHtml = '';
+  Object.entries(perf.por_estrategia).forEach(([estrategia, stats]) => {
+    estrategiaHtml += `
+      <div class="perf-est-row">
+        <div class="perf-est-name">${estrategia}</div>
+        <div class="perf-est-stats">
+          ${stats.count} jugadas · ${stats.promedio_aciertos} aciertos prom · 
+          ROI <span class="${parseFloat(stats.roi_pct) >= 0 ? 'positive' : 'negative'}">${stats.roi_pct}%</span>
+        </div>
+      </div>
+    `;
+  });
+  
+  let erroresHtml = '';
+  if (errores && errores.total_predicciones > 0) {
+    erroresHtml = `
+      <div class="perf-section">
+        <div class="perf-section-title">🤖 Performance del Agente IA</div>
+        <div class="perf-row">
+          <div class="perf-block">
+            <div class="perf-num">${errores.accuracy_pct}%</div>
+            <div class="perf-lbl">accuracy</div>
+          </div>
+          <div class="perf-block">
+            <div class="perf-num">${errores.accuracy_en_alta_confianza}</div>
+            <div class="perf-lbl">en alta confianza</div>
+          </div>
+          <div class="perf-block">
+            <div class="perf-num">${errores.total_predicciones}</div>
+            <div class="perf-lbl">predicciones</div>
+          </div>
+        </div>
+        <div class="perf-interp">${errores.interpretacion}</div>
+        
+        <div class="perf-marca-row">
+          <div>L acierto: <strong>${errores.accuracy_por_marca_real.Local}</strong></div>
+          <div>E acierto: <strong>${errores.accuracy_por_marca_real.Empate}</strong></div>
+          <div>V acierto: <strong>${errores.accuracy_por_marca_real.Visit}</strong></div>
+        </div>
+      </div>
+    `;
+  }
+  
+  content.innerHTML = `
+    <div class="perf-section">
+      <div class="perf-row">
+        <div class="perf-block">
+          <div class="perf-num">${perf.total_quinielas}</div>
+          <div class="perf-lbl">quinielas</div>
+        </div>
+        <div class="perf-block">
+          <div class="perf-num">${perf.promedio_aciertos}</div>
+          <div class="perf-lbl">aciertos prom</div>
+        </div>
+        <div class="perf-block">
+          <div class="perf-num ${roiClass}">${perf.roi_pct}%</div>
+          <div class="perf-lbl">ROI</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="perf-section">
+      <div class="perf-section-title">💰 Resumen económico</div>
+      <div class="perf-row">
+        <div class="perf-block">
+          <div class="perf-num">$${perf.total_gastado_mxn.toLocaleString()}</div>
+          <div class="perf-lbl">gastado</div>
+        </div>
+        <div class="perf-block">
+          <div class="perf-num">$${perf.total_ganado_mxn.toLocaleString()}</div>
+          <div class="perf-lbl">ganado</div>
+        </div>
+        <div class="perf-block ${roiClass === 'positive' ? '' : 'negative-block'}">
+          <div class="perf-num ${roiClass}">$${perf.ganancia_neta_mxn.toLocaleString()}</div>
+          <div class="perf-lbl">neto</div>
+        </div>
+      </div>
+    </div>
+    
+    ${perf.mejor_jornada ? `
+      <div class="perf-section">
+        <div class="perf-section-title">🏆 Mejor jornada</div>
+        <div class="perf-best">
+          Jornada #${perf.mejor_jornada.jornada}: <strong>${perf.mejor_jornada.aciertos} aciertos</strong> · 
+          Premio: $${perf.mejor_jornada.premio?.toLocaleString() || 0}
+        </div>
+      </div>
+    ` : ''}
+    
+    <div class="perf-section">
+      <div class="perf-section-title">📊 Por estrategia</div>
+      ${estrategiaHtml}
+    </div>
+    
+    ${erroresHtml}
+  `;
+}
 </script>
 
 <!-- Override the auth-err reference so messages go to the right tab's error div -->
