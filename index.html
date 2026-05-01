@@ -1898,6 +1898,153 @@ body.light-mode .theme-toggle {
 .hist-q-date { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 2px; }
 .hist-q-status { font-size: 12px; }
 
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PROGOL AI ANALYSIS PANEL (Live progress)                         */
+/* ═══════════════════════════════════════════════════════════════ */
+
+.progol-analisis-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, #1a1a1f 0%, #0a0a0e 100%);
+  border-top: 1px solid rgba(191,90,242,0.3);
+  border-radius: 24px 24px 0 0;
+  padding: 16px;
+  z-index: 9000;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.5);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.progol-analisis-panel.active {
+  transform: translateY(0);
+}
+
+.analisis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.08);
+}
+
+.analisis-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.analisis-close {
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: rgba(255,255,255,0.7);
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.analisis-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.analisis-spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto;
+  border: 3px solid rgba(191,90,242,0.2);
+  border-top-color: #bf5af2;
+  border-radius: 50%;
+  animation: progol-spin 1s linear infinite;
+}
+
+@keyframes progol-spin {
+  to { transform: rotate(360deg); }
+}
+
+.analisis-status {
+  text-align: center;
+  font-size: 14px;
+  color: rgba(255,255,255,0.9);
+  min-height: 22px;
+}
+
+.analisis-warning {
+  background: rgba(255,214,10,0.1);
+  border: 0.5px solid rgba(255,214,10,0.3);
+  color: rgba(255,214,10,0.9);
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.analisis-progress {
+  margin-top: 8px;
+}
+
+.progress-bar-bg {
+  background: rgba(255,255,255,0.06);
+  border-radius: 8px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  background: linear-gradient(90deg, #bf5af2, #8e3ad6);
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.progress-text {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 6px;
+}
+
+.analisis-resumen {
+  background: rgba(48,209,88,0.08);
+  border: 0.5px solid rgba(48,209,88,0.2);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.resumen-title {
+  font-size: 11px;
+  color: rgba(48,209,88,0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.resumen-text {
+  font-size: 14px;
+  color: rgba(255,255,255,0.9);
+  line-height: 1.5;
+}
+
+.analisis-texto-adicional {
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.5;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
 </style>
 </head>
 <body>
@@ -7925,53 +8072,115 @@ function estimarProbabilidadPremio(marcas, probabilidadesPorPartido) {
 // Dados los partidos analizados, sugiere qué partidos meter como
 // dobles/triples para maximizar prob de premio sin reventar el presupuesto.
 
-function recomendarQuinielaReducida(partidosAnalisis, presupuestoMaxMXN = 100, costoBase = 15) {
+function recomendarQuinielaReducida(partidosAnalisis, presupuestoMaxMXN = 100, costoBase = 15, opciones = {}) {
   const maxBoletos = Math.floor(presupuestoMaxMXN / costoBase);
   
-  // Genera la quiniela base (single con la marca más probable)
+  // Estrategia configurable
+  const config = {
+    umbralDoble: opciones.umbralDoble ?? 0.50,
+    umbralTriple: opciones.umbralTriple ?? 0.38,
+    ...opciones
+  };
+  
+  // Probabilidades por partido (normalizadas)
+  const probsPorPartido = partidosAnalisis.map(p => 
+    p.probabilidades || analizarPartidoBase(p.numero)
+  );
+  
+  // Inicializar todas las marcas como single con la marca más probable
   const single = generarQuinielaSingle(partidosAnalisis);
-  
-  // Ranking: partidos con menor confianza (más cerca de 33%) son los primeros candidatos a doble/triple
-  const ranking = single.map((s, idx) => ({
-    idx,
-    confianza: s.confianza,
-    probs: s.probabilidades,
-    marcaPrincipal: s.marca
-  })).sort((a, b) => a.confianza - b.confianza);
-  
-  // Estrategia: convertir en triples los más inciertos primero, luego dobles
-  // hasta agotar presupuesto
   const marcas = single.map(s => [s.marca]);
   let combinaciones = 1;
   
-  for (const item of ranking) {
-    // Probar agregar segunda marca (la siguiente más probable) → doble
-    const probs = item.probs;
-    const segunda = item.marcaPrincipal === 'L' ? (probs.E > probs.V ? 'E' : 'V') :
-                    item.marcaPrincipal === 'E' ? (probs.L > probs.V ? 'L' : 'V') :
-                                                  (probs.L > probs.E ? 'L' : 'E');
+  // Algoritmo greedy con beneficio marginal:
+  // En cada iteración, consideramos para cada partido qué pasaría si lo
+  // upgradeáramos (single→doble o doble→triple). Calculamos el ratio de
+  // mejora-en-prob / aumento-en-costo y elegimos el mejor.
+  
+  function calcularProbAcierto(marcaArr, probs) {
+    let p = 0;
+    marcaArr.forEach(m => {
+      if (m === 'L') p += probs.L;
+      else if (m === 'E') p += probs.E;
+      else if (m === 'V') p += probs.V;
+    });
+    return p;
+  }
+  
+  // Itera mientras quepa al menos un upgrade
+  while (combinaciones * 2 <= maxBoletos) {
+    // Para cada partido, calcular el "beneficio" de upgradearlo
+    let mejorIdx = -1;
+    let mejorBeneficio = 0;
     
-    if (combinaciones * 2 <= maxBoletos) {
-      marcas[item.idx].push(segunda);
-      combinaciones *= 2;
+    for (let i = 0; i < marcas.length; i++) {
+      const probs = probsPorPartido[i];
+      const marcaActual = marcas[i];
+      const probActual = calcularProbAcierto(marcaActual, probs);
+      const tamañoActual = marcaActual.length;
+      const maxProb = Math.max(probs.L, probs.E, probs.V);
       
-      // Si la confianza es muy baja (< 40%), considerar triple
-      if (item.confianza < 0.40 && combinaciones * 1.5 <= maxBoletos) {
-        // tercera marca
-        const tercera = ['L','E','V'].find(m => !marcas[item.idx].includes(m));
-        if (tercera) {
-          marcas[item.idx].push(tercera);
-          combinaciones = combinaciones / 2 * 3;
-        }
+      // No upgradear partidos con alta confianza (respetar umbralDoble)
+      if (maxProb >= config.umbralDoble && tamañoActual === 1) continue;
+      
+      let nuevoTamaño, nuevaMarca, nuevoCosto;
+      
+      if (tamañoActual === 1) {
+        // Upgrade single → doble
+        const segunda = marcaActual[0] === 'L' ? (probs.E > probs.V ? 'E' : 'V') :
+                        marcaActual[0] === 'E' ? (probs.L > probs.V ? 'L' : 'V') :
+                                                 (probs.L > probs.E ? 'L' : 'E');
+        nuevaMarca = [...marcaActual, segunda];
+        nuevoTamaño = 2;
+      } else if (tamañoActual === 2) {
+        // Upgrade doble → triple, solo si está bajo umbralTriple
+        if (maxProb >= config.umbralTriple) continue;
+        const tercera = ['L','E','V'].find(m => !marcaActual.includes(m));
+        nuevaMarca = [...marcaActual, tercera].sort();
+        nuevoTamaño = 3;
+      } else {
+        continue; // ya es triple
       }
+      
+      // ¿Caben las nuevas combinaciones en el presupuesto?
+      const nuevasCombinaciones = (combinaciones / tamañoActual) * nuevoTamaño;
+      if (nuevasCombinaciones > maxBoletos) continue;
+      
+      // Beneficio: ganancia de probabilidad por cada doblón extra de costo
+      const probNueva = calcularProbAcierto(nuevaMarca, probs);
+      const ganancia = probNueva - probActual;
+      const aumentoCosto = nuevasCombinaciones - combinaciones;
+      const beneficio = aumentoCosto > 0 ? ganancia / aumentoCosto : 0;
+      
+      if (beneficio > mejorBeneficio) {
+        mejorBeneficio = beneficio;
+        mejorIdx = i;
+      }
+    }
+    
+    if (mejorIdx === -1) break; // no más upgrades posibles
+    
+    // Aplicar el mejor upgrade
+    const marcaActual = marcas[mejorIdx];
+    const probs = probsPorPartido[mejorIdx];
+    if (marcaActual.length === 1) {
+      const segunda = marcaActual[0] === 'L' ? (probs.E > probs.V ? 'E' : 'V') :
+                      marcaActual[0] === 'E' ? (probs.L > probs.V ? 'L' : 'V') :
+                                               (probs.L > probs.E ? 'L' : 'E');
+      marcas[mejorIdx] = [marcaActual[0], segunda].sort();
+      combinaciones *= 2;
+    } else {
+      const tercera = ['L','E','V'].find(m => !marcaActual.includes(m));
+      marcas[mejorIdx] = ['L', 'E', 'V'];
+      combinaciones = (combinaciones / 2) * 3;
     }
   }
   
   return {
     marcas,
-    combinaciones,
-    costo: combinaciones * costoBase,
-    probabilidades: estimarProbabilidadPremio(marcas, partidosAnalisis.map(p => p.probabilidades || analizarPartidoBase(p.numero)))
+    combinaciones: Math.round(combinaciones),
+    costo: Math.round(combinaciones) * costoBase,
+    probabilidades: estimarProbabilidadPremio(marcas, probsPorPartido)
   };
 }
 
@@ -8849,6 +9058,667 @@ function showModal(html) {
   }
   modal.innerHTML = `<div class="modal-content">${html}<button class="modal-close" onclick="document.getElementById('global-modal').remove()">Cerrar</button></div>`;
 }
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  PROGOL AGENT — IA especializada en análisis de quinielas deportivas
+// ═══════════════════════════════════════════════════════════════════
+//
+// El agente Progol es DIFERENTE al agente Genius (de Melate):
+// - Tiene tools especializadas en deportes (investigar partidos, h2h, etc.)
+// - Hace web search en tiempo real para datos actuales
+// - Modifica las probabilidades en pantalla mientras analiza
+// - Genera quinielas óptimas usando todo el contexto
+// 
+// Costo aproximado por análisis completo:
+//   Progol (14 partidos):     ~$0.50-0.80 USD
+//   Revancha (7 partidos):    ~$0.25-0.40 USD
+//   Media Semana (9 partidos): ~$0.30-0.50 USD
+// ═══════════════════════════════════════════════════════════════════
+
+const PROGOL_AGENT_TOOLS = [
+  {
+    name: 'web_search_partido',
+    description: 'Busca en internet información actualizada sobre un partido específico. Usar para obtener: posición en tabla, últimos resultados, lesiones, forma reciente, head-to-head. SIEMPRE usar esta tool ANTES de actualizar probabilidades de un partido.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        equipo_local: { type: 'string', description: 'Nombre del equipo local' },
+        equipo_visitante: { type: 'string', description: 'Nombre del equipo visitante' },
+        liga: { type: 'string', description: 'Liga si se conoce (ej: Liga MX, La Liga, Premier League)' },
+        tipo_busqueda: { 
+          type: 'string', 
+          enum: ['general', 'tabla', 'forma_reciente', 'lesiones', 'h2h'],
+          description: 'Qué tipo de info buscar. "general" trae lo más relevante.'
+        }
+      },
+      required: ['equipo_local', 'equipo_visitante', 'tipo_busqueda']
+    }
+  },
+  
+  {
+    name: 'consultar_h2h_historico',
+    description: 'Consulta el head-to-head histórico entre dos equipos en quinielas Progol pasadas. Devuelve cuántas veces se enfrentaron y cómo terminaron (L/E/V). Usar cuando los nombres de los equipos coincidan con histórico.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        equipo_a: { type: 'string' },
+        equipo_b: { type: 'string' }
+      },
+      required: ['equipo_a', 'equipo_b']
+    }
+  },
+  
+  {
+    name: 'actualizar_probabilidades_partido',
+    description: 'Actualiza las probabilidades L/E/V de un partido específico en la pantalla. Las probabilidades deben sumar 1.0 exactamente. Usar después de investigar un partido para reflejar el análisis.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numero_partido: { type: 'number', description: 'Número del partido (1-14)' },
+        prob_local: { type: 'number', description: 'Probabilidad de Local (0-1)' },
+        prob_empate: { type: 'number', description: 'Probabilidad de Empate (0-1)' },
+        prob_visitante: { type: 'number', description: 'Probabilidad de Visitante (0-1)' },
+        razonamiento: { type: 'string', description: 'Explicación corta (1-2 frases) de por qué esas probabilidades' },
+        confianza: { type: 'string', enum: ['alta', 'media', 'baja'], description: 'Qué tan confiable es esta predicción' }
+      },
+      required: ['numero_partido', 'prob_local', 'prob_empate', 'prob_visitante', 'razonamiento']
+    }
+  },
+  
+  {
+    name: 'consultar_estadisticas_globales',
+    description: 'Consulta las estadísticas globales del histórico Progol (1,555 jornadas). Útil para context: qué tan común es cada tipo de patrón.',
+    input_schema: { type: 'object', properties: {}, required: [] }
+  },
+  
+  {
+    name: 'generar_quiniela_optima',
+    description: 'Genera la quiniela óptima recomendada basada en todas las probabilidades analizadas. Calcula automáticamente cuáles partidos van como single, doble o triple para maximizar probabilidad de premio dentro del presupuesto.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        presupuesto_max_mxn: { type: 'number', description: 'Presupuesto máximo en pesos mexicanos (default: 60)' },
+        estrategia: { 
+          type: 'string', 
+          enum: ['conservadora', 'balanceada', 'agresiva'],
+          description: 'conservadora=más singles, balanceada=mix, agresiva=más triples'
+        }
+      },
+      required: ['presupuesto_max_mxn', 'estrategia']
+    }
+  },
+  
+  {
+    name: 'consultar_partido_actual',
+    description: 'Consulta los datos del partido N de la quiniela activa, incluyendo equipos, probabilidades actuales y razonamiento previo si lo hay.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numero_partido: { type: 'number' }
+      },
+      required: ['numero_partido']
+    }
+  },
+  
+  {
+    name: 'finalizar_analisis',
+    description: 'Marca el análisis como completo. Usar al terminar de analizar todos los partidos. Genera un resumen final con la quiniela recomendada.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        resumen: { type: 'string', description: 'Resumen breve del análisis completo (3-5 frases)' }
+      },
+      required: ['resumen']
+    }
+  }
+];
+
+// ═══════════════════════════════════════════════════════════════════
+//  EJECUTOR DE TOOLS DEL AGENTE PROGOL
+// ═══════════════════════════════════════════════════════════════════
+
+async function executeProgolTool(toolName, toolInput) {
+  try {
+    switch (toolName) {
+      case 'web_search_partido': {
+        const { equipo_local, equipo_visitante, liga, tipo_busqueda } = toolInput;
+        
+        // Construye query según el tipo de búsqueda
+        let query;
+        switch (tipo_busqueda) {
+          case 'tabla':
+            query = `${equipo_local} ${liga || ''} posición tabla 2026`.trim();
+            break;
+          case 'forma_reciente':
+            query = `${equipo_local} últimos resultados forma reciente`;
+            break;
+          case 'lesiones':
+            query = `${equipo_local} lesiones bajas alineación`;
+            break;
+          case 'h2h':
+            query = `${equipo_local} vs ${equipo_visitante} historial head to head`;
+            break;
+          default:
+            query = `${equipo_local} vs ${equipo_visitante} ${liga || ''} pronóstico`.trim();
+        }
+        
+        // Llamar a /api/web-search
+        const resp = await fetch('/api/web-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, max_results: 5 })
+        });
+        
+        if (!resp.ok) {
+          return { error: 'Error en búsqueda web', status: resp.status };
+        }
+        
+        const data = await resp.json();
+        
+        // Devuelve los resultados resumidos
+        return {
+          query,
+          n_resultados: data.results?.length || 0,
+          resultados: (data.results || []).map(r => ({
+            titulo: r.title,
+            url: r.url,
+            snippet: r.snippet?.slice(0, 300) // truncar snippets largos
+          }))
+        };
+      }
+      
+      case 'consultar_h2h_historico': {
+        if (!sb) return { error: 'Supabase no disponible' };
+        
+        const { equipo_a, equipo_b } = toolInput;
+        
+        // Buscar partidos donde A vs B (cualquier orden)
+        // pg_historico_partidos no se cargó porque el CSV solo tenía resultados, no nombres
+        // Por ahora devolvemos vacío con explicación
+        return {
+          encontrado: false,
+          mensaje: 'El histórico actual solo tiene resultados (L/E/V) sin nombres de equipos. Para H2H usa web_search con tipo_busqueda="h2h".',
+          sugerencia: 'usa web_search_partido con tipo_busqueda h2h'
+        };
+      }
+      
+      case 'actualizar_probabilidades_partido': {
+        const { numero_partido, prob_local, prob_empate, prob_visitante, razonamiento, confianza } = toolInput;
+        
+        // Validar que sumen ~1
+        const total = prob_local + prob_empate + prob_visitante;
+        if (total < 0.95 || total > 1.05) {
+          return { error: `Las probabilidades deben sumar 1.0, suman ${total.toFixed(3)}. Normaliza los valores.` };
+        }
+        
+        // Encuentra el partido por número
+        const idx = progolState.partidosActivos.findIndex(p => p.numero === numero_partido);
+        if (idx === -1) {
+          return { error: `No existe partido #${numero_partido} en la quiniela activa` };
+        }
+        
+        // Normalizar a que sumen exactamente 1
+        const partido = progolState.partidosActivos[idx];
+        partido.probabilidades = {
+          L: prob_local / total,
+          E: prob_empate / total,
+          V: prob_visitante / total
+        };
+        partido.razonamientoAgente = razonamiento;
+        partido.confianzaAgente = confianza || 'media';
+        partido.analizadoPorAgente = true;
+        
+        // Actualizar la marca seleccionada por el usuario a la más probable (si todavía es la default)
+        const probs = partido.probabilidades;
+        const mejorMarca = ['L', 'E', 'V'].reduce((a, b) => probs[a] > probs[b] ? a : b);
+        if (progolState.marcasUsuario[idx] && progolState.marcasUsuario[idx].length === 1) {
+          progolState.marcasUsuario[idx] = [mejorMarca];
+        }
+        
+        // Re-render solo si la pestaña está activa
+        const sec = document.getElementById('sec-progol');
+        if (sec && sec.classList.contains('active')) {
+          renderProgolView();
+        }
+        
+        return { 
+          success: true, 
+          partido: numero_partido,
+          probabilidades_aplicadas: { L: probs.L.toFixed(3), E: probs.E.toFixed(3), V: probs.V.toFixed(3) },
+          marca_recomendada: mejorMarca
+        };
+      }
+      
+      case 'consultar_estadisticas_globales': {
+        const stats = progolState.estadisticasGlobales;
+        if (!stats) {
+          return { error: 'Estadísticas aún no cargadas' };
+        }
+        return {
+          n_jornadas: stats.nJornadas,
+          n_partidos: stats.nPartidos,
+          distribucion_global: {
+            local_pct: (stats.distribucionGlobal.L * 100).toFixed(1),
+            empate_pct: (stats.distribucionGlobal.E * 100).toFixed(1),
+            visit_pct: (stats.distribucionGlobal.V * 100).toFixed(1)
+          },
+          distribucion_reciente: {
+            local_pct: (stats.distribucionReciente.L * 100).toFixed(1),
+            empate_pct: (stats.distribucionReciente.E * 100).toFixed(1),
+            visit_pct: (stats.distribucionReciente.V * 100).toFixed(1)
+          },
+          avg_empates_por_jornada: stats.avgEmpates.toFixed(1),
+          avg_locales_por_jornada: stats.avgLocales.toFixed(1)
+        };
+      }
+      
+      case 'generar_quiniela_optima': {
+        const { presupuesto_max_mxn = 60, estrategia = 'balanceada' } = toolInput;
+        
+        const partidos = progolState.partidosActivos;
+        if (!partidos || partidos.length === 0) {
+          return { error: 'No hay quiniela activa para optimizar' };
+        }
+        
+        const tipo = progolState.currentTipo;
+        const config = PROGOL_CONFIG[tipo];
+        const costoBase = config.costo;
+        
+        // Verificar que todos tengan probabilidades
+        const sinAnalizar = partidos.filter(p => !p.probabilidades).length;
+        if (sinAnalizar > 0) {
+          return { 
+            error: `${sinAnalizar} partidos aún no han sido analizados. Investiga todos primero.`,
+            partidos_pendientes: sinAnalizar
+          };
+        }
+        
+        // Ajustar parámetros según estrategia
+        // CONSERVADORA: solo dobles en partidos muy inciertos, casi todo single
+        // BALANCEADA: dobles en inciertos, triples solo en moneda al aire extrema
+        // AGRESIVA: dobles más liberales, triples en partidos medio-inciertos
+        const opcionesEstrategia = {
+          conservadora: { umbralDoble: 0.42, umbralTriple: 0.32 },
+          balanceada:   { umbralDoble: 0.50, umbralTriple: 0.38 },
+          agresiva:     { umbralDoble: 0.58, umbralTriple: 0.45 }
+        }[estrategia] || { umbralDoble: 0.50, umbralTriple: 0.38 };
+        
+        const reducida = recomendarQuinielaReducida(partidos, presupuesto_max_mxn, costoBase, opcionesEstrategia);
+        
+        // Aplicar al estado del usuario
+        progolState.marcasUsuario = reducida.marcas.map(m => Array.isArray(m) ? m : [m]);
+        
+        // Re-render
+        const sec = document.getElementById('sec-progol');
+        if (sec && sec.classList.contains('active')) {
+          renderProgolView();
+        }
+        
+        const distMarcas = { 1: 0, 2: 0, 3: 0 };
+        reducida.marcas.forEach(m => distMarcas[m.length]++);
+        
+        return {
+          success: true,
+          combinaciones: reducida.combinaciones,
+          costo_total_mxn: reducida.costo,
+          partidos_single: distMarcas[1],
+          partidos_doble: distMarcas[2],
+          partidos_triple: distMarcas[3],
+          probabilidades_premio: {
+            prob_14_aciertos: (reducida.probabilidades.probAlMenos14 * 100).toFixed(4) + '%',
+            prob_13_aciertos: (reducida.probabilidades.probAlMenos13 * 100).toFixed(3) + '%',
+            prob_12_aciertos: (reducida.probabilidades.probAlMenos12 * 100).toFixed(2) + '%',
+            prob_11_aciertos: (reducida.probabilidades.probAlMenos11 * 100).toFixed(1) + '%'
+          },
+          estrategia_aplicada: estrategia
+        };
+      }
+      
+      case 'consultar_partido_actual': {
+        const { numero_partido } = toolInput;
+        const partido = progolState.partidosActivos.find(p => p.numero === numero_partido);
+        if (!partido) return { error: `No existe partido #${numero_partido}` };
+        
+        return {
+          numero: partido.numero,
+          local: partido.local,
+          visitante: partido.visitante,
+          liga: partido.liga || 'desconocida',
+          probabilidades_actuales: partido.probabilidades 
+            ? { L: partido.probabilidades.L.toFixed(3), E: partido.probabilidades.E.toFixed(3), V: partido.probabilidades.V.toFixed(3) }
+            : 'no analizado aún (usando estadísticas base)',
+          razonamiento_previo: partido.razonamientoAgente || null,
+          analizado: !!partido.analizadoPorAgente
+        };
+      }
+      
+      case 'finalizar_analisis': {
+        const { resumen } = toolInput;
+        progolState.analisisCompleto = {
+          resumen,
+          fecha: new Date().toISOString(),
+          partidos_analizados: progolState.partidosActivos.filter(p => p.analizadoPorAgente).length
+        };
+        
+        // Guardar en Supabase
+        if (sb && state.user && progolState.jornadaActiva) {
+          await sb.from('pg_quiniela_activa')
+            .update({
+              analisis: {
+                resumen,
+                partidos: progolState.partidosActivos.map(p => ({
+                  numero: p.numero,
+                  prob_L: p.probabilidades?.L,
+                  prob_E: p.probabilidades?.E,
+                  prob_V: p.probabilidades?.V,
+                  razonamiento: p.razonamientoAgente,
+                  confianza: p.confianzaAgente
+                }))
+              },
+              status: 'analizada',
+              analyzed_at: new Date().toISOString()
+            })
+            .eq('user_id', state.user.id)
+            .eq('numero_jornada', progolState.jornadaActiva.numero_jornada)
+            .eq('tipo', progolState.currentTipo);
+        }
+        
+        return {
+          success: true,
+          resumen,
+          partidos_analizados: progolState.analisisCompleto.partidos_analizados
+        };
+      }
+      
+      default:
+        return { error: `Tool desconocido: ${toolName}` };
+    }
+  } catch (e) {
+    console.error('Error en tool Progol:', e);
+    return { error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SYSTEM PROMPT DEL AGENTE PROGOL
+// ═══════════════════════════════════════════════════════════════════
+
+function buildProgolSystemPrompt() {
+  const stats = progolState.estadisticasGlobales;
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  const partidos = progolState.partidosActivos;
+  
+  const distrLine = stats 
+    ? `Local ${(stats.distribucionReciente.L*100).toFixed(0)}% | Empate ${(stats.distribucionReciente.E*100).toFixed(0)}% | Visitante ${(stats.distribucionReciente.V*100).toFixed(0)}% (últimas 100 jornadas)` 
+    : 'no calculadas aún';
+  
+  const partidosList = partidos.map(p => 
+    `${p.numero}. ${p.local} vs ${p.visitante}${p.liga ? ` (${p.liga})` : ''}`
+  ).join('\n');
+  
+  return `Eres un agente analista deportivo experto especializado en Progol mexicano. Tu trabajo es analizar cada partido de la quiniela del usuario investigando datos REALES en internet, y generar la quiniela óptima.
+
+CONTEXTO ACTUAL:
+- Tipo de quiniela: ${config.name} (${config.nPartidos} partidos)
+- Costo por boleto: $${config.costo} MXN
+- Jornada: #${progolState.jornadaActiva?.numero_jornada || '?'}
+- Estadísticas históricas (1,555 jornadas Progol desde 1993):
+  - Distribución reciente: ${distrLine}
+  - Promedio empates por jornada: ${stats?.avgEmpates.toFixed(1) || '4'}
+  - Promedio locales por jornada: ${stats?.avgLocales.toFixed(1) || '5.7'}
+
+PARTIDOS A ANALIZAR:
+${partidosList}
+
+PROCESO QUE DEBES SEGUIR (importante):
+
+1. Por cada uno de los ${partidos.length} partidos:
+   a. Usa "web_search_partido" para investigar (forma reciente, lesiones, h2h)
+   b. Analiza la información encontrada
+   c. Llama a "actualizar_probabilidades_partido" con tus probabilidades L/E/V calibradas
+   d. Las probs deben sumar 1.0 y reflejar tu análisis honesto
+
+2. Cuando termines TODOS los partidos:
+   a. Llama a "generar_quiniela_optima" con presupuesto razonable ($60-100 default)
+   b. Estrategia "balanceada" funciona bien para la mayoría
+   c. Ajusta a "conservadora" si todos están muy claros, "agresiva" si hay muchos inciertos
+
+3. Finaliza con "finalizar_analisis" con un resumen breve
+
+REGLAS DE ANÁLISIS:
+
+✓ SÉ HONESTO con las probabilidades. Lotería tiene altas dosis de azar.
+✓ Probabilidades extremas (>70% o <10%) deben tener evidencia FUERTE
+✓ Si no encuentras info clara, usa probabilidades cercanas al promedio histórico
+✓ Considera el sesgo posicional: P1-P3 más Local, P12-P14 más balanceado
+✓ Cita brevemente la fuente en el razonamiento (ej: "según marca.com, X está lesionado")
+✓ Mantén razonamientos cortos: 1-2 frases máximo
+
+NO HAGAS:
+✗ NO inventes datos. Si web_search no devuelve info útil, dilo
+✗ NO promesas garantizadas. La lotería es probabilística
+✗ NO uses probabilidades arriba de 75% sin evidencia muy sólida
+✗ NO ejecutes generar_quiniela_optima ANTES de analizar todos los partidos
+
+EFICIENCIA:
+- Para Progol (14): ~14 búsquedas web + 14 actualizaciones = ~28 tool calls
+- Tiempo estimado: 5-8 minutos
+- Si una búsqueda no devuelve info útil, usa probabilidades base y márcalas como "confianza baja"
+
+Ahora empieza el análisis. Investiga el partido #1 primero.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  LOOP PRINCIPAL DEL AGENTE PROGOL
+// ═══════════════════════════════════════════════════════════════════
+
+async function ejecutarAgenteProgol() {
+  if (!progolState.partidosActivos || progolState.partidosActivos.length === 0) {
+    showToast('No hay partidos cargados para analizar', 'error');
+    return;
+  }
+  
+  // UI: mostrar estado de "analizando"
+  mostrarPanelAnalisisIA();
+  
+  const systemPrompt = buildProgolSystemPrompt();
+  const messages = [
+    { 
+      role: 'user', 
+      content: `Empieza el análisis de la quiniela. Investiga uno por uno los ${progolState.partidosActivos.length} partidos, actualiza sus probabilidades, y al final genera la quiniela óptima.` 
+    }
+  ];
+  
+  let iteration = 0;
+  const maxIterations = 60; // suficiente para 14 partidos × ~3 tools cada uno + final
+  
+  try {
+    while (iteration < maxIterations) {
+      iteration++;
+      actualizarStatusAnalisis(`Iteración ${iteration}/${maxIterations}...`);
+      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: systemPrompt,
+          tools: PROGOL_AGENT_TOOLS,
+          messages: messages
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        actualizarStatusAnalisis(`❌ Error: ${data.error.message || 'desconocido'}`);
+        return;
+      }
+      
+      const assistantContent = data.content || [];
+      let hasToolUse = false;
+      const toolResults = [];
+      let textChunk = '';
+      
+      for (const block of assistantContent) {
+        if (block.type === 'text') {
+          textChunk += block.text;
+        } else if (block.type === 'tool_use') {
+          hasToolUse = true;
+          
+          // Mostrar en UI qué está haciendo
+          let descripcion = block.name;
+          if (block.name === 'web_search_partido') {
+            descripcion = `🔍 Investigando: ${block.input.equipo_local} vs ${block.input.equipo_visitante}`;
+          } else if (block.name === 'actualizar_probabilidades_partido') {
+            descripcion = `📊 Actualizando partido #${block.input.numero_partido}`;
+          } else if (block.name === 'generar_quiniela_optima') {
+            descripcion = `🎯 Generando quiniela óptima (${block.input.estrategia})`;
+          } else if (block.name === 'finalizar_analisis') {
+            descripcion = `✅ Finalizando análisis`;
+          }
+          actualizarStatusAnalisis(descripcion);
+          
+          const result = await executeProgolTool(block.name, block.input);
+          
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: JSON.stringify(result)
+          });
+          
+          // Si finalizó análisis, salir del loop
+          if (block.name === 'finalizar_analisis' && result.success) {
+            messages.push({ role: 'assistant', content: assistantContent });
+            messages.push({ role: 'user', content: toolResults });
+            mostrarResultadoFinalAnalisis(result.resumen, textChunk);
+            return;
+          }
+        }
+      }
+      
+      // Si no hay tool calls, terminó
+      if (!hasToolUse) {
+        // Asume que terminó. Si no llamó a finalizar_analisis, guardamos lo que hay
+        mostrarResultadoFinalAnalisis(textChunk || 'Análisis completado.', textChunk);
+        return;
+      }
+      
+      // Continuar loop con el resultado de las tools
+      messages.push({ role: 'assistant', content: assistantContent });
+      messages.push({ role: 'user', content: toolResults });
+      
+      if (data.stop_reason === 'end_turn' && !hasToolUse) break;
+    }
+    
+    actualizarStatusAnalisis('⚠️ Análisis interrumpido (límite de iteraciones)');
+  } catch (err) {
+    console.error('Error en agente Progol:', err);
+    actualizarStatusAnalisis(`❌ Error: ${err.message}`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI DEL ANÁLISIS EN VIVO
+// ═══════════════════════════════════════════════════════════════════
+
+function mostrarPanelAnalisisIA() {
+  let panel = document.getElementById('progol-analisis-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'progol-analisis-panel';
+    panel.className = 'progol-analisis-panel';
+    document.body.appendChild(panel);
+  }
+  panel.classList.add('active');
+  panel.innerHTML = `
+    <div class="analisis-header">
+      <div class="analisis-title">🤖 Agente IA analizando quiniela</div>
+      <button class="analisis-close" onclick="cerrarPanelAnalisis()">✕</button>
+    </div>
+    <div class="analisis-content">
+      <div class="analisis-spinner"></div>
+      <div class="analisis-status" id="analisis-status">Iniciando análisis...</div>
+      <div class="analisis-warning">⚠️ Este proceso tarda 5-8 minutos. No cierres la app ni cambies de pestaña.</div>
+      <div class="analisis-progress" id="analisis-progress"></div>
+    </div>
+  `;
+}
+
+function actualizarStatusAnalisis(texto) {
+  const status = document.getElementById('analisis-status');
+  if (status) status.textContent = texto;
+  
+  const progress = document.getElementById('analisis-progress');
+  if (progress) {
+    const partidosAnalizados = progolState.partidosActivos.filter(p => p.analizadoPorAgente).length;
+    const total = progolState.partidosActivos.length;
+    const pct = total > 0 ? Math.round(100 * partidosAnalizados / total) : 0;
+    progress.innerHTML = `
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width:${pct}%"></div>
+      </div>
+      <div class="progress-text">${partidosAnalizados}/${total} partidos analizados (${pct}%)</div>
+    `;
+  }
+}
+
+function mostrarResultadoFinalAnalisis(resumen, textoAdicional) {
+  const panel = document.getElementById('progol-analisis-panel');
+  if (!panel) return;
+  
+  panel.innerHTML = `
+    <div class="analisis-header">
+      <div class="analisis-title">✅ Análisis completado</div>
+      <button class="analisis-close" onclick="cerrarPanelAnalisis()">✕</button>
+    </div>
+    <div class="analisis-content">
+      <div class="analisis-resumen">
+        <div class="resumen-title">Resumen del análisis:</div>
+        <div class="resumen-text">${escapeHtml(resumen)}</div>
+      </div>
+      ${textoAdicional && textoAdicional !== resumen ? `
+        <div class="analisis-texto-adicional">${escapeHtml(textoAdicional)}</div>
+      ` : ''}
+      <button class="big-action-btn" onclick="cerrarPanelAnalisis(); renderProgolView();">
+        Ver quiniela actualizada
+      </button>
+    </div>
+  `;
+}
+
+function cerrarPanelAnalisis() {
+  const panel = document.getElementById('progol-analisis-panel');
+  if (panel) panel.classList.remove('active');
+  // Re-render para reflejar cambios
+  renderProgolView();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CONECTAR CON EL BOTÓN "ANALIZAR CON IA"
+// ═══════════════════════════════════════════════════════════════════
+//
+// Reemplaza la función placeholder de progol-ui.js
+
+window.analizarConIA = async function() {
+  if (!progolState.partidosActivos || progolState.partidosActivos.length === 0) {
+    showToast('Primero carga una quiniela', 'error');
+    return;
+  }
+  
+  // Confirmar (proceso caro)
+  const tipo = progolState.currentTipo;
+  const n = progolState.partidosActivos.length;
+  const costoEstimado = (n * 0.05).toFixed(2);
+  
+  if (!confirm(`El análisis con IA tarda 5-8 minutos y cuesta aproximadamente $${costoEstimado} USD de tu saldo Anthropic.\n\nInvestigará cada uno de los ${n} partidos en internet (forma reciente, lesiones, etc.) y generará la quiniela óptima.\n\n¿Continuar?`)) {
+    return;
+  }
+  
+  await ejecutarAgenteProgol();
+};
 </script>
 
 <!-- Override the auth-err reference so messages go to the right tab's error div -->
