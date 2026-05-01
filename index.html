@@ -202,6 +202,15 @@ body {
   background: rgba(255,255,255,0.14); color: var(--text);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 8px rgba(0,0,0,0.2);
 }
+.game-btn.progol {
+  font-size: 11.5px;
+  background: linear-gradient(135deg, rgba(48,209,88,0.12), rgba(48,209,88,0.06));
+  border: 0.5px solid rgba(48,209,88,0.2);
+}
+.game-btn.progol.active {
+  background: linear-gradient(135deg, rgba(48,209,88,0.3), rgba(48,209,88,0.18));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 8px rgba(48,209,88,0.25);
+}
 
 /* CONTENT */
 .content {
@@ -1301,6 +1310,594 @@ body.light-mode .theme-toggle {
   font-size: 14px;
   margin-right: 4px;
 }
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PROGOL UI STYLES                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+#sec-progol {
+  padding: 16px;
+  padding-bottom: 100px;
+}
+
+.progol-header {
+  margin-bottom: 16px;
+}
+
+.progol-header h2 {
+  font-size: 24px;
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.progol-subtitle {
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+}
+
+/* Tipo tabs (Progol / Revancha / Media Sem) */
+.progol-tipo-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  background: rgba(255,255,255,0.04);
+  padding: 4px;
+  border-radius: 14px;
+}
+
+.progol-tipo-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.6);
+  padding: 10px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.progol-tipo-tab.active {
+  background: rgba(0,122,255,0.25);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0,122,255,0.3);
+}
+
+.progol-tipo-tab .tab-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.progol-tipo-tab .tab-info {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* Stats card */
+.progol-stats-card {
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.stats-title {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stat-block {
+  flex: 1;
+  text-align: center;
+  padding: 8px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 10px;
+}
+
+.stat-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 2px;
+}
+
+.stats-distribution {
+  font-size: 12px;
+}
+
+.distr-title {
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 6px;
+}
+
+.distr-bar {
+  display: flex;
+  height: 26px;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.distr-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.distr-segment.local { background: linear-gradient(135deg, #0a84ff, #0066d6); }
+.distr-segment.empate { background: linear-gradient(135deg, #ffd60a, #cc9900); color: #000; }
+.distr-segment.visit { background: linear-gradient(135deg, #ff453a, #d6362d); }
+
+.distr-note {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  margin-top: 6px;
+}
+
+/* Load card */
+.progol-load-card {
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.load-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.load-subtitle {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 12px;
+}
+
+.load-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.load-option {
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 14px 8px;
+  text-align: center;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.load-option:active {
+  transform: scale(0.96);
+  background: rgba(0,122,255,0.15);
+}
+
+.load-icon { font-size: 26px; margin-bottom: 6px; }
+.load-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.load-desc { font-size: 10px; color: rgba(255,255,255,0.5); }
+
+/* Form areas */
+.load-form {
+  background: rgba(0,0,0,0.3);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.form-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.form-desc {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.form-desc code {
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.form-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.form-input-row label {
+  font-size: 12px;
+  min-width: 110px;
+}
+
+.form-input-row input,
+.load-form textarea {
+  flex: 1;
+  background: rgba(0,0,0,0.4);
+  border: 0.5px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.load-form textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 200px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.partido-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.partido-input-num {
+  min-width: 28px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.partido-input {
+  flex: 1;
+  background: rgba(0,0,0,0.4);
+  border: 0.5px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #fff;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.vs-mini {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  padding: 0 2px;
+}
+
+.partidos-inputs {
+  margin-bottom: 12px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.big-action-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #0a84ff, #0066d6);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.big-action-btn:active {
+  transform: scale(0.98);
+}
+
+/* Loading / status messages */
+.loading-msg, .error-msg {
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.loading-msg {
+  background: rgba(0,122,255,0.1);
+  color: rgba(255,255,255,0.8);
+}
+
+.error-msg {
+  background: rgba(255,69,58,0.15);
+  color: #ff7066;
+}
+
+/* Active quiniela view */
+.progol-actions-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.action-btn {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.1);
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #bf5af2, #8e3ad6);
+  border: none;
+}
+
+.action-btn.big {
+  padding: 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.action-btn:active {
+  transform: scale(0.98);
+}
+
+/* Resumen card */
+.progol-resumen-card {
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.resumen-row {
+  display: flex;
+  gap: 12px;
+}
+
+.resumen-block {
+  flex: 1;
+  text-align: center;
+  padding: 8px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 10px;
+}
+
+.resumen-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0a84ff;
+}
+
+.resumen-label {
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 2px;
+}
+
+/* Partido card */
+.progol-partidos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.partido-card {
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 12px;
+  position: relative;
+}
+
+.partido-card.candado {
+  border-left: 3px solid #30d158;
+}
+
+.partido-card.incierto {
+  border-left: 3px solid #ffd60a;
+}
+
+.partido-card.monedaaire {
+  border-left: 3px solid #ff453a;
+}
+
+.partido-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.partido-num {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  font-weight: 600;
+}
+
+.partido-confianza {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+}
+
+.partido-equipos {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.equipo {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.equipo.local-side { text-align: right; }
+.equipo.visit-side { text-align: left; }
+
+.vs-text {
+  font-size: 10px;
+  color: rgba(255,255,255,0.3);
+  font-weight: 600;
+}
+
+.partido-liga {
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.partido-probs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.marca-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 8px 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #fff;
+}
+
+.marca-btn:active { transform: scale(0.96); }
+
+.marca-btn.selected.local { background: linear-gradient(135deg, #0a84ff, #0066d6); border-color: #0a84ff; }
+.marca-btn.selected.empate { background: linear-gradient(135deg, #ffd60a, #cc9900); border-color: #ffd60a; color: #000; }
+.marca-btn.selected.visit { background: linear-gradient(135deg, #ff453a, #d6362d); border-color: #ff453a; }
+
+.marca-letra {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.marca-prob {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.partido-razonamiento {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(191,90,242,0.08);
+  border-left: 2px solid rgba(191,90,242,0.5);
+  border-radius: 6px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.8);
+  line-height: 1.4;
+}
+
+.progol-actions-bottom {
+  margin-top: 16px;
+}
+
+.progol-history-link {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.link-button {
+  background: transparent;
+  border: none;
+  color: #0a84ff;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 8px 16px;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-content {
+  background: #1c1c1e;
+  border-radius: 16px;
+  padding: 16px;
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-close {
+  width: 100%;
+  margin-top: 12px;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.hist-quinielas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hist-quiniela-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+}
+
+.hist-q-title { font-size: 13px; font-weight: 600; }
+.hist-q-meta { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+.hist-q-date { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+.hist-q-status { font-size: 12px; }
+
 </style>
 </head>
 <body>
@@ -1372,6 +1969,7 @@ body.light-mode .theme-toggle {
     <button class="game-btn active" data-game="melate" onclick="selectGame('melate')">Melate</button>
     <button class="game-btn" data-game="revancha" onclick="selectGame('revancha')">Revancha</button>
     <button class="game-btn" data-game="retro" onclick="selectGame('retro')">Retro</button>
+    <button class="game-btn progol" data-game="progol" onclick="selectGame('progol')">⚽ Progol</button>
   </div>
   
   <div class="content" id="content">
@@ -1706,6 +2304,12 @@ body.light-mode .theme-toggle {
           <button class="chat-send" onclick="sendChat()">↑</button>
         </div>
       </div>
+    </div>
+
+    <!-- ═══ PROGOL ═══ -->
+    <div class="section" id="sec-progol">
+      <!-- Renderizado dinámicamente por progol-ui.js renderProgolView() -->
+      <div class="loading-msg">Cargando módulo Progol...</div>
     </div>
     
   </div>
@@ -3788,6 +4392,12 @@ function initApp() {
 }
 
 function loadGame(game) {
+  // Guard: progol no es un juego de lotería de números
+  if (game === 'progol' || !GAME_CONFIG[game]) {
+    console.warn('loadGame skipped for non-lottery game:', game);
+    return;
+  }
+  
   state.currentGame = game;
   state.maxNumber = GAME_CONFIG[game].maxNum;
   
@@ -4048,6 +4658,18 @@ function updateNavBadge() {
 // ═══════════════════════════════════════════════════════════
 
 function showSection(name) {
+  // Si estamos en modo Progol y hacen tap en bottom nav, regresamos a Melate
+  if (state.progolMode && name !== 'progol') {
+    state.progolMode = false;
+    document.querySelectorAll('.game-btn').forEach(b => b.classList.toggle('active', b.dataset.game === 'melate'));
+    if (state.currentGame === 'progol' || state.currentGame !== 'melate') {
+      // Si veníamos de progol, recargamos melate
+      loadGame('melate');
+      runEvolution(true);
+      renderAll();
+    }
+  }
+  
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const s = document.getElementById('sec-' + name);
@@ -4295,10 +4917,32 @@ function renderCompareModes(compare) {
   `;
 }
 
-function selectGame(game) {
-  loadGame(game);
-  runEvolution(true);
-  renderAll();
+async function selectGame(game) {
+  // Update UI buttons
+  document.querySelectorAll('.game-btn').forEach(b => b.classList.toggle('active', b.dataset.game === game));
+  
+  if (game === 'progol') {
+    // Modo Progol: oculta secciones normales, muestra solo sec-progol
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById('sec-progol').classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    
+    // Actualiza header
+    document.getElementById('subtitle').textContent = 'Progol · Quinielas deportivas';
+    
+    // Carga datos y renderiza
+    await entrarProgol(progolState.currentTipo || 'progol');
+    
+    // Marca estado para que showSection sepa
+    state.progolMode = true;
+  } else {
+    // Modo lotería normal
+    state.progolMode = false;
+    loadGame(game);
+    runEvolution(true);
+    renderAll();
+    showSection('dashboard');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6954,6 +7598,1256 @@ Si el usuario pregunta algo trivial sin necesidad de herramientas, responde dire
     text: finalText,
     toolUseLog: toolUseLog
   };
+}
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  PROGOL ENGINE — Modelo predictivo para Local/Empate/Visitante
+// ═══════════════════════════════════════════════════════════════════
+// Basado en análisis estadístico de 1,555 jornadas históricas (1993-2026):
+//   - Distribución global: Local 41.4% | Empate 28.6% | Visitante 30.0%
+//   - Sesgo posicional: P1-P3 más Local (44%), P12-P14 más balanceado (38%)
+//   - Tendencia temporal: 2020s más balanceado que 1990s
+//   - Markov no aplica: marcas independientes dentro de la jornada
+//   - Promedio 4 empates por jornada (rango 2-6 = 80% de jornadas)
+// ═══════════════════════════════════════════════════════════════════
+
+// Configuración de los 3 tipos de quiniela
+const PROGOL_CONFIG = {
+  progol: {
+    name: 'Progol',
+    nPartidos: 14,
+    costo: 15,  // MXN
+    descripcion: 'Quiniela principal de fin de semana'
+  },
+  revancha: {
+    name: 'Progol Revancha',
+    nPartidos: 7,
+    costo: 5,
+    descripcion: 'Bonus del mismo boleto Progol'
+  },
+  media_semana: {
+    name: 'Progol Media Semana',
+    nPartidos: 9,
+    costo: 10,
+    descripcion: 'Quiniela entre semana (martes-jueves)'
+  }
+};
+
+// Estado del módulo Progol (independiente de state principal)
+const progolState = {
+  currentTipo: 'progol',  // 'progol' | 'revancha' | 'media_semana'
+  jornadasHistoricas: [], // cargadas desde Supabase
+  jornadaActiva: null,    // la quiniela que el usuario está armando
+  partidosActivos: [],    // [{numero, local, visitante, liga, prob_L, prob_E, prob_V, marca_sugerida}]
+  marcasUsuario: [],      // [['L'], ['L','E'], ['V'], ...] — selecciones del user
+  estadisticasGlobales: null, // calculadas al cargar
+  loaded: false
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  CARGA DE DATOS HISTÓRICOS DESDE SUPABASE
+// ═══════════════════════════════════════════════════════════════════
+
+async function loadProgolHistorico() {
+  if (!sb) {
+    console.warn('Supabase no disponible');
+    return;
+  }
+  
+  try {
+    // Cargamos las últimas 500 jornadas (suficiente para análisis, evita timeouts)
+    const { data, error } = await sb
+      .from('pg_historico_jornadas')
+      .select('numero_jornada, fecha, tipo, n_partidos, resultados, bolsa_acumulada')
+      .order('numero_jornada', { ascending: false })
+      .limit(500);
+    
+    if (error) {
+      console.error('Error cargando histórico:', error);
+      return;
+    }
+    
+    progolState.jornadasHistoricas = data || [];
+    progolState.loaded = true;
+    
+    // Pre-calcula estadísticas globales
+    progolState.estadisticasGlobales = calcularEstadisticasGlobales(data);
+    
+    console.log(`✓ Progol histórico cargado: ${data.length} jornadas`);
+    return data;
+  } catch (e) {
+    console.error('Error en loadProgolHistorico:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ESTADÍSTICAS GLOBALES
+// ═══════════════════════════════════════════════════════════════════
+
+function calcularEstadisticasGlobales(jornadas) {
+  if (!jornadas || jornadas.length === 0) return null;
+  
+  // Solo tipo "progol" para stats principales (mayor muestra)
+  const progolJornadas = jornadas.filter(j => j.tipo === 'progol');
+  
+  let totalL = 0, totalE = 0, totalV = 0;
+  let totalPartidos = 0;
+  const empatesPorJornada = [];
+  const localesPorJornada = [];
+  
+  // Distribución por posición (1-14)
+  const distrPorPosicion = {};
+  for (let p = 1; p <= 14; p++) {
+    distrPorPosicion[p] = { L: 0, E: 0, V: 0, total: 0 };
+  }
+  
+  for (const j of progolJornadas) {
+    const r = j.resultados;
+    if (!Array.isArray(r)) continue;
+    
+    let nE = 0, nL = 0;
+    r.forEach((marca, idx) => {
+      const pos = idx + 1;
+      if (marca === 'L') { totalL++; nL++; if (distrPorPosicion[pos]) { distrPorPosicion[pos].L++; distrPorPosicion[pos].total++; } }
+      else if (marca === 'E') { totalE++; nE++; if (distrPorPosicion[pos]) { distrPorPosicion[pos].E++; distrPorPosicion[pos].total++; } }
+      else if (marca === 'V') { totalV++; if (distrPorPosicion[pos]) { distrPorPosicion[pos].V++; distrPorPosicion[pos].total++; } }
+      totalPartidos++;
+    });
+    empatesPorJornada.push(nE);
+    localesPorJornada.push(nL);
+  }
+  
+  // Distribución reciente (últimas 100 jornadas) vs histórica
+  const recientes = progolJornadas.slice(0, 100);
+  let recL = 0, recE = 0, recV = 0, recTotal = 0;
+  recientes.forEach(j => {
+    j.resultados.forEach(m => {
+      if (m === 'L') recL++;
+      else if (m === 'E') recE++;
+      else if (m === 'V') recV++;
+      recTotal++;
+    });
+  });
+  
+  // Promedio empates
+  const avgEmpates = empatesPorJornada.reduce((a,b) => a+b, 0) / empatesPorJornada.length;
+  const avgLocales = localesPorJornada.reduce((a,b) => a+b, 0) / localesPorJornada.length;
+  
+  // Distribución de empates (cuántas jornadas tienen N empates)
+  const empatesDist = {};
+  empatesPorJornada.forEach(e => { empatesDist[e] = (empatesDist[e] || 0) + 1; });
+  
+  return {
+    nJornadas: progolJornadas.length,
+    nPartidos: totalPartidos,
+    distribucionGlobal: {
+      L: totalL / totalPartidos,
+      E: totalE / totalPartidos,
+      V: totalV / totalPartidos
+    },
+    distribucionReciente: {
+      L: recL / recTotal,
+      E: recE / recTotal,
+      V: recV / recTotal
+    },
+    distribucionPorPosicion: distrPorPosicion,
+    avgEmpates,
+    avgLocales,
+    empatesDistribucion: empatesDist,
+    empatesMin: Math.min(...empatesPorJornada),
+    empatesMax: Math.max(...empatesPorJornada)
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ANÁLISIS DE UNA JORNADA NUEVA
+// ═══════════════════════════════════════════════════════════════════
+//
+// Dada una lista de partidos cargados (sin nombres todavía, solo posiciones),
+// retorna probabilidades base usando estadísticas históricas.
+// 
+// Estas probabilidades base se REFINAN después con análisis del agente IA
+// que investiga cada equipo en tiempo real.
+
+function analizarPartidoBase(numeroPartido, tipo = 'progol') {
+  const stats = progolState.estadisticasGlobales;
+  if (!stats) {
+    // Sin datos: usar distribución teórica equiprobable con ligero sesgo a Local
+    return { L: 0.42, E: 0.28, V: 0.30 };
+  }
+  
+  // Distribución por posición específica
+  const distrPos = stats.distribucionPorPosicion[numeroPartido];
+  
+  if (distrPos && distrPos.total > 50) {
+    // Usar distribución específica de esta posición + decay temporal
+    // (50% peso a posición específica, 50% a tendencia reciente global)
+    return {
+      L: 0.5 * (distrPos.L / distrPos.total) + 0.5 * stats.distribucionReciente.L,
+      E: 0.5 * (distrPos.E / distrPos.total) + 0.5 * stats.distribucionReciente.E,
+      V: 0.5 * (distrPos.V / distrPos.total) + 0.5 * stats.distribucionReciente.V
+    };
+  }
+  
+  // Fallback: distribución reciente
+  return stats.distribucionReciente;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  GENERADOR DE QUINIELA "SINGLE" (1 marca por partido)
+// ═══════════════════════════════════════════════════════════════════
+
+function generarQuinielaSingle(partidosAnalisis) {
+  return partidosAnalisis.map(p => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    // Marca con mayor probabilidad
+    const marcas = [['L', probs.L], ['E', probs.E], ['V', probs.V]];
+    marcas.sort((a, b) => b[1] - a[1]);
+    return {
+      numeroPartido: p.numero,
+      marca: marcas[0][0],
+      confianza: marcas[0][1],
+      probabilidades: probs
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CLASIFICACIÓN DE PARTIDOS POR CONFIANZA
+// ═══════════════════════════════════════════════════════════════════
+
+function clasificarPartidos(partidosAnalisis) {
+  const candados = [];      // > 50% de prob — alta confianza, marca fija
+  const inciertos = [];     // 40-50% favorito — considerar doble
+  const monedaAlAire = [];  // < 40% — triple recomendado
+  
+  partidosAnalisis.forEach((p, idx) => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    const maxProb = Math.max(probs.L, probs.E, probs.V);
+    
+    if (maxProb > 0.50) {
+      candados.push({ ...p, posicion: idx, maxProb });
+    } else if (maxProb > 0.40) {
+      inciertos.push({ ...p, posicion: idx, maxProb });
+    } else {
+      monedaAlAire.push({ ...p, posicion: idx, maxProb });
+    }
+  });
+  
+  return { candados, inciertos, monedaAlAire };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CÁLCULO DE QUINIELAS REDUCIDAS / SISTÉMICAS
+// ═══════════════════════════════════════════════════════════════════
+//
+// Si tienes N dobles y M triples, el total de combinaciones es 2^N * 3^M
+// Cada combinación cuesta el costo del boleto base.
+
+function calcularCostoQuiniela(marcas, costoBase = 15) {
+  let combinaciones = 1;
+  marcas.forEach(m => {
+    if (Array.isArray(m)) {
+      combinaciones *= m.length;
+    }
+  });
+  return {
+    combinaciones,
+    costo: combinaciones * costoBase
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ESTIMACIÓN DE PROBABILIDAD DE PREMIO
+// ═══════════════════════════════════════════════════════════════════
+//
+// Dada una quiniela con marcas (single, dobles, triples) y las probs
+// estimadas por partido, calcula la prob de acertar 14, 13, 12 partidos.
+
+function estimarProbabilidadPremio(marcas, probabilidadesPorPartido) {
+  // Para cada partido, calcula la prob de que CUALQUIERA de las marcas elegidas sea correcta
+  const probsAcierto = marcas.map((m, idx) => {
+    const probs = probabilidadesPorPartido[idx];
+    if (!probs) return 0.33;
+    const seleccionadas = Array.isArray(m) ? m : [m];
+    let pTotal = 0;
+    seleccionadas.forEach(marca => {
+      if (marca === 'L') pTotal += probs.L;
+      else if (marca === 'E') pTotal += probs.E;
+      else if (marca === 'V') pTotal += probs.V;
+    });
+    return pTotal;
+  });
+  
+  // Prob de acertar TODOS = producto
+  const probTodos = probsAcierto.reduce((a, b) => a * b, 1);
+  
+  // Prob de acertar AL MENOS k usando aproximación de Poisson-binomial
+  // (suficiente para estimación, no necesita exactitud)
+  const n = probsAcierto.length;
+  
+  // Calcula prob exacta para cada cantidad de aciertos usando convolución
+  let dp = [1]; // dp[k] = prob de acertar exactamente k de los primeros i partidos
+  for (let i = 0; i < n; i++) {
+    const nuevo = new Array(dp.length + 1).fill(0);
+    const p = probsAcierto[i];
+    for (let k = 0; k < dp.length; k++) {
+      nuevo[k]     += dp[k] * (1 - p); // no acierta este partido
+      nuevo[k + 1] += dp[k] * p;       // acierta este partido
+    }
+    dp = nuevo;
+  }
+  
+  // dp[k] = prob de acertar exactamente k partidos
+  // Prob de acertar AL MENOS k = sum(dp[k..n])
+  const probAlMenos = (k) => {
+    let total = 0;
+    for (let i = k; i <= n; i++) total += dp[i] || 0;
+    return total;
+  };
+  
+  return {
+    probExacto14: dp[14] || 0,
+    probExacto13: dp[13] || 0,
+    probExacto12: dp[12] || 0,
+    probAlMenos14: probAlMenos(14),
+    probAlMenos13: probAlMenos(13),
+    probAlMenos12: probAlMenos(12),
+    probAlMenos11: probAlMenos(11),
+    distribucionAciertos: dp
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RECOMENDACIÓN DE QUÍNIELA REDUCIDA ÓPTIMA
+// ═══════════════════════════════════════════════════════════════════
+//
+// Dados los partidos analizados, sugiere qué partidos meter como
+// dobles/triples para maximizar prob de premio sin reventar el presupuesto.
+
+function recomendarQuinielaReducida(partidosAnalisis, presupuestoMaxMXN = 100, costoBase = 15) {
+  const maxBoletos = Math.floor(presupuestoMaxMXN / costoBase);
+  
+  // Genera la quiniela base (single con la marca más probable)
+  const single = generarQuinielaSingle(partidosAnalisis);
+  
+  // Ranking: partidos con menor confianza (más cerca de 33%) son los primeros candidatos a doble/triple
+  const ranking = single.map((s, idx) => ({
+    idx,
+    confianza: s.confianza,
+    probs: s.probabilidades,
+    marcaPrincipal: s.marca
+  })).sort((a, b) => a.confianza - b.confianza);
+  
+  // Estrategia: convertir en triples los más inciertos primero, luego dobles
+  // hasta agotar presupuesto
+  const marcas = single.map(s => [s.marca]);
+  let combinaciones = 1;
+  
+  for (const item of ranking) {
+    // Probar agregar segunda marca (la siguiente más probable) → doble
+    const probs = item.probs;
+    const segunda = item.marcaPrincipal === 'L' ? (probs.E > probs.V ? 'E' : 'V') :
+                    item.marcaPrincipal === 'E' ? (probs.L > probs.V ? 'L' : 'V') :
+                                                  (probs.L > probs.E ? 'L' : 'E');
+    
+    if (combinaciones * 2 <= maxBoletos) {
+      marcas[item.idx].push(segunda);
+      combinaciones *= 2;
+      
+      // Si la confianza es muy baja (< 40%), considerar triple
+      if (item.confianza < 0.40 && combinaciones * 1.5 <= maxBoletos) {
+        // tercera marca
+        const tercera = ['L','E','V'].find(m => !marcas[item.idx].includes(m));
+        if (tercera) {
+          marcas[item.idx].push(tercera);
+          combinaciones = combinaciones / 2 * 3;
+        }
+      }
+    }
+  }
+  
+  return {
+    marcas,
+    combinaciones,
+    costo: combinaciones * costoBase,
+    probabilidades: estimarProbabilidadPremio(marcas, partidosAnalisis.map(p => p.probabilidades || analizarPartidoBase(p.numero)))
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PARSEO DE QUINIELA POR TEXTO
+// ═══════════════════════════════════════════════════════════════════
+//
+// Acepta formatos varios:
+//   "1) Cruz Azul vs América\n2) Real Madrid vs Barcelona..."
+//   "Cruz Azul - America\nReal Madrid - Barcelona..."
+//   con o sin numeración
+
+function parsearQuinielaTexto(texto, tipo = 'progol') {
+  const expectedN = PROGOL_CONFIG[tipo].nPartidos;
+  const lineas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 3);
+  
+  const partidos = [];
+  let numeroAuto = 1;
+  
+  for (const linea of lineas) {
+    // Intenta detectar número de partido al inicio
+    let m = linea.match(/^(\d+)[\.\)]?\s*(.+)/);
+    let numeroPartido, contenido;
+    if (m) {
+      numeroPartido = parseInt(m[1]);
+      contenido = m[2].trim();
+    } else {
+      numeroPartido = numeroAuto;
+      contenido = linea;
+    }
+    
+    // Detecta separador entre equipos: " vs ", " - ", " VS "
+    const sep = /\s+(?:vs|VS|Vs|-|–|—|contra)\s+/i;
+    const partes = contenido.split(sep);
+    
+    if (partes.length === 2) {
+      partidos.push({
+        numero: numeroPartido,
+        local: partes[0].trim(),
+        visitante: partes[1].trim(),
+        liga: '' // se detecta después con el agente
+      });
+      numeroAuto = numeroPartido + 1;
+    }
+  }
+  
+  // Validación
+  if (partidos.length === 0) {
+    return { success: false, error: 'No se detectaron partidos en el texto.' };
+  }
+  
+  if (partidos.length !== expectedN) {
+    return { 
+      success: false, 
+      error: `Se esperaban ${expectedN} partidos para ${PROGOL_CONFIG[tipo].name}, se detectaron ${partidos.length}.`,
+      partidos // devuelve lo que sí se detectó
+    };
+  }
+  
+  return { success: true, partidos };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CARGA DE QUINIELA DESDE FOTO (OCR)
+// ═══════════════════════════════════════════════════════════════════
+
+async function cargarQuinielaDesdeFoto(file, tipo = 'progol') {
+  try {
+    // Convertir a base64
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    
+    const mediaType = file.type || 'image/jpeg';
+    
+    // Llama a /api/ocr
+    const resp = await fetch('/api/ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64, mediaType, tipo })
+    });
+    
+    const data = await resp.json();
+    
+    if (!resp.ok || !data.success) {
+      return { success: false, error: data.error || 'Error procesando la foto' };
+    }
+    
+    return { success: true, partidos: data.partidos, jornada: data.jornada, fecha: data.fecha };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  GUARDAR QUINIELA ACTIVA EN SUPABASE
+// ═══════════════════════════════════════════════════════════════════
+
+async function guardarQuinielaActiva(numeroJornada, tipo, partidos, fechaJornada = null) {
+  if (!sb || !state.user) return null;
+  
+  const { data, error } = await sb
+    .from('pg_quiniela_activa')
+    .upsert({
+      user_id: state.user.id,
+      numero_jornada: numeroJornada,
+      tipo,
+      fecha_jornada: fechaJornada,
+      partidos: partidos,
+      status: 'pendiente'
+    }, { onConflict: 'user_id,numero_jornada,tipo' })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error guardando quiniela activa:', error);
+    return null;
+  }
+  
+  return data;
+}
+
+async function cargarQuinielaActiva(numeroJornada, tipo) {
+  if (!sb || !state.user) return null;
+  
+  const { data, error } = await sb
+    .from('pg_quiniela_activa')
+    .select('*')
+    .eq('user_id', state.user.id)
+    .eq('numero_jornada', numeroJornada)
+    .eq('tipo', tipo)
+    .single();
+  
+  if (error) return null;
+  return data;
+}
+
+// Última quiniela activa del usuario para un tipo
+async function ultimaQuinielaActiva(tipo) {
+  if (!sb || !state.user) return null;
+  
+  const { data, error } = await sb
+    .from('pg_quiniela_activa')
+    .select('*')
+    .eq('user_id', state.user.id)
+    .eq('tipo', tipo)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  
+  if (error) return null;
+  return data;
+}
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  PROGOL UI — Renderizado y interacciones de las pestañas Progol
+// ═══════════════════════════════════════════════════════════════════
+
+// Constraint único en pg_quiniela_activa: (user_id, numero_jornada, tipo)
+// Hay que asegurar que ese constraint existe en la BD - se agregará en el SQL helper
+
+// ═══════════════════════════════════════════════════════════════════
+//  ENTRADA: cuando el usuario clickea pestaña Progol/Revancha/Media
+// ═══════════════════════════════════════════════════════════════════
+
+async function entrarProgol(tipo) {
+  progolState.currentTipo = tipo;
+  
+  // Carga histórico si aún no está cargado
+  if (!progolState.loaded) {
+    await loadProgolHistorico();
+  }
+  
+  // Renderiza la vista
+  renderProgolView();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RENDER PRINCIPAL — VISTA PROGOL
+// ═══════════════════════════════════════════════════════════════════
+
+function renderProgolView() {
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  const stats = progolState.estadisticasGlobales;
+  
+  const container = document.getElementById('sec-progol');
+  if (!container) return;
+  
+  // Si no hay quiniela activa, muestra opciones de carga
+  if (!progolState.jornadaActiva) {
+    container.innerHTML = renderEmptyProgolState(tipo, config, stats);
+    return;
+  }
+  
+  // Hay quiniela activa: muestra los partidos
+  container.innerHTML = renderActiveQuiniela(tipo, config);
+}
+
+function renderEmptyProgolState(tipo, config, stats) {
+  const tipoTabsHtml = `
+    <div class="progol-tipo-tabs">
+      <button class="progol-tipo-tab ${tipo === 'progol' ? 'active' : ''}" onclick="cambiarTipoProgol('progol')">
+        <div class="tab-name">Progol</div>
+        <div class="tab-info">14 partidos</div>
+      </button>
+      <button class="progol-tipo-tab ${tipo === 'revancha' ? 'active' : ''}" onclick="cambiarTipoProgol('revancha')">
+        <div class="tab-name">Revancha</div>
+        <div class="tab-info">7 partidos</div>
+      </button>
+      <button class="progol-tipo-tab ${tipo === 'media_semana' ? 'active' : ''}" onclick="cambiarTipoProgol('media_semana')">
+        <div class="tab-name">Media Sem</div>
+        <div class="tab-info">9 partidos</div>
+      </button>
+    </div>
+  `;
+  
+  let statsHtml = '';
+  if (stats) {
+    const distR = stats.distribucionReciente;
+    statsHtml = `
+      <div class="progol-stats-card">
+        <div class="stats-title">📊 Tu base estadística</div>
+        <div class="stats-row">
+          <div class="stat-block">
+            <div class="stat-num">${stats.nJornadas.toLocaleString()}</div>
+            <div class="stat-label">jornadas históricas</div>
+          </div>
+          <div class="stat-block">
+            <div class="stat-num">${stats.nPartidos.toLocaleString()}</div>
+            <div class="stat-label">partidos analizados</div>
+          </div>
+        </div>
+        <div class="stats-distribution">
+          <div class="distr-title">Tendencia reciente (últimas 100 jornadas):</div>
+          <div class="distr-bar">
+            <div class="distr-segment local" style="width:${(distR.L*100).toFixed(0)}%">L ${(distR.L*100).toFixed(0)}%</div>
+            <div class="distr-segment empate" style="width:${(distR.E*100).toFixed(0)}%">E ${(distR.E*100).toFixed(0)}%</div>
+            <div class="distr-segment visit" style="width:${(distR.V*100).toFixed(0)}%">V ${(distR.V*100).toFixed(0)}%</div>
+          </div>
+          <div class="distr-note">Promedio: ${stats.avgEmpates.toFixed(1)} empates, ${stats.avgLocales.toFixed(1)} locales por jornada</div>
+        </div>
+      </div>
+    `;
+  } else {
+    statsHtml = `<div class="progol-stats-card"><div class="loading-msg">Cargando estadísticas...</div></div>`;
+  }
+  
+  return `
+    <div class="progol-header">
+      <h2>${config.name}</h2>
+      <div class="progol-subtitle">${config.descripcion} · $${config.costo} MXN/boleto</div>
+    </div>
+    
+    ${tipoTabsHtml}
+    
+    ${statsHtml}
+    
+    <div class="progol-load-card">
+      <div class="load-title">Cargar quiniela ${config.name} (${config.nPartidos} partidos)</div>
+      <div class="load-subtitle">Elige cómo quieres ingresar los partidos:</div>
+      
+      <div class="load-options">
+        <button class="load-option" onclick="abrirCargaPorFoto()">
+          <div class="load-icon">📷</div>
+          <div class="load-name">Foto del boletín</div>
+          <div class="load-desc">OCR automático</div>
+        </button>
+        
+        <button class="load-option" onclick="abrirCargaPorTexto()">
+          <div class="load-icon">📝</div>
+          <div class="load-name">Pegar texto</div>
+          <div class="load-desc">Lista de partidos</div>
+        </button>
+        
+        <button class="load-option" onclick="abrirCargaManual()">
+          <div class="load-icon">✏️</div>
+          <div class="load-name">Captura manual</div>
+          <div class="load-desc">Equipo por equipo</div>
+        </button>
+      </div>
+    </div>
+    
+    <div id="progol-load-area"></div>
+    
+    <div class="progol-history-link">
+      <button class="link-button" onclick="verHistorialProgol()">
+        📂 Ver mis quinielas guardadas
+      </button>
+    </div>
+  `;
+}
+
+function renderActiveQuiniela(tipo, config) {
+  const jornada = progolState.jornadaActiva;
+  const partidos = progolState.partidosActivos;
+  
+  const tipoTabsHtml = `
+    <div class="progol-tipo-tabs">
+      <button class="progol-tipo-tab ${tipo === 'progol' ? 'active' : ''}" onclick="cambiarTipoProgol('progol')">
+        <div class="tab-name">Progol</div>
+        <div class="tab-info">14 partidos</div>
+      </button>
+      <button class="progol-tipo-tab ${tipo === 'revancha' ? 'active' : ''}" onclick="cambiarTipoProgol('revancha')">
+        <div class="tab-name">Revancha</div>
+        <div class="tab-info">7 partidos</div>
+      </button>
+      <button class="progol-tipo-tab ${tipo === 'media_semana' ? 'active' : ''}" onclick="cambiarTipoProgol('media_semana')">
+        <div class="tab-name">Media Sem</div>
+        <div class="tab-info">9 partidos</div>
+      </button>
+    </div>
+  `;
+  
+  const partidosHtml = partidos.map((p, idx) => renderPartidoCard(p, idx, tipo)).join('');
+  
+  // Resumen de marcas usuario
+  const marcasResumen = progolState.marcasUsuario;
+  let totalCombinaciones = 1;
+  marcasResumen.forEach(m => { if (Array.isArray(m)) totalCombinaciones *= m.length; });
+  const costoTotal = totalCombinaciones * config.costo;
+  
+  return `
+    <div class="progol-header">
+      <h2>${config.name} #${jornada.numero_jornada || '?'}</h2>
+      <div class="progol-subtitle">${jornada.fecha_jornada || 'Sin fecha'} · ${partidos.length} partidos</div>
+    </div>
+    
+    ${tipoTabsHtml}
+    
+    <div class="progol-actions-bar">
+      <button class="action-btn primary" onclick="analizarConIA()">
+        🤖 Analizar con IA
+      </button>
+      <button class="action-btn" onclick="resetearQuiniela()">
+        🗑️ Borrar y empezar de nuevo
+      </button>
+    </div>
+    
+    <div class="progol-resumen-card">
+      <div class="resumen-row">
+        <div class="resumen-block">
+          <div class="resumen-num">${totalCombinaciones}</div>
+          <div class="resumen-label">boleto${totalCombinaciones === 1 ? '' : 's'}</div>
+        </div>
+        <div class="resumen-block">
+          <div class="resumen-num">$${costoTotal.toLocaleString()}</div>
+          <div class="resumen-label">costo total MXN</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="progol-partidos-list">
+      ${partidosHtml}
+    </div>
+    
+    <div class="progol-actions-bottom">
+      <button class="action-btn primary big" onclick="guardarQuinielaUsuario()">
+        💾 Guardar esta quiniela
+      </button>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RENDER DE UN PARTIDO (CARD)
+// ═══════════════════════════════════════════════════════════════════
+
+function renderPartidoCard(partido, idx, tipo) {
+  const marcas = progolState.marcasUsuario[idx] || [];
+  
+  // Probabilidades base (se actualizan cuando el agente las analiza)
+  const probs = partido.probabilidades || analizarPartidoBase(partido.numero);
+  const maxProb = Math.max(probs.L, probs.E, probs.V);
+  
+  // Clase de confianza
+  let confianzaClass = '';
+  let confianzaLabel = '';
+  if (maxProb > 0.50) { confianzaClass = 'candado'; confianzaLabel = '🟢 Candado'; }
+  else if (maxProb > 0.40) { confianzaClass = 'incierto'; confianzaLabel = '🟡 Considerá doble'; }
+  else { confianzaClass = 'monedaaire'; confianzaLabel = '🔴 Moneda al aire'; }
+  
+  return `
+    <div class="partido-card ${confianzaClass}" data-idx="${idx}">
+      <div class="partido-header">
+        <div class="partido-num">#${partido.numero}</div>
+        <div class="partido-confianza">${confianzaLabel}</div>
+      </div>
+      
+      <div class="partido-equipos">
+        <div class="equipo local-side">${escapeHtml(partido.local)}</div>
+        <div class="vs-text">vs</div>
+        <div class="equipo visit-side">${escapeHtml(partido.visitante)}</div>
+      </div>
+      
+      ${partido.liga ? `<div class="partido-liga">${escapeHtml(partido.liga)}</div>` : ''}
+      
+      <div class="partido-probs">
+        <button class="marca-btn local ${marcas.includes('L') ? 'selected' : ''}" 
+                onclick="toggleMarca(${idx}, 'L')">
+          <div class="marca-letra">L</div>
+          <div class="marca-prob">${(probs.L * 100).toFixed(0)}%</div>
+        </button>
+        <button class="marca-btn empate ${marcas.includes('E') ? 'selected' : ''}" 
+                onclick="toggleMarca(${idx}, 'E')">
+          <div class="marca-letra">E</div>
+          <div class="marca-prob">${(probs.E * 100).toFixed(0)}%</div>
+        </button>
+        <button class="marca-btn visit ${marcas.includes('V') ? 'selected' : ''}" 
+                onclick="toggleMarca(${idx}, 'V')">
+          <div class="marca-letra">V</div>
+          <div class="marca-prob">${(probs.V * 100).toFixed(0)}%</div>
+        </button>
+      </div>
+      
+      ${partido.razonamientoAgente ? `
+        <div class="partido-razonamiento">
+          💡 ${escapeHtml(partido.razonamientoAgente)}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TOGGLE DE MARCAS (single → doble → triple)
+// ═══════════════════════════════════════════════════════════════════
+
+function toggleMarca(idx, marca) {
+  if (!progolState.marcasUsuario[idx]) progolState.marcasUsuario[idx] = [];
+  const arr = progolState.marcasUsuario[idx];
+  
+  const pos = arr.indexOf(marca);
+  if (pos >= 0) {
+    // Si ya está seleccionada y es la única, no la quitamos (siempre debe haber 1)
+    if (arr.length > 1) arr.splice(pos, 1);
+  } else {
+    // Agrégala (puede llegar a triple)
+    arr.push(marca);
+    // Reordena: L, E, V
+    arr.sort((a, b) => {
+      const order = { L: 0, E: 1, V: 2 };
+      return order[a] - order[b];
+    });
+  }
+  
+  // Re-render solo este partido y el resumen
+  renderProgolView();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CAMBIAR TIPO DE QUINIELA
+// ═══════════════════════════════════════════════════════════════════
+
+async function cambiarTipoProgol(tipo) {
+  if (tipo === progolState.currentTipo) return;
+  
+  // Si hay cambios sin guardar, advertir
+  if (progolState.partidosActivos.length > 0) {
+    if (!confirm('Tienes una quiniela activa. ¿Cambiar de tipo descartará los cambios?')) {
+      return;
+    }
+  }
+  
+  progolState.currentTipo = tipo;
+  progolState.jornadaActiva = null;
+  progolState.partidosActivos = [];
+  progolState.marcasUsuario = [];
+  
+  // Carga última quiniela activa de este tipo si existe
+  const ultima = await ultimaQuinielaActiva(tipo);
+  if (ultima && ultima.partidos) {
+    progolState.jornadaActiva = ultima;
+    progolState.partidosActivos = ultima.partidos;
+    progolState.marcasUsuario = (ultima.marcas_sugeridas || []).map(m => Array.isArray(m) ? m : [m]);
+    if (progolState.marcasUsuario.length < ultima.partidos.length) {
+      // Inicializar marcas faltantes con la marca más probable
+      while (progolState.marcasUsuario.length < ultima.partidos.length) {
+        const idx = progolState.marcasUsuario.length;
+        const probs = analizarPartidoBase(idx + 1);
+        const top = ['L','E','V'].sort((a,b) => probs[b] - probs[a])[0];
+        progolState.marcasUsuario.push([top]);
+      }
+    }
+  }
+  
+  renderProgolView();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CARGA POR FOTO
+// ═══════════════════════════════════════════════════════════════════
+
+function abrirCargaPorFoto() {
+  const area = document.getElementById('progol-load-area');
+  if (!area) return;
+  
+  area.innerHTML = `
+    <div class="load-form">
+      <div class="form-title">📷 Carga por foto del boletín</div>
+      <div class="form-desc">Toma una foto clara del boletín oficial. El sistema usará IA para reconocer los partidos.</div>
+      
+      <input type="file" id="progol-photo-input" accept="image/*" capture="environment" 
+             onchange="procesarFotoQuiniela(event)" 
+             style="display:none">
+      
+      <button class="big-action-btn" onclick="document.getElementById('progol-photo-input').click()">
+        📷 Tomar / Seleccionar foto
+      </button>
+      
+      <div id="progol-photo-status"></div>
+    </div>
+  `;
+}
+
+async function procesarFotoQuiniela(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const status = document.getElementById('progol-photo-status');
+  if (!status) return;
+  
+  status.innerHTML = `<div class="loading-msg">⏳ Procesando foto con IA... (puede tardar 10-20 seg)</div>`;
+  
+  const tipo = progolState.currentTipo;
+  const result = await cargarQuinielaDesdeFoto(file, tipo);
+  
+  if (!result.success) {
+    status.innerHTML = `<div class="error-msg">❌ ${result.error}</div>`;
+    return;
+  }
+  
+  if (!result.partidos || result.partidos.length === 0) {
+    status.innerHTML = `<div class="error-msg">❌ No se detectaron partidos en la foto.</div>`;
+    return;
+  }
+  
+  // Carga partidos detectados
+  progolState.partidosActivos = result.partidos;
+  // Inicializa marcas con la más probable
+  progolState.marcasUsuario = result.partidos.map((p, idx) => {
+    const probs = analizarPartidoBase(p.numero || idx + 1);
+    const top = ['L','E','V'].sort((a,b) => probs[b] - probs[a])[0];
+    return [top];
+  });
+  
+  // Crea jornada activa
+  const numeroJornada = result.jornada || prompt('No detecté el número de jornada. Ingrésalo:') || 0;
+  progolState.jornadaActiva = {
+    numero_jornada: parseInt(numeroJornada) || 0,
+    fecha_jornada: result.fecha,
+    tipo: tipo
+  };
+  
+  // Guarda en Supabase
+  await guardarQuinielaActiva(
+    progolState.jornadaActiva.numero_jornada,
+    tipo,
+    result.partidos,
+    result.fecha
+  );
+  
+  showToast(`✓ ${result.partidos.length} partidos cargados`, 'success');
+  renderProgolView();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CARGA POR TEXTO
+// ═══════════════════════════════════════════════════════════════════
+
+function abrirCargaPorTexto() {
+  const area = document.getElementById('progol-load-area');
+  if (!area) return;
+  
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  
+  area.innerHTML = `
+    <div class="load-form">
+      <div class="form-title">📝 Carga por texto</div>
+      <div class="form-desc">
+        Pega los ${config.nPartidos} partidos. Usa el formato: 
+        <code>1) Equipo Local vs Equipo Visitante</code>
+      </div>
+      
+      <div class="form-input-row">
+        <label>Número de jornada:</label>
+        <input type="number" id="progol-text-jornada" placeholder="ej: 2331" />
+      </div>
+      
+      <textarea id="progol-text-input" rows="${config.nPartidos + 2}" 
+                placeholder="1) Cruz Azul vs América&#10;2) Pumas vs Tigres&#10;..."></textarea>
+      
+      <button class="big-action-btn" onclick="procesarTextoQuiniela()">
+        ✓ Cargar partidos
+      </button>
+      
+      <div id="progol-text-status"></div>
+    </div>
+  `;
+}
+
+async function procesarTextoQuiniela() {
+  const status = document.getElementById('progol-text-status');
+  const textarea = document.getElementById('progol-text-input');
+  const jornadaInput = document.getElementById('progol-text-jornada');
+  
+  if (!status || !textarea) return;
+  
+  const texto = textarea.value;
+  const numeroJornada = parseInt(jornadaInput.value) || 0;
+  
+  if (!texto.trim()) {
+    status.innerHTML = `<div class="error-msg">❌ Pega los partidos primero.</div>`;
+    return;
+  }
+  
+  if (!numeroJornada) {
+    status.innerHTML = `<div class="error-msg">❌ Ingresa el número de jornada.</div>`;
+    return;
+  }
+  
+  const tipo = progolState.currentTipo;
+  const result = parsearQuinielaTexto(texto, tipo);
+  
+  if (!result.success) {
+    status.innerHTML = `<div class="error-msg">❌ ${result.error}</div>`;
+    return;
+  }
+  
+  // Carga partidos
+  progolState.partidosActivos = result.partidos;
+  progolState.marcasUsuario = result.partidos.map((p, idx) => {
+    const probs = analizarPartidoBase(p.numero || idx + 1);
+    const top = ['L','E','V'].sort((a,b) => probs[b] - probs[a])[0];
+    return [top];
+  });
+  
+  progolState.jornadaActiva = {
+    numero_jornada: numeroJornada,
+    fecha_jornada: null,
+    tipo: tipo
+  };
+  
+  await guardarQuinielaActiva(numeroJornada, tipo, result.partidos);
+  
+  showToast(`✓ ${result.partidos.length} partidos cargados`, 'success');
+  renderProgolView();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CARGA MANUAL
+// ═══════════════════════════════════════════════════════════════════
+
+function abrirCargaManual() {
+  const area = document.getElementById('progol-load-area');
+  if (!area) return;
+  
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  
+  let camposHtml = '';
+  for (let i = 1; i <= config.nPartidos; i++) {
+    camposHtml += `
+      <div class="partido-input-row">
+        <div class="partido-input-num">${i}.</div>
+        <input type="text" class="partido-input local" data-num="${i}" placeholder="Local" />
+        <span class="vs-mini">vs</span>
+        <input type="text" class="partido-input visit" data-num="${i}" placeholder="Visitante" />
+      </div>
+    `;
+  }
+  
+  area.innerHTML = `
+    <div class="load-form">
+      <div class="form-title">✏️ Captura manual</div>
+      <div class="form-desc">Ingresa cada equipo manualmente.</div>
+      
+      <div class="form-input-row">
+        <label>Número de jornada:</label>
+        <input type="number" id="progol-manual-jornada" placeholder="ej: 2331" />
+      </div>
+      
+      <div class="partidos-inputs">
+        ${camposHtml}
+      </div>
+      
+      <button class="big-action-btn" onclick="procesarManualQuiniela()">
+        ✓ Cargar partidos
+      </button>
+      
+      <div id="progol-manual-status"></div>
+    </div>
+  `;
+}
+
+async function procesarManualQuiniela() {
+  const status = document.getElementById('progol-manual-status');
+  const jornadaInput = document.getElementById('progol-manual-jornada');
+  
+  if (!status) return;
+  
+  const numeroJornada = parseInt(jornadaInput.value) || 0;
+  if (!numeroJornada) {
+    status.innerHTML = `<div class="error-msg">❌ Ingresa el número de jornada.</div>`;
+    return;
+  }
+  
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  
+  const partidos = [];
+  for (let i = 1; i <= config.nPartidos; i++) {
+    const localInput = document.querySelector(`.partido-input.local[data-num="${i}"]`);
+    const visitInput = document.querySelector(`.partido-input.visit[data-num="${i}"]`);
+    
+    const local = localInput?.value.trim() || '';
+    const visit = visitInput?.value.trim() || '';
+    
+    if (!local || !visit) {
+      status.innerHTML = `<div class="error-msg">❌ Falta llenar el partido #${i}.</div>`;
+      return;
+    }
+    
+    partidos.push({
+      numero: i,
+      local,
+      visitante: visit,
+      liga: ''
+    });
+  }
+  
+  progolState.partidosActivos = partidos;
+  progolState.marcasUsuario = partidos.map((p, idx) => {
+    const probs = analizarPartidoBase(p.numero);
+    const top = ['L','E','V'].sort((a,b) => probs[b] - probs[a])[0];
+    return [top];
+  });
+  
+  progolState.jornadaActiva = {
+    numero_jornada: numeroJornada,
+    fecha_jornada: null,
+    tipo: tipo
+  };
+  
+  await guardarQuinielaActiva(numeroJornada, tipo, partidos);
+  
+  showToast(`✓ ${partidos.length} partidos cargados`, 'success');
+  renderProgolView();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ACCIONES
+// ═══════════════════════════════════════════════════════════════════
+
+async function resetearQuiniela() {
+  if (!confirm('¿Borrar la quiniela activa y empezar de nuevo?')) return;
+  
+  // Borra de Supabase también
+  if (sb && state.user && progolState.jornadaActiva) {
+    await sb.from('pg_quiniela_activa')
+      .delete()
+      .eq('user_id', state.user.id)
+      .eq('numero_jornada', progolState.jornadaActiva.numero_jornada)
+      .eq('tipo', progolState.currentTipo);
+  }
+  
+  progolState.jornadaActiva = null;
+  progolState.partidosActivos = [];
+  progolState.marcasUsuario = [];
+  renderProgolView();
+}
+
+async function guardarQuinielaUsuario() {
+  if (!sb || !state.user || !progolState.jornadaActiva) return;
+  
+  const tipo = progolState.currentTipo;
+  const config = PROGOL_CONFIG[tipo];
+  
+  // Calcula combinaciones y costo
+  let combinaciones = 1;
+  progolState.marcasUsuario.forEach(m => { if (Array.isArray(m)) combinaciones *= m.length; });
+  const costo = combinaciones * config.costo;
+  
+  // Detecta estrategia
+  const tieneTriples = progolState.marcasUsuario.some(m => m.length === 3);
+  const tieneDoblers = progolState.marcasUsuario.some(m => m.length === 2);
+  let estrategia = 'single';
+  if (tieneTriples) estrategia = 'sistemica';
+  else if (tieneDoblers) estrategia = combinaciones > 4 ? 'sistemica' : 'doble';
+  
+  const { data, error } = await sb.from('pg_quinielas_guardadas').insert({
+    user_id: state.user.id,
+    quiniela_activa_id: progolState.jornadaActiva.id || null,
+    numero_jornada: progolState.jornadaActiva.numero_jornada,
+    tipo: tipo,
+    marcas: progolState.marcasUsuario,
+    estrategia: estrategia,
+    costo: costo,
+    combinaciones: combinaciones,
+    status: 'pendiente'
+  }).select().single();
+  
+  if (error) {
+    showToast('❌ Error al guardar: ' + error.message, 'error');
+    return;
+  }
+  
+  showToast(`✓ Quiniela guardada — ${combinaciones} boleto${combinaciones > 1 ? 's' : ''} · $${costo} MXN`, 'success');
+}
+
+async function analizarConIA() {
+  // Placeholder: en sesión 3 se conectará con el agente
+  showToast('🤖 Análisis con IA: disponible en sesión 3', 'info');
+}
+
+async function verHistorialProgol() {
+  if (!sb || !state.user) return;
+  
+  const { data, error } = await sb
+    .from('pg_quinielas_guardadas')
+    .select('*')
+    .eq('user_id', state.user.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  
+  if (error || !data) {
+    showToast('Error cargando historial', 'error');
+    return;
+  }
+  
+  if (data.length === 0) {
+    showToast('Aún no tienes quinielas guardadas', 'info');
+    return;
+  }
+  
+  // Muestra modal con lista
+  const html = data.map(q => `
+    <div class="hist-quiniela-row">
+      <div class="hist-q-info">
+        <div class="hist-q-title">${PROGOL_CONFIG[q.tipo]?.name || q.tipo} #${q.numero_jornada}</div>
+        <div class="hist-q-meta">${q.combinaciones} boleto${q.combinaciones > 1 ? 's' : ''} · $${q.costo} · ${q.estrategia}</div>
+        <div class="hist-q-date">${new Date(q.created_at).toLocaleDateString('es-MX')}</div>
+      </div>
+      <div class="hist-q-status">
+        ${q.status === 'pendiente' ? '⏳' : q.aciertos !== null ? `✓ ${q.aciertos} aciertos` : '?'}
+      </div>
+    </div>
+  `).join('');
+  
+  showModal(`
+    <h3>Mis Quinielas Progol</h3>
+    <div class="hist-quinielas-list">${html}</div>
+  `);
+}
+
+function showModal(html) {
+  let modal = document.getElementById('global-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'global-modal';
+    modal.className = 'modal-overlay';
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `<div class="modal-content">${html}<button class="modal-close" onclick="document.getElementById('global-modal').remove()">Cerrar</button></div>`;
 }
 </script>
 
