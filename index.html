@@ -8123,7 +8123,7 @@ Si el usuario pregunta algo trivial sin necesidad de herramientas, responde dire
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-5',
         max_tokens: 1500,
         system: systemPrompt,
         tools: AGENT_TOOLS,
@@ -9998,7 +9998,7 @@ async function ejecutarAgenteProgol() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-5',
           max_tokens: 4000,
           system: systemPrompt,
           tools: PROGOL_AGENT_TOOLS,
