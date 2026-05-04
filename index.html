@@ -8772,6 +8772,241 @@ async function ultimaQuinielaActiva(tipo) {
   if (error) return null;
   return data;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  ANTI-BIAS: corrección del sesgo anti-empate (v2)
+// ═══════════════════════════════════════════════════════════════════
+//
+// La literatura de apuestas deportivas documenta que los modelos predictivos
+// (incluso humanos profesionales) sistemáticamente SUBESTIMAN empates.
+// Razón: cuando analizas un partido buscas "quién es mejor" → narrativa de favorito.
+// Pero estadísticamente 28.6% de partidos terminan empate (de tu CSV de 21,770 partidos).
+//
+// Esta función ajusta probabilidades "subestimadas" hacia el promedio histórico.
+
+function aplicarEmpateFloor(probs, opciones = {}) {
+  const config = {
+    empateMinimo: opciones.empateMinimo ?? 0.27,  // floor del empate
+    umbralFavoritoClaro: opciones.umbralFavoritoClaro ?? 0.55,  // si L o V > 55%, NO ajustamos
+    ...opciones
+  };
+  
+  const { L, E, V } = probs;
+  const maxLV = Math.max(L, V);
+  
+  // Si hay un favorito CLARO (L o V > 55%), respetamos la predicción
+  if (maxLV > config.umbralFavoritoClaro) {
+    return probs;
+  }
+  
+  // Si el empate ya está en buen nivel, no tocamos
+  if (E >= config.empateMinimo) {
+    return probs;
+  }
+  
+  // Subimos empate a piso, restamos proporcionalmente de L y V
+  const deficit = config.empateMinimo - E;
+  const totalLV = L + V;
+  const ajusteL = (L / totalLV) * deficit;
+  const ajusteV = (V / totalLV) * deficit;
+  
+  return {
+    L: Math.max(0, L - ajusteL),
+    E: config.empateMinimo,
+    V: Math.max(0, V - ajusteV)
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ANALIZADOR DE JORNADA: detecta jornada empate-pesada vs ligera
+// ═══════════════════════════════════════════════════════════════════
+//
+// Compara el TOTAL de empates esperados según el agente vs el promedio histórico.
+// Sirve para alertar al usuario y al agente si está prediciendo "muy pocos empates".
+
+function analizarDistribucionEmpates(partidos) {
+  const stats = progolState.estadisticasGlobales;
+  const promedioHist = stats?.avgEmpates || 4.0;
+  
+  // Suma de probabilidades de empate (= empates esperados según el modelo)
+  const empatesEsperados = partidos.reduce((sum, p) => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    return sum + probs.E;
+  }, 0);
+  
+  // Cuántos partidos tienen empate como marca recomendada
+  const empatesPredecidos = partidos.filter(p => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    return probs.E > Math.max(probs.L, probs.V);
+  }).length;
+  
+  // Cuántos partidos tienen empate como segunda opción cercana (<10pp de diferencia)
+  const empatesCercanos = partidos.filter(p => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    const max = Math.max(probs.L, probs.E, probs.V);
+    return probs.E !== max && (max - probs.E) < 0.10;
+  }).length;
+  
+  // Diferencia con el histórico
+  const diferencia = empatesEsperados - promedioHist;
+  
+  let alerta = null;
+  if (diferencia < -1.0) {
+    alerta = `⚠️ El modelo predice ${empatesEsperados.toFixed(1)} empates pero el promedio histórico es ${promedioHist.toFixed(1)}. Considera ajustar.`;
+  } else if (diferencia > 2) {
+    alerta = `📊 El modelo predice ${empatesEsperados.toFixed(1)} empates (alto vs promedio ${promedioHist.toFixed(1)}). Jornada empate-pesada.`;
+  }
+  
+  return {
+    empatesEsperados: empatesEsperados,
+    empatesPredecidos: empatesPredecidos,
+    empatesCercanos: empatesCercanos,
+    promedioHistorico: promedioHist,
+    diferencia: diferencia,
+    alerta: alerta,
+    // Recomendación para el usuario
+    recomendacion: empatesCercanos >= 2 
+      ? `Tienes ${empatesCercanos} partidos donde el empate es segunda opción cercana. Considera convertirlos a doble (favorito + E).`
+      : null
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  IDENTIFICAR PARTIDOS CANDIDATOS A DOBLE-EMPATE
+// ═══════════════════════════════════════════════════════════════════
+//
+// Devuelve lista ordenada de partidos donde tiene MÁS sentido convertir
+// el single a doble agregando el empate (en lugar de la otra marca).
+
+function identificarCandidatosDobleEmpate(partidos, maxN = 5) {
+  const candidatos = [];
+  
+  partidos.forEach((p, idx) => {
+    const probs = p.probabilidades || analizarPartidoBase(p.numero);
+    const max = Math.max(probs.L, probs.E, probs.V);
+    const marcaPrincipal = probs.L === max ? 'L' : probs.E === max ? 'E' : 'V';
+    
+    // Skip si la marca principal ES empate (no necesita doble)
+    if (marcaPrincipal === 'E') return;
+    
+    // Skip si hay favorito claro (>55%)
+    if (max > 0.55) return;
+    
+    // Diferencia entre marca principal y empate
+    const diff = max - probs.E;
+    
+    // Solo nos interesan partidos donde el empate está cerca (<10pp)
+    if (diff > 0.10) return;
+    
+    candidatos.push({
+      idx,
+      numero: p.numero,
+      local: p.local,
+      visitante: p.visitante,
+      marcaPrincipal,
+      probMarcaPrincipal: max,
+      probEmpate: probs.E,
+      diff: diff,
+      probAciertoSingle: max,
+      probAciertoDoble: max + probs.E, // doble L+E o V+E
+      ganancia: probs.E // cuánto sube tu probabilidad de acertar al agregar E
+    });
+  });
+  
+  // Ordena por mayor ganancia
+  candidatos.sort((a, b) => b.ganancia - a.ganancia);
+  
+  return candidatos.slice(0, maxN);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SISTÉMICA INTELIGENTE PARA TU PRESUPUESTO ESPECÍFICO ($90-150)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Genera una quiniela sistémica diseñada para presupuestos medios,
+// priorizando dobles en partidos donde el empate sea probable.
+
+function generarSistemicaParaPresupuesto(partidos, presupuestoMin = 90, presupuestoMax = 150, costoBase = 15) {
+  // Genera la quiniela base (single con marca más probable)
+  const single = generarQuinielaSingle(partidos);
+  const marcas = single.map(s => [s.marca]);
+  
+  // Identifica candidatos a doble-empate (PRIORIDAD ALTA)
+  const candidatosEmpate = identificarCandidatosDobleEmpate(partidos, 8);
+  
+  // Identifica candidatos genéricos a doble (alta incertidumbre)
+  const candidatosIncertidumbre = single
+    .map((s, idx) => ({ idx, confianza: s.confianza, probs: s.probabilidades, marcaPrincipal: s.marca }))
+    .filter(item => item.confianza < 0.50 && item.confianza > 0.35)
+    .sort((a, b) => a.confianza - b.confianza);
+  
+  // Estrategia greedy: primero meter dobles-empate, luego dobles genéricos
+  let combinaciones = 1;
+  const minBoletos = Math.floor(presupuestoMin / costoBase);
+  const maxBoletos = Math.floor(presupuestoMax / costoBase);
+  
+  // Fase 1: Convierte candidatos a doble-empate
+  for (const cand of candidatosEmpate) {
+    if (combinaciones * 2 > maxBoletos) break;
+    if (marcas[cand.idx].length > 1) continue; // ya es doble
+    
+    marcas[cand.idx] = [cand.marcaPrincipal, 'E'].sort();
+    combinaciones *= 2;
+  }
+  
+  // Fase 2: Si tenemos espacio, agregamos dobles de incertidumbre genérica
+  for (const item of candidatosIncertidumbre) {
+    if (combinaciones * 2 > maxBoletos) break;
+    if (marcas[item.idx].length > 1) continue;
+    
+    const probs = item.probs;
+    const segunda = item.marcaPrincipal === 'L' ? (probs.E > probs.V ? 'E' : 'V') :
+                    item.marcaPrincipal === 'E' ? (probs.L > probs.V ? 'L' : 'V') :
+                                                  (probs.L > probs.E ? 'L' : 'E');
+    marcas[item.idx] = [item.marcaPrincipal, segunda].sort();
+    combinaciones *= 2;
+  }
+  
+  // Fase 3: Si aún estamos por debajo del presupuesto MÍNIMO, sigue agregando dobles
+  if (combinaciones < minBoletos) {
+    const restantes = single
+      .map((s, idx) => ({ idx, confianza: s.confianza, probs: s.probabilidades, marcaPrincipal: s.marca }))
+      .filter(item => marcas[item.idx].length === 1)
+      .sort((a, b) => a.confianza - b.confianza);
+    
+    for (const item of restantes) {
+      if (combinaciones * 2 > maxBoletos) break;
+      if (combinaciones >= minBoletos) break; // ya alcanzamos mínimo
+      
+      const probs = item.probs;
+      const segunda = item.marcaPrincipal === 'L' ? (probs.E > probs.V ? 'E' : 'V') :
+                      item.marcaPrincipal === 'E' ? (probs.L > probs.V ? 'L' : 'V') :
+                                                    (probs.L > probs.E ? 'L' : 'E');
+      marcas[item.idx] = [item.marcaPrincipal, segunda].sort();
+      combinaciones *= 2;
+    }
+  }
+  
+  // Calcular probabilidades de premio
+  const probsPorPartido = partidos.map(p => p.probabilidades || analizarPartidoBase(p.numero));
+  const probsPremio = estimarProbabilidadPremio(marcas, probsPorPartido);
+  
+  // Detalles de cuántos dobles-empate aplicamos
+  const doblesConEmpate = marcas.filter(m => m.length === 2 && m.includes('E')).length;
+  const doblesSinEmpate = marcas.filter(m => m.length === 2 && !m.includes('E')).length;
+  const triples = marcas.filter(m => m.length === 3).length;
+  const singles = marcas.filter(m => m.length === 1).length;
+  
+  return {
+    marcas,
+    combinaciones,
+    costo: combinaciones * costoBase,
+    distribucion: { singles, doblesConEmpate, doblesSinEmpate, triples },
+    probabilidades: probsPremio,
+    estrategia: 'sistemica_anti_empate',
+    cumplePresupuesto: combinaciones * costoBase >= presupuestoMin && combinaciones * costoBase <= presupuestoMax
+  };
+}
 </script>
 <script>// ═══════════════════════════════════════════════════════════════════
 //  PROGOL UI — Renderizado y interacciones de las pestañas Progol
@@ -9552,6 +9787,29 @@ const PROGOL_AGENT_TOOLS = [
   },
   
   {
+    name: 'obtener_datos_equipo_oficial',
+    description: 'PREFERIR ESTA SOBRE web_search. Obtiene datos OFICIALES de Football-data.org para equipos de las 12 ligas top: Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Eredivisie, Championship, MLS, Liga MX, Brasileirao, Copa Libertadores, Champions League. Datos: tabla actualizada, últimos 10 partidos con marcador, forma WDLWW, h2h. Si la liga no es soportada, devuelve error y entonces sí usa web_search.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        accion: { 
+          type: 'string', 
+          enum: ['tabla', 'forma_equipo', 'h2h'],
+          description: 'tabla=posiciones liga, forma_equipo=últimos 10 partidos, h2h=historial entre 2 equipos'
+        },
+        liga: { 
+          type: 'string',
+          description: 'Liga: Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Eredivisie, Liga MX, Championship, MLS, Brasileirao, Champions League'
+        },
+        equipo: { type: 'string', description: 'Nombre del equipo (para forma_equipo)' },
+        equipo_local: { type: 'string', description: 'Equipo local (para h2h)' },
+        equipo_visitante: { type: 'string', description: 'Equipo visitante (para h2h)' }
+      },
+      required: ['accion', 'liga']
+    }
+  },
+  
+  {
     name: 'consultar_h2h_historico',
     description: 'Consulta el head-to-head histórico entre dos equipos en quinielas Progol pasadas. Devuelve cuántas veces se enfrentaron y cómo terminaron (L/E/V). Usar cuando los nombres de los equipos coincidan con histórico.',
     input_schema: {
@@ -9614,6 +9872,12 @@ const PROGOL_AGENT_TOOLS = [
       },
       required: ['numero_partido']
     }
+  },
+  
+  {
+    name: 'consultar_distribucion_empates',
+    description: 'OBLIGATORIO USAR antes de finalizar el análisis. Verifica si tus probabilidades predicen un número razonable de empates (cerca del promedio histórico de 4.0 por jornada Progol). Si predices muy pocos, te avisará y deberás revisar partidos parejos.',
+    input_schema: { type: 'object', properties: {}, required: [] }
   },
   
   {
@@ -9683,6 +9947,56 @@ async function executeProgolTool(toolName, toolInput) {
         };
       }
       
+      case 'obtener_datos_equipo_oficial': {
+        const resp = await fetch('/api/football-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(toolInput)
+        });
+        
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          return { 
+            error: errData.error || `Error API: ${resp.status}`,
+            sugerencia: 'Si la liga no es soportada o el equipo no está en la base, usa web_search_partido como respaldo.'
+          };
+        }
+        
+        const data = await resp.json();
+        
+        if (!data.configured) {
+          return {
+            error: 'Football-data.org no configurado. Usa web_search_partido como respaldo.',
+            configured: false,
+            help: data.help
+          };
+        }
+        
+        return data;
+      }
+      
+      case 'consultar_distribucion_empates': {
+        const partidos = progolState.partidosActivos;
+        if (!partidos || partidos.length === 0) {
+          return { error: 'No hay quiniela activa' };
+        }
+        
+        const distribucion = analizarDistribucionEmpates(partidos);
+        
+        return {
+          empates_esperados_modelo: distribucion.empatesEsperados.toFixed(2),
+          empates_predecidos_como_marca_principal: distribucion.empatesPredecidos,
+          empates_como_segunda_opcion_cercana: distribucion.empatesCercanos,
+          promedio_historico: distribucion.promedioHistorico,
+          diferencia: distribucion.diferencia.toFixed(2),
+          alerta: distribucion.alerta,
+          recomendacion: distribucion.recomendacion,
+          accion_sugerida: distribucion.diferencia < -1.5 
+            ? 'Revisa partidos parejos. El sistema sub-estima empates. Considera subir prob_E en partidos donde max(L,V) < 50%.'
+            : 'OK. Distribución de empates razonable.'
+        };
+      }
+      
       case 'consultar_h2h_historico': {
         if (!sb) return { error: 'Supabase no disponible' };
         
@@ -9714,17 +10028,27 @@ async function executeProgolTool(toolName, toolInput) {
         }
         
         // Normalizar a que sumen exactamente 1
-        const partido = progolState.partidosActivos[idx];
-        partido.probabilidades = {
+        let probsNormalizadas = {
           L: prob_local / total,
           E: prob_empate / total,
           V: prob_visitante / total
         };
+        
+        // 🎯 ANTI-BIAS v2: aplicar empate floor automáticamente
+        // Si el agente predice E < 27% en partido sin favorito claro, ajustamos
+        const probsOriginales = { ...probsNormalizadas };
+        probsNormalizadas = aplicarEmpateFloor(probsNormalizadas);
+        
+        const huboAjuste = Math.abs(probsOriginales.E - probsNormalizadas.E) > 0.005;
+        
+        const partido = progolState.partidosActivos[idx];
+        partido.probabilidades = probsNormalizadas;
         partido.razonamientoAgente = razonamiento;
         partido.confianzaAgente = confianza || 'media';
         partido.analizadoPorAgente = true;
+        partido.empateFloorAplicado = huboAjuste;
         
-        // Actualizar la marca seleccionada por el usuario a la más probable (si todavía es la default)
+        // Actualizar la marca seleccionada por el usuario a la más probable
         const probs = partido.probabilidades;
         const mejorMarca = ['L', 'E', 'V'].reduce((a, b) => probs[a] > probs[b] ? a : b);
         if (progolState.marcasUsuario[idx] && progolState.marcasUsuario[idx].length === 1) {
@@ -9737,12 +10061,22 @@ async function executeProgolTool(toolName, toolInput) {
           renderProgolView();
         }
         
-        return { 
+        const respuesta = { 
           success: true, 
           partido: numero_partido,
-          probabilidades_aplicadas: { L: probs.L.toFixed(3), E: probs.E.toFixed(3), V: probs.V.toFixed(3) },
+          probabilidades_aplicadas: { 
+            L: probs.L.toFixed(3), 
+            E: probs.E.toFixed(3), 
+            V: probs.V.toFixed(3) 
+          },
           marca_recomendada: mejorMarca
         };
+        
+        if (huboAjuste) {
+          respuesta.ajuste_anti_bias = `Empate floor aplicado: E subió de ${probsOriginales.E.toFixed(3)} a ${probs.E.toFixed(3)} (estadísticamente los empates están en 28.6% promedio).`;
+        }
+        
+        return respuesta;
       }
       
       case 'consultar_estadisticas_globales': {
@@ -9769,7 +10103,7 @@ async function executeProgolTool(toolName, toolInput) {
       }
       
       case 'generar_quiniela_optima': {
-        const { presupuesto_max_mxn = 60, estrategia = 'balanceada' } = toolInput;
+        const { presupuesto_max_mxn = 120, estrategia = 'sistemica_anti_empate' } = toolInput;
         
         const partidos = progolState.partidosActivos;
         if (!partidos || partidos.length === 0) {
@@ -9789,17 +10123,22 @@ async function executeProgolTool(toolName, toolInput) {
           };
         }
         
-        // Ajustar parámetros según estrategia
-        // CONSERVADORA: solo dobles en partidos muy inciertos, casi todo single
-        // BALANCEADA: dobles en inciertos, triples solo en moneda al aire extrema
-        // AGRESIVA: dobles más liberales, triples en partidos medio-inciertos
-        const opcionesEstrategia = {
-          conservadora: { umbralDoble: 0.42, umbralTriple: 0.32 },
-          balanceada:   { umbralDoble: 0.50, umbralTriple: 0.38 },
-          agresiva:     { umbralDoble: 0.58, umbralTriple: 0.45 }
-        }[estrategia] || { umbralDoble: 0.50, umbralTriple: 0.38 };
+        let reducida;
         
-        const reducida = recomendarQuinielaReducida(partidos, presupuesto_max_mxn, costoBase, opcionesEstrategia);
+        if (estrategia === 'sistemica_anti_empate') {
+          // 🎯 NUEVA ESTRATEGIA DEFAULT: dobles selectivos en partidos con empate cercano
+          const presupuestoMin = Math.max(costoBase * 4, presupuesto_max_mxn * 0.6);
+          reducida = generarSistemicaParaPresupuesto(partidos, presupuestoMin, presupuesto_max_mxn, costoBase);
+        } else {
+          // Estrategias antiguas (conservadora/balanceada/agresiva)
+          const opcionesEstrategia = {
+            conservadora: { umbralDoble: 0.42, umbralTriple: 0.32 },
+            balanceada:   { umbralDoble: 0.50, umbralTriple: 0.38 },
+            agresiva:     { umbralDoble: 0.58, umbralTriple: 0.45 }
+          }[estrategia] || { umbralDoble: 0.50, umbralTriple: 0.38 };
+          
+          reducida = recomendarQuinielaReducida(partidos, presupuesto_max_mxn, costoBase, opcionesEstrategia);
+        }
         
         // Aplicar al estado del usuario
         progolState.marcasUsuario = reducida.marcas.map(m => Array.isArray(m) ? m : [m]);
@@ -9810,16 +10149,21 @@ async function executeProgolTool(toolName, toolInput) {
           renderProgolView();
         }
         
-        const distMarcas = { 1: 0, 2: 0, 3: 0 };
-        reducida.marcas.forEach(m => distMarcas[m.length]++);
+        const distMarcas = reducida.distribucion || {
+          singles: reducida.marcas.filter(m => m.length === 1).length,
+          doblesConEmpate: reducida.marcas.filter(m => m.length === 2 && m.includes('E')).length,
+          doblesSinEmpate: reducida.marcas.filter(m => m.length === 2 && !m.includes('E')).length,
+          triples: reducida.marcas.filter(m => m.length === 3).length
+        };
         
         return {
           success: true,
           combinaciones: reducida.combinaciones,
           costo_total_mxn: reducida.costo,
-          partidos_single: distMarcas[1],
-          partidos_doble: distMarcas[2],
-          partidos_triple: distMarcas[3],
+          partidos_single: distMarcas.singles,
+          partidos_doble_con_empate: distMarcas.doblesConEmpate,
+          partidos_doble_sin_empate: distMarcas.doblesSinEmpate,
+          partidos_triple: distMarcas.triples,
           probabilidades_premio: {
             prob_14_aciertos: (reducida.probabilidades.probAlMenos14 * 100).toFixed(4) + '%',
             prob_13_aciertos: (reducida.probabilidades.probAlMenos13 * 100).toFixed(3) + '%',
@@ -9913,7 +10257,7 @@ function buildProgolSystemPrompt() {
     `${p.numero}. ${p.local} vs ${p.visitante}${p.liga ? ` (${p.liga})` : ''}`
   ).join('\n');
   
-  return `Eres un agente analista deportivo experto especializado en Progol mexicano. Tu trabajo es analizar cada partido de la quiniela del usuario investigando datos REALES en internet, y generar la quiniela óptima.
+  return `Eres un agente analista deportivo experto especializado en Progol mexicano. Tu trabajo es analizar cada partido de la quiniela del usuario y generar la quiniela óptima usando datos REALES (no adivinanzas).
 
 CONTEXTO ACTUAL:
 - Tipo de quiniela: ${config.name} (${config.nPartidos} partidos)
@@ -9927,42 +10271,81 @@ CONTEXTO ACTUAL:
 PARTIDOS A ANALIZAR:
 ${partidosList}
 
+═══════════════════════════════════════════════════════════════
+🎯 ALERTA CRÍTICA: ANTI-BIAS DEL EMPATE
+═══════════════════════════════════════════════════════════════
+
+ESTUDIO DOCUMENTADO: Modelos predictivos (incluso humanos profesionales) SISTEMÁTICAMENTE
+SUBESTIMAN empates. Razón: cuando analizas un partido, buscas "quién es mejor" y esto te
+sesga hacia favoritos. PERO el 28.6% de partidos terminan empate.
+
+EVIDENCIA: el usuario reportó que en jornadas recientes falló por "empates inesperados".
+
+POR ESO debes seguir estas reglas ESTRICTAS:
+
+⚠️ NUNCA pongas E < 25% en partidos donde max(L,V) sea < 55%. Es estadísticamente erróneo.
+⚠️ EN PARTIDOS PAREJOS (ambos equipos similares en tabla): E debe ser entre 28% y 35%.
+⚠️ EN CLÁSICOS y derbys: E suele ser 30-35% por la cautela táctica.
+⚠️ Cuando un equipo NO tiene ventaja CLARA en casa (forma local <60% últimas 5): E ≥ 28%.
+
+EL SISTEMA AUTOMÁTICAMENTE aplica un "empate floor" de 27% si pones E muy bajo, así que
+no te preocupes por "exagerar" el empate. Más vale pasarse que quedarse corto.
+
+═══════════════════════════════════════════════════════════════
+
 PROCESO QUE DEBES SEGUIR (importante):
 
-1. Por cada uno de los ${partidos.length} partidos:
-   a. Usa "web_search_partido" para investigar (forma reciente, lesiones, h2h)
-   b. Analiza la información encontrada
-   c. Llama a "actualizar_probabilidades_partido" con tus probabilidades L/E/V calibradas
-   d. Las probs deben sumar 1.0 y reflejar tu análisis honesto
+1. Para CADA uno de los ${partidos.length} partidos:
+   
+   a. PREFIERE 'obtener_datos_equipo_oficial' SOBRE web_search si la liga es:
+      Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Eredivisie, 
+      Liga MX, Championship, MLS, Brasileirao, Champions League.
+      Esta tool da datos OFICIALES (tabla, forma WDLWW, h2h con marcadores).
+   
+   b. SI la liga NO es soportada, usa 'web_search_partido' como respaldo.
+   
+   c. Llama a 'actualizar_probabilidades_partido' con probs L/E/V calibradas.
+      RECUERDA: si dudas entre L y V (similar fuerza), E debe ser ≥ 28-30%.
 
-2. Cuando termines TODOS los partidos:
-   a. Llama a "generar_quiniela_optima" con presupuesto razonable ($60-100 default)
-   b. Estrategia "balanceada" funciona bien para la mayoría
-   c. Ajusta a "conservadora" si todos están muy claros, "agresiva" si hay muchos inciertos
+2. ANTES de generar la quiniela, OBLIGATORIAMENTE llama a:
+   'consultar_distribucion_empates'
+   
+   Esto te dice cuántos empates predijiste vs el promedio histórico (4.0).
+   Si predijiste menos de 3, REVISA partidos parejos y AJUSTA hacia más empates.
+   Si predijiste más de 6, OK pero verifica que sea consistente.
 
-3. Finaliza con "finalizar_analisis" con un resumen breve
+3. Llama a 'generar_quiniela_optima' con:
+   - presupuesto_max_mxn: 120 (default ideal para sistémica anti-empate)
+   - estrategia: 'sistemica_anti_empate' (NUEVA estrategia óptima)
+   
+   Esto crea una sistémica de ~$90-150 con dobles selectivos en los partidos
+   donde el empate sea segunda opción cercana. Es la estrategia que MEJOR
+   cubre los empates inesperados.
+
+4. Finaliza con 'finalizar_analisis' con un resumen breve (3-5 frases).
 
 REGLAS DE ANÁLISIS:
 
-✓ SÉ HONESTO con las probabilidades. Lotería tiene altas dosis de azar.
-✓ Probabilidades extremas (>70% o <10%) deben tener evidencia FUERTE
-✓ Si no encuentras info clara, usa probabilidades cercanas al promedio histórico
-✓ Considera el sesgo posicional: P1-P3 más Local, P12-P14 más balanceado
-✓ Cita brevemente la fuente en el razonamiento (ej: "según marca.com, X está lesionado")
-✓ Mantén razonamientos cortos: 1-2 frases máximo
+✓ SÉ HONESTO con las probabilidades. La lotería tiene azar.
+✓ Probabilidades extremas (>70% o <10%) requieren evidencia FUERTE.
+✓ Si no encuentras info clara, usa probabilidades cercanas al promedio (~40/30/30).
+✓ Sesgo posicional: P1-P3 más Local (44%), P12-P14 más balanceado (38%).
+✓ Cita la fuente en el razonamiento (ej: "Football-data: Real Madrid 2do en tabla").
+✓ Razonamientos: 1-2 frases máximo.
 
 NO HAGAS:
-✗ NO inventes datos. Si web_search no devuelve info útil, dilo
-✗ NO promesas garantizadas. La lotería es probabilística
-✗ NO uses probabilidades arriba de 75% sin evidencia muy sólida
-✗ NO ejecutes generar_quiniela_optima ANTES de analizar todos los partidos
+✗ NO inventes datos. Si la fuente no te da info, di "datos limitados".
+✗ NO promesas garantizadas. La lotería es probabilística.
+✗ NO uses prob > 75% sin evidencia sólida.
+✗ NO subestimes empates - es el error más común y caro.
 
 EFICIENCIA:
-- Para Progol (14): ~14 búsquedas web + 14 actualizaciones = ~28 tool calls
-- Tiempo estimado: 5-8 minutos
-- Si una búsqueda no devuelve info útil, usa probabilidades base y márcalas como "confianza baja"
+- ${partidos.length} partidos × ~2 tool calls = ~${partidos.length * 2}-${partidos.length * 3} tool calls
+- Tiempo estimado: ${Math.round(partidos.length * 0.5)}-${Math.round(partidos.length * 0.8)} minutos
+- Si una búsqueda no devuelve info útil, usa probs base con confianza "baja"
 
-Ahora empieza el análisis. Investiga el partido #1 primero.`;
+Ahora empieza el análisis. Investiga el partido #1 primero usando 
+'obtener_datos_equipo_oficial' si es liga top, o 'web_search_partido' como respaldo.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
