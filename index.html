@@ -9926,7 +9926,7 @@ async function executeProgolTool(toolName, toolInput) {
         const resp = await fetch('/api/web-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, max_results: 5 })
+          body: JSON.stringify({ query, max_results: 3 }) // Reducido de 5 a 3 para ahorrar tokens
         });
         
         if (!resp.ok) {
@@ -9935,15 +9935,17 @@ async function executeProgolTool(toolName, toolInput) {
         
         const data = await resp.json();
         
-        // Devuelve los resultados resumidos
+        // 🎯 FIX 1: Compactar resultados a 1 línea cada uno
+        // Antes: title + url + snippet 300 chars (~500 bytes/result)
+        // Ahora: title + snippet 150 chars (~200 bytes/result)
+        const compacted = (data.results || []).slice(0, 3).map(r => {
+          const snip = (r.snippet || '').slice(0, 150).replace(/\s+/g, ' ').trim();
+          return `${r.title?.slice(0, 60)}: ${snip}`;
+        }).join(' || ');
+        
         return {
-          query,
-          n_resultados: data.results?.length || 0,
-          resultados: (data.results || []).map(r => ({
-            titulo: r.title,
-            url: r.url,
-            snippet: r.snippet?.slice(0, 300) // truncar snippets largos
-          }))
+          query: query.slice(0, 80),
+          resultados: compacted || 'sin resultados útiles'
         };
       }
       
@@ -9969,6 +9971,60 @@ async function executeProgolTool(toolName, toolInput) {
             error: 'Football-data.org no configurado. Usa web_search_partido como respaldo.',
             configured: false,
             help: data.help
+          };
+        }
+        
+        // 🎯 FIX 1: Compactar respuestas para reducir contexto (rate limit)
+        // Antes: tabla completa de 20 equipos (~3KB)
+        // Ahora: solo top 6 + posición del equipo consultado (~500 bytes)
+        if (toolInput.accion === 'tabla') {
+          const tabla = data.tabla || [];
+          const equipoBuscado = toolInput.equipo?.toLowerCase() || '';
+          const compacted = tabla.slice(0, 6).map(t => 
+            `${t.posicion}. ${t.equipo}: ${t.puntos}pts (${t.ganados}G-${t.empates}E-${t.perdidos}P) forma:${t.forma || '?'}`
+          ).join('; ');
+          
+          // Si pidieron equipo específico y no está en top 6, añádelo
+          let equipoEspecifico = '';
+          if (equipoBuscado) {
+            const found = tabla.find(t => t.equipo?.toLowerCase().includes(equipoBuscado));
+            if (found && found.posicion > 6) {
+              equipoEspecifico = `; #${found.posicion}: ${found.equipo}: ${found.puntos}pts (${found.ganados}G-${found.empates}E-${found.perdidos}P) forma:${found.forma || '?'}`;
+            }
+          }
+          
+          return {
+            liga: data.liga,
+            tabla_top6: compacted + equipoEspecifico,
+            total_equipos: tabla.length
+          };
+        }
+        
+        if (toolInput.accion === 'forma_equipo') {
+          // Antes: 10 partidos completos con marcadores (~2KB)
+          // Ahora: forma WDLWW + resumen último 5 (~200 bytes)
+          const ultimos5 = (data.partidos_recientes || []).slice(0, 5).map(p => 
+            `${p.fecha?.slice(5)}:${p.esLocal ? 'L' : 'V'}vs${p.esLocal ? p.visitante?.slice(0,8) : p.local?.slice(0,8)}=${p.marcador}(${p.ganador})`
+          ).join('; ');
+          
+          return {
+            equipo: data.equipo,
+            forma_ultimos5: data.forma,
+            balance: data.ultimos5,
+            partidos_recientes: ultimos5
+          };
+        }
+        
+        if (toolInput.accion === 'h2h') {
+          // Antes: 5 partidos h2h completos (~1KB)
+          // Ahora: solo resumen + últimos 3 (~200 bytes)
+          const partidos = (data.partidos || []).slice(0, 3).map(p =>
+            `${p.fecha?.slice(0,7)}: ${p.local?.slice(0,8)} ${p.marcador} ${p.visitante?.slice(0,8)} (${p.ganador})`
+          ).join('; ');
+          
+          return {
+            h2h: data.h2h_resumen,
+            ultimos3_h2h: partidos
           };
         }
         
@@ -10370,24 +10426,88 @@ async function ejecutarAgenteProgol() {
   ];
   
   let iteration = 0;
-  const maxIterations = 60; // suficiente para 14 partidos × ~3 tools cada uno + final
+  const maxIterations = 80; // suficiente para 14 partidos × ~3 tools cada uno + final
+  
+  // 🎯 FIX 2: Función para compactar mensajes antiguos cuando crecen demasiado
+  // Reemplaza el historial completo por un resumen del estado actual
+  function compactarHistorial(messages) {
+    const partidosAnalizados = progolState.partidosActivos.filter(p => p.analizadoPorAgente);
+    const partidosPendientes = progolState.partidosActivos.filter(p => !p.analizadoPorAgente);
+    
+    // Resumen condensado del estado actual
+    const resumen = `[ESTADO ACTUAL DEL ANÁLISIS]
+Partidos analizados (${partidosAnalizados.length}/${progolState.partidosActivos.length}):
+${partidosAnalizados.map(p => 
+  `  P${p.numero} ${p.local?.slice(0,12)} vs ${p.visitante?.slice(0,12)}: L=${(p.probabilidades.L*100).toFixed(0)}% E=${(p.probabilidades.E*100).toFixed(0)}% V=${(p.probabilidades.V*100).toFixed(0)}% (${p.confianzaAgente})`
+).join('\n')}
+
+Partidos pendientes:
+${partidosPendientes.map(p => `  P${p.numero} ${p.local?.slice(0,12)} vs ${p.visitante?.slice(0,12)}`).join('\n')}
+
+Continúa analizando los partidos pendientes. Para cada uno: usa obtener_datos_equipo_oficial o web_search_partido, luego actualizar_probabilidades_partido.`;
+    
+    return [
+      messages[0], // mantener el primer mensaje del usuario
+      { role: 'assistant', content: 'Continúo el análisis.' },
+      { role: 'user', content: resumen }
+    ];
+  }
   
   try {
     while (iteration < maxIterations) {
       iteration++;
+      
+      // 🎯 FIX 2: Compactar contexto cada 6 iteraciones para evitar rate limit
+      if (iteration > 1 && iteration % 6 === 0 && messages.length > 8) {
+        const antesNum = messages.length;
+        const compactados = compactarHistorial(messages);
+        messages.length = 0;
+        messages.push(...compactados);
+        console.log(`[compactación] iter ${iteration}: ${antesNum} → ${messages.length} mensajes`);
+      }
+      
       actualizarStatusAnalisis(`Iteración ${iteration}/${maxIterations}...`);
       
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 4000,
-          system: systemPrompt,
-          tools: PROGOL_AGENT_TOOLS,
-          messages: messages
-        })
-      });
+      // 🎯 FIX 3: Pausa entre iteraciones para evitar rate limit (30K tokens/min)
+      // 5 segundos entre llamadas = max 12 llamadas/min, dejando margen
+      if (iteration > 1) {
+        await new Promise(r => setTimeout(r, 5000));
+      }
+      
+      // 🎯 FIX 3: Reintento con backoff exponencial si hits rate limit
+      let response;
+      let retries = 0;
+      const maxRetries = 4;
+      
+      while (retries <= maxRetries) {
+        response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-5',
+            max_tokens: 2000, // Reducido de 4000 - más eficiente, menos tokens output
+            system: systemPrompt,
+            tools: PROGOL_AGENT_TOOLS,
+            messages: messages
+          })
+        });
+        
+        if (response.ok) break;
+        
+        // Si no es rate limit, salir del loop de retry
+        const errorData = await response.clone().json().catch(() => ({}));
+        const isRateLimit = errorData?.error?.message?.includes('rate limit') ||
+                           errorData?.error?.message?.includes('30,000') ||
+                           response.status === 429;
+        
+        if (!isRateLimit || retries === maxRetries) break;
+        
+        // Backoff exponencial: 30s, 60s, 90s, 120s
+        const waitMs = (retries + 1) * 30000;
+        actualizarStatusAnalisis(`⏸️ Rate limit alcanzado. Esperando ${waitMs/1000}s antes de reintentar (${retries+1}/${maxRetries})...`);
+        await new Promise(r => setTimeout(r, waitMs));
+        retries++;
+      }
       
       const data = await response.json();
       
@@ -10480,7 +10600,7 @@ function mostrarPanelAnalisisIA() {
     <div class="analisis-content">
       <div class="analisis-spinner"></div>
       <div class="analisis-status" id="analisis-status">Iniciando análisis...</div>
-      <div class="analisis-warning">⚠️ Este proceso tarda 5-8 minutos. No cierres la app ni cambies de pestaña.</div>
+      <div class="analisis-warning">⚠️ Este proceso tarda 8-15 minutos (incluye pausas de 5s para evitar rate limits). No cierres la app ni cambies de pestaña.</div>
       <div class="analisis-progress" id="analisis-progress"></div>
     </div>
   `;
@@ -10552,7 +10672,7 @@ window.analizarConIA = async function() {
   const n = progolState.partidosActivos.length;
   const costoEstimado = (n * 0.05).toFixed(2);
   
-  if (!confirm(`El análisis con IA tarda 5-8 minutos y cuesta aproximadamente $${costoEstimado} USD de tu saldo Anthropic.\n\nInvestigará cada uno de los ${n} partidos en internet (forma reciente, lesiones, etc.) y generará la quiniela óptima.\n\n¿Continuar?`)) {
+  if (!confirm(`El análisis con IA tarda 8-15 minutos (con pausas anti rate-limit) y cuesta aproximadamente $${costoEstimado} USD de tu saldo Anthropic.\n\nInvestigará cada uno de los ${n} partidos en internet (forma reciente, lesiones, etc.) y generará la quiniela óptima.\n\n¿Continuar?`)) {
     return;
   }
   
