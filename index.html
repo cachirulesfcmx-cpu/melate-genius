@@ -4211,7 +4211,8 @@ function deepBacktest(draws, maxN, options = {}) {
     for (let i = 0; i < opts.ticketsPerDraw; i++) {
       const used = new Set();
       const tk = [];
-      while (tk.length < 6) {
+      const _pick = (typeof state !== 'undefined' && GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+      while (tk.length < _pick) {
         s = (s * 16807) % 2147483647;
         const n = (s % maxN) + 1;
         if (!used.has(n)) { used.add(n); tk.push(n); }
@@ -4469,16 +4470,17 @@ function generateWheel(fixedNumbers, n_tickets, fusedProbs, draws, maxN) {
 // - Comparativa entre tus tickets y lo óptimo
 function whatIfAnalysis(actualDraw, models, weights, draws, maxN, userTickets = []) {
   const actualSet = new Set(actualDraw);
-  
-  // El "mejor boleto" según el modelo: tomar los 6 con más alta prob fusionada
+  const pick = (typeof state !== 'undefined' && GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+
+  // El "mejor boleto" según el modelo: tomar los N con más alta prob fusionada
   const fused = fuseModels(models, weights, maxN);
   const ranked = [];
   for (let n = 1; n <= maxN; n++) ranked.push({ n, p: fused[n] });
   ranked.sort((a, b) => b.p - a.p);
-  const bestPossible = ranked.slice(0, 6).map(x => x.n).sort((a, b) => a - b);
+  const bestPossible = ranked.slice(0, pick).map(x => x.n).sort((a, b) => a - b);
   const bestPossibleHits = bestPossible.filter(n => actualSet.has(n)).length;
-  
-  // Cada modelo individual: top-6 según ese modelo
+
+  // Cada modelo individual: top-N según ese modelo
   const modelAnalysis = {};
   const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
   modelNames.forEach(name => {
@@ -4486,13 +4488,13 @@ function whatIfAnalysis(actualDraw, models, weights, draws, maxN, userTickets = 
     const r = [];
     for (let n = 1; n <= maxN; n++) r.push({ n, p: models[name][n] });
     r.sort((a, b) => b.p - a.p);
-    const top6 = r.slice(0, 6).map(x => x.n).sort((a, b) => a - b);
-    const hits = top6.filter(n => actualSet.has(n)).length;
-    modelAnalysis[name] = { ticket: top6, hits, matched: top6.filter(n => actualSet.has(n)) };
+    const topN = r.slice(0, pick).map(x => x.n).sort((a, b) => a - b);
+    const hits = topN.filter(n => actualSet.has(n)).length;
+    modelAnalysis[name] = { ticket: topN, hits, matched: topN.filter(n => actualSet.has(n)) };
   });
-  
+
   // Stats de tickets del usuario
-  let userBest = 0, userWorst = 6, userAvg = 0;
+  let userBest = 0, userWorst = pick, userAvg = 0;
   if (userTickets.length > 0) {
     const hits = userTickets.map(t => t.ticket.filter(n => actualSet.has(n)).length);
     userBest = Math.max(...hits);
@@ -4564,30 +4566,37 @@ function explainNumber(num, models, weights, draws, maxN) {
 
 // Parser de texto libre: detecta sorteo + 6 números
 function parseTextDraw(text, maxN) {
-  // Limpia el texto
   text = text.toString().trim();
-  
-  // Extrae todos los números del texto
   const allNums = text.match(/\d+/g);
   if (!allNums) return null;
-  
-  // Filtra a números válidos en el rango
-  const validNums = allNums
-    .map(s => parseInt(s, 10))
-    .filter(n => n >= 1 && n <= maxN);
-  
+
+  const isTris = typeof state !== 'undefined' && state.currentGame === 'tris';
   const pick = (typeof state !== 'undefined' && GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
-  const unique = [...new Set(validNums)];
-  
+  const minVal = isTris ? 0 : 1;
+
+  // Para Tris: conservar todos los dígitos incluyendo 0 y repetidos (posicional)
+  const allParsed = allNums.map(s => parseInt(s, 10)).filter(n => n >= minVal && n <= maxN);
+
+  if (isTris) {
+    // Tris: tomar los últimos `pick` valores en orden (posicional, puede haber repetidos)
+    // Filtramos números que parecen ser ID de sorteo (>9)
+    const trisNums = allParsed.filter(n => n >= 0 && n <= 9);
+    if (trisNums.length >= pick) {
+      const result = trisNums.slice(-pick); // últimos N en orden posicional
+      return { numbers: result, source: 'text' };
+    }
+    return null;
+  }
+
+  // Juegos de bolillas: únicos y ordenados
+  const unique = [...new Set(allParsed)];
   if (unique.length === pick) {
     return { numbers: unique.sort((a, b) => a - b), source: 'text' };
   }
-  
   if (unique.length > pick) {
     const lastN = unique.slice(-pick).sort((a, b) => a - b);
-    if (lastN.length === pick) return { numbers: lastN, source: 'text', warning: `Tomé los últimos ${pick} números detectados` };
+    return { numbers: lastN, source: 'text', warning: `Tomé los últimos ${pick} números detectados` };
   }
-  
   return null;
 }
 
@@ -4613,18 +4622,29 @@ function parseCSVDraws(csvText, maxN) {
     if (i === 0 && parts.some(p => /[a-zA-Z]/.test(p))) continue;
     
     // Extrae números válidos de las celdas
+    const isTris = typeof state !== 'undefined' && state.currentGame === 'tris';
+    const pick = (typeof state !== 'undefined' && GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+    const minVal = isTris ? 0 : 1;
     const nums = parts
       .map(p => parseInt(p, 10))
-      .filter(n => !isNaN(n) && n >= 1 && n <= maxN);
+      .filter(n => !isNaN(n) && n >= minVal && n <= maxN);
     
-    // Toma los primeros 6 únicos válidos
-    const unique = [...new Set(nums)];
-    const pick = (typeof state !== 'undefined' && GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
-    if (unique.length >= pick) {
-      const draw = unique.slice(0, pick).sort((a, b) => a - b);
-      draws.push(draw);
-    } else if (unique.length > 0) {
-      errors.push(`Línea ${i+1}: solo ${unique.length} números válidos (necesita ${pick})`);
+    if (isTris) {
+      // Tris: tomar los últimos `pick` dígitos en orden posicional
+      const trisNums = nums.filter(n => n >= 0 && n <= 9);
+      if (trisNums.length >= pick) {
+        draws.push(trisNums.slice(-pick));
+      } else if (trisNums.length > 0) {
+        errors.push(`Línea ${i+1}: solo ${trisNums.length} dígitos válidos (necesita ${pick})`);
+      }
+    } else {
+      const unique = [...new Set(nums)];
+      if (unique.length >= pick) {
+        const draw = unique.slice(0, pick).sort((a, b) => a - b);
+        draws.push(draw);
+      } else if (unique.length > 0) {
+        errors.push(`Línea ${i+1}: solo ${unique.length} números válidos (necesita ${pick})`);
+      }
     }
   }
   
@@ -6473,7 +6493,10 @@ function updatePickerInfo() {
 }
 
 function submitRealResult() {
-  const nums = (state.selectedNums || []).slice().sort((a, b) => a - b);
+  // Tris: preservar orden de selección (posicional). Otros juegos: ordenar.
+  const nums = state.currentGame === 'tris'
+    ? (state.selectedNums || []).slice()
+    : (state.selectedNums || []).slice().sort((a, b) => a - b);
   const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
   if (nums.length !== pick) {
     const label = state.currentGame === 'tris' ? 'dígitos' : 'números';
