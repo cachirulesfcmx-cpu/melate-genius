@@ -2932,10 +2932,10 @@ body.light-mode .theme-toggle {
     </div>
     
     <div style="font-size:12.5px;color:var(--text-3);line-height:1.5;margin-bottom:14px;">
-      Selecciona los 6 números sorteados manualmente.
+      Selecciona los números sorteados manualmente.
     </div>
     
-    <div class="picker-info" id="picker-info">0 de 6 números seleccionados</div>
+    <div class="picker-info" id="picker-info">0 de ? números seleccionados</div>
     
     <div class="num-picker-grid" id="num-picker-grid"></div>
     
@@ -2971,7 +2971,7 @@ body.light-mode .theme-toggle {
     <!-- CSV tab -->
     <div data-import-pane="csv" style="display:none;">
       <div style="font-size:12px;color:var(--text-3);margin-bottom:8px;line-height:1.5;">
-        Pega CSV completo o sube archivo. Cada línea debe tener 6 números separados por comas.
+        Pega CSV completo o sube archivo. Cada línea debe tener los números del sorteo separados por comas.
       </div>
       <input type="file" id="csv-file-input" accept=".csv,.txt" onchange="handleFileImport(event)" style="display:none;">
       <button class="import-file-btn" onclick="document.getElementById('csv-file-input').click()">
@@ -2985,7 +2985,7 @@ body.light-mode .theme-toggle {
     <!-- Manual tab -->
     <div data-import-pane="manual" style="display:none;">
       <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5;">
-        Selecciona los 6 números manualmente, ideal para un solo sorteo.
+        Selecciona los números manualmente, ideal para un solo sorteo.
       </div>
       <button class="btn btn-primary" onclick="closeModal('modal-import'); openAddResultModal();">
         Abrir selector de números →
@@ -4576,20 +4576,16 @@ function parseTextDraw(text, maxN) {
     .map(s => parseInt(s, 10))
     .filter(n => n >= 1 && n <= maxN);
   
-  // Necesitamos exactamente 6 números únicos
+  const pick = (typeof state !== 'undefined' && GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
   const unique = [...new Set(validNums)];
   
-  // Si hay más de 6, intenta detectar el "sorteo" (número >maxN al inicio)
-  // y descarta números fuera de rango
-  if (unique.length === 6) {
+  if (unique.length === pick) {
     return { numbers: unique.sort((a, b) => a - b), source: 'text' };
   }
   
-  // Si hay 7+, asume que el primero podría ser el ID del sorteo
-  if (unique.length >= 7) {
-    // Toma los últimos 6
-    const last6 = unique.slice(-6).sort((a, b) => a - b);
-    if (last6.length === 6) return { numbers: last6, source: 'text', warning: 'Tomé los últimos 6 números detectados' };
+  if (unique.length > pick) {
+    const lastN = unique.slice(-pick).sort((a, b) => a - b);
+    if (lastN.length === pick) return { numbers: lastN, source: 'text', warning: `Tomé los últimos ${pick} números detectados` };
   }
   
   return null;
@@ -4623,11 +4619,12 @@ function parseCSVDraws(csvText, maxN) {
     
     // Toma los primeros 6 únicos válidos
     const unique = [...new Set(nums)];
-    if (unique.length >= 6) {
-      const draw = unique.slice(0, 6).sort((a, b) => a - b);
+    const pick = (typeof state !== 'undefined' && GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+    if (unique.length >= pick) {
+      const draw = unique.slice(0, pick).sort((a, b) => a - b);
       draws.push(draw);
     } else if (unique.length > 0) {
-      errors.push(`Línea ${i+1}: solo ${unique.length} números válidos (necesita 6)`);
+      errors.push(`Línea ${i+1}: solo ${unique.length} números válidos (necesita ${pick})`);
     }
   }
   
@@ -6441,10 +6438,11 @@ function closeModal(id) {
 function renderNumberPicker() {
   const grid = document.getElementById('num-picker-grid');
   const max = state.maxNumber;
+  const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
   let html = '';
-  for (let n = 1; n <= max; n++) {
+  for (let n = (state.currentGame === 'tris' ? 0 : 1); n <= max; n++) {
     const selected = (state.selectedNums || []).includes(n);
-    const disabled = !selected && (state.selectedNums || []).length >= 6;
+    const disabled = !selected && (state.selectedNums || []).length >= pick;
     html += `<div class="np-cell ${selected ? 'selected' : ''} ${disabled ? 'disabled' : ''}" onclick="togglePickerNum(${n})">${n}</div>`;
   }
   grid.innerHTML = html;
@@ -6456,7 +6454,8 @@ function togglePickerNum(n) {
   if (idx >= 0) {
     state.selectedNums.splice(idx, 1);
   } else {
-    if (state.selectedNums.length >= 6) return;
+    const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+    if (state.selectedNums.length >= pick) return;
     state.selectedNums.push(n);
   }
   renderNumberPicker();
@@ -6466,18 +6465,22 @@ function togglePickerNum(n) {
 function updatePickerInfo() {
   const info = document.getElementById('picker-info');
   const n = (state.selectedNums || []).length;
-  info.textContent = `${n} de 6 números seleccionados`;
+  const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+  const label = state.currentGame === 'tris' ? 'dígitos' : 'números';
+  info.textContent = `${n} de ${pick} ${label} seleccionados`;
   const btn = document.getElementById('submit-result-btn');
-  if (btn) btn.disabled = n !== 6;
+  if (btn) btn.disabled = n !== pick;
 }
 
 function submitRealResult() {
   const nums = (state.selectedNums || []).slice().sort((a, b) => a - b);
-  if (nums.length !== 6) {
-    showToast('Selecciona exactamente 6 números', 'error');
+  const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+  if (nums.length !== pick) {
+    const label = state.currentGame === 'tris' ? 'dígitos' : 'números';
+    showToast(`Selecciona exactamente ${pick} ${label}`, 'error');
     return;
   }
-  if (new Set(nums).size !== 6) {
+  if (new Set(nums).size !== pick && state.currentGame !== 'tris') {
     showToast('Los números no pueden repetirse', 'error');
     return;
   }
@@ -7413,7 +7416,8 @@ function previewImportText() {
       window._importResult = { type: 'single', draw: result.numbers };
     } else {
       preview.classList.add('error', 'show');
-      preview.innerHTML = '✗ No pude detectar 6 números válidos. Intenta con formato como "Sorteo 4150: 5, 13, 36, 38, 39, 48"';
+      const _pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+      preview.innerHTML = `✗ No pude detectar ${_pick} números válidos. Intenta con formato como "5 13 36 38 39" o "5, 13, 36, 38, 39"`;
       window._importResult = null;
     }
   } else if (importMode === 'csv') {
