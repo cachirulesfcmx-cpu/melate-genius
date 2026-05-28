@@ -3110,6 +3110,9 @@ function decodeDraws(b64) {
     for (let j = 0; j < 6; j++) d.push(bin.charCodeAt(i + j));
     draws.push(d);
   }
+  return draws;
+}
+
 // Decode 5-byte-per-draw packed data (for Tris and Chispazo)
 function decodeDraws5(b64) {
   const bin = atob(b64);
@@ -3119,8 +3122,6 @@ function decodeDraws5(b64) {
     for (let j = 0; j < 5; j++) d.push(bin.charCodeAt(i + j));
     draws.push(d);
   }
-  return draws;
-}
   return draws;
 }
 
@@ -3460,126 +3461,6 @@ function evolveTrisWeights(draws) {
   const tot = Object.values(newWeights).reduce((a, b) => a + b, 0);
   for (const name of modelNames) newWeights[name] /= tot;
   state.trisWeights = newWeights;
-}
-
-
-// ── M10: Delta Pattern Model ─────────────────────────────────
-// Analiza las diferencias entre números consecutivos dentro de un sorteo
-// Los "deltas" tienen una distribución histórica — la usamos para puntuar boletos
-function deltaPatternModel(d, maxN) {
-  const probs = new Array(maxN + 1).fill(0);
-  if (d.length < 20) return probs.map((_, i) => i === 0 ? 0 : 1 / maxN);
-
-  // Aprende distribución de deltas históricos
-  const deltaFreq = new Array(maxN + 1).fill(0);
-  let deltaTot = 0;
-  d.forEach(draw => {
-    const s = [...draw].sort((a, b) => a - b);
-    for (let i = 1; i < s.length; i++) {
-      const delta = s[i] - s[i - 1];
-      if (delta >= 1 && delta <= maxN) { deltaFreq[delta]++; deltaTot++; }
-    }
-  });
-  const deltaProb = deltaFreq.map(f => f / (deltaTot || 1));
-
-  // Puntúa cada número por cuánto contribuye a deltas probables
-  // Si num = k, su probabilidad incluye la prob de que sea precedido/seguido por algún delta típico
-  for (let num = 1; num <= maxN; num++) {
-    let score = 0;
-    for (let delta = 1; delta <= Math.min(num - 1, maxN); delta++) {
-      score += deltaProb[delta] * (num - delta >= 1 ? 1 : 0);
-    }
-    for (let delta = 1; delta + num <= maxN; delta++) {
-      score += deltaProb[delta];
-    }
-    probs[num] = score;
-  }
-  const tot = probs.reduce((a, b) => a + b, 0);
-  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
-}
-
-// ── M11: Hot Streak Detector ─────────────────────────────────
-// Detecta números en racha caliente o fría reciente (ventana 15 sorteos)
-// Un número que aparece 3+ veces en los últimos 15 está "en racha"
-function hotStreakModel(d, maxN) {
-  const probs = new Array(maxN + 1).fill(1 / maxN);
-  if (d.length < 15) return probs;
-  const window = Math.min(15, d.length);
-  const recent = d.slice(-window);
-  const freq = new Array(maxN + 1).fill(0);
-  recent.forEach(r => r.forEach(n => { if (n >= 1 && n <= maxN) freq[n]++; }));
-  const expected = window * 6 / maxN;
-  for (let n = 1; n <= maxN; n++) {
-    const ratio = freq[n] / Math.max(expected, 0.1);
-    // Racha caliente: boost; racha fría: ligero boost por "rebote"
-    if (ratio >= 2.0) probs[n] = 1 / maxN * 1.8;       // muy caliente
-    else if (ratio >= 1.4) probs[n] = 1 / maxN * 1.3;  // caliente
-    else if (ratio === 0) probs[n] = 1 / maxN * 1.2;   // frío total → posible rebote
-    else probs[n] = 1 / maxN * (0.8 + ratio * 0.2);
-  }
-  const tot = probs.reduce((a, b) => a + b, 0);
-  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
-}
-
-// ── M12: Zone Pressure Model ─────────────────────────────────
-// Divide el rango en 4 zonas iguales. Zona sub-representada recientemente → boost
-function zonePressureModel(d, maxN) {
-  const probs = new Array(maxN + 1).fill(1 / maxN);
-  if (d.length < 10) return probs;
-  const nZones = 4;
-  const zoneSize = Math.ceil(maxN / nZones);
-  const recent = d.slice(-20);
-  const zoneFreq = new Array(nZones).fill(0);
-  let zoneTotal = 0;
-  recent.forEach(r => r.forEach(n => {
-    if (n >= 1 && n <= maxN) {
-      const z = Math.min(Math.floor((n - 1) / zoneSize), nZones - 1);
-      zoneFreq[z]++;
-      zoneTotal++;
-    }
-  }));
-  const zoneExpected = zoneTotal / nZones;
-  for (let n = 1; n <= maxN; n++) {
-    const z = Math.min(Math.floor((n - 1) / zoneSize), nZones - 1);
-    const deficit = Math.max(0, zoneExpected - zoneFreq[z]);
-    const boost = 1 + (deficit / Math.max(zoneExpected, 1)) * 0.5;
-    probs[n] = (1 / maxN) * boost;
-  }
-  const tot = probs.reduce((a, b) => a + b, 0);
-  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
-}
-
-// ── M13: Pair Intelligence ───────────────────────────────────
-// Pares de números que aparecen juntos con más frecuencia de lo esperado
-// Mejora sobre M3 (co-ocurrencia simple): usa lift = P(a,b) / P(a)*P(b)
-function pairLiftModel(d, maxN) {
-  const probs = new Array(maxN + 1).fill(0);
-  if (d.length < 30) return probs.map((_, i) => i === 0 ? 0 : 1 / maxN);
-  const freq = computeFrequencies(d, maxN);
-  const n = d.length;
-  const cooc = {};
-  d.forEach(r => {
-    for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
-      const k = `${Math.min(r[i],r[j])}_${Math.max(r[i],r[j])}`;
-      cooc[k] = (cooc[k] || 0) + 1;
-    }
-  });
-  const recent = d.slice(-25);
-  const recentSet = new Set(recent.flat());
-  for (let num = 1; num <= maxN; num++) {
-    let lift = 0;
-    recentSet.forEach(o => {
-      if (o === num) return;
-      const k = `${Math.min(num,o)}_${Math.max(num,o)}`;
-      const pAB = (cooc[k] || 0) / n;
-      const pA = freq[num] / (n * 6);
-      const pB = freq[o] / (n * 6);
-      if (pA > 0 && pB > 0) lift += pAB / (pA * pB * n);
-    });
-    probs[num] = lift;
-  }
-  const tot = probs.reduce((a, b) => a + b, 0);
-  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
 }
 
 
@@ -5581,9 +5462,15 @@ function ballClass(num, freq, expected, currentGap, avgGap) {
 }
 
 function renderDashboard() {
+  // Tris usa motor posicional — el dashboard estándar no aplica
+  if (state.currentGame === 'tris') {
+    renderTrisDashboard();
+    return;
+  }
+  const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
   const f = computeFrequencies(state.draws, state.maxNumber);
   const n = state.draws.length;
-  const exp = n * 6 / state.maxNumber;
+  const exp = n * pick / state.maxNumber;
   
   let hot = 1, cold = 1;
   for (let i = 2; i <= state.maxNumber; i++) {
@@ -5609,10 +5496,11 @@ function renderDashboard() {
   const overdueCurGap = last[overdue] >= 0 ? n - 1 - last[overdue] : n;
   document.getElementById('stat-overdue-sub').textContent = `${overdueCurGap} sorteos · ${overdueRatio.toFixed(2)}x`;
 
-  const ece = computeECE(state.fusedProbs, state.draws.slice(-100), state.maxNumber);
+  const ece = state.fusedProbs ? computeECE(state.fusedProbs, state.draws.slice(-100), state.maxNumber) : 0;
   document.getElementById('stat-ece').textContent = (ece * 100).toFixed(1) + '%';
 
   // Evolution strip
+  if (!state.performance) { renderTop15(); renderWeights(); return; }
   const bestModel = Object.entries(state.performance).sort((a, b) => b[1].score - a[1].score)[0];
   const evoText = document.getElementById('evo-best-model');
   if (evoText) evoText.textContent = modelDisplayName(bestModel[0]);
@@ -5627,6 +5515,192 @@ function renderDashboard() {
   renderTop15();
   // Weights
   renderWeights();
+}
+
+// ── Tris Dashboard (posicional) ──────────────────────────────
+function renderTrisDashboard() {
+  const cfg = GAME_CONFIG['tris'];
+  const draws = state.draws;
+  const n = draws.length;
+
+  // Stats posicionales
+  const posFreqs = Array.from({length: 5}, () => new Array(10).fill(0));
+  draws.forEach(draw => {
+    for (let p = 0; p < 5; p++) {
+      const d = draw[p];
+      if (d >= 0 && d <= 9) posFreqs[p][d]++;
+    }
+  });
+
+  // Hot / Cold por posición global
+  const allFreq = new Array(10).fill(0);
+  draws.forEach(draw => draw.forEach(d => { if (d >= 0 && d <= 9) allFreq[d]++; }));
+  const hot = allFreq.indexOf(Math.max(...allFreq));
+  const cold = allFreq.indexOf(Math.min(...allFreq));
+
+  const hotEl = document.getElementById('stat-hot');
+  const coldEl = document.getElementById('stat-cold');
+  if (hotEl) { hotEl.textContent = hot; document.getElementById('stat-hot-sub').textContent = `${allFreq[hot]} apariciones`; }
+  if (coldEl) { coldEl.textContent = cold; document.getElementById('stat-cold-sub').textContent = `${allFreq[cold]} apariciones`; }
+
+  const overdueEl = document.getElementById('stat-overdue');
+  if (overdueEl) {
+    // Overdue: dígito que lleva más sorteos sin salir en alguna posición
+    let maxGap = 0, maxGapDigit = 0;
+    for (let d = 0; d <= 9; d++) {
+      let lastIdx = -1;
+      draws.forEach((draw, i) => { if (draw.includes(d)) lastIdx = i; });
+      const gap = lastIdx >= 0 ? n - 1 - lastIdx : n;
+      if (gap > maxGap) { maxGap = gap; maxGapDigit = d; }
+    }
+    overdueEl.textContent = maxGapDigit;
+    document.getElementById('stat-overdue-sub').textContent = `${maxGap} sorteos ausente`;
+  }
+
+  const eceEl = document.getElementById('stat-ece');
+  if (eceEl) {
+    const conf = state.trisPrediction ? state.trisPrediction.confidence : 0;
+    eceEl.textContent = conf + '%';
+    const eceLabel = document.querySelector('[data-label="ece"]');
+    if (eceLabel) eceLabel.textContent = 'Confianza';
+  }
+
+  // Evolution strip — mostrar pesos Tris
+  const trisW = state.trisWeights || { bayesian: 0.30, gap: 0.28, markov: 0.25, fourier: 0.17 };
+  const best = Object.entries(trisW).sort((a, b) => b[1] - a[1])[0];
+  const trisModelNames = { bayesian: 'Bayesiano', gap: 'Gap Hazard', markov: 'Markov', fourier: 'Fourier' };
+  const evoText = document.getElementById('evo-best-model');
+  if (evoText) evoText.textContent = trisModelNames[best[0]] || best[0];
+  const evoScore = document.getElementById('evo-score');
+  if (evoScore) evoScore.textContent = (best[1] * 100).toFixed(1) + '%';
+  const genCount = document.getElementById('evo-gen-count');
+  if (genCount) genCount.textContent = state.evolutionLog.length;
+
+  // Top 15 — muestra los dígitos más frecuentes
+  const c = document.getElementById('top15-list');
+  if (c) {
+    const digitList = Array.from({length: 10}, (_, d) => ({ n: d, freq: allFreq[d] }))
+      .sort((a, b) => b.freq - a.freq);
+    const expected = n * 5 / 10;
+    c.innerHTML = digitList.map((x, i) => {
+      const pct = (x.freq / Math.max(...allFreq) * 100).toFixed(0);
+      const ratio = x.freq / expected;
+      const color = ratio > 1.1 ? '#ff6b85' : ratio > 1.02 ? '#ffb84d' : ratio < 0.9 ? '#64d2ff' : '#30d158';
+      return `<div class="prob-row">
+        <div class="prob-rank">#${i+1}</div>
+        <div class="ball sm">${x.n}</div>
+        <div class="prob-bar-wrap">
+          <div class="prob-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,${color},rgba(255,255,255,0.3));"></div>
+        </div>
+        <div class="prob-val">${x.freq} veces</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Weights — mostrar pesos del modelo Tris
+  const wc = document.getElementById('weights-list');
+  if (wc) {
+    const trisModels = [
+      { name: 'Bayesiano', key: 'bayesian', icon: '🧮', color: '#0a84ff' },
+      { name: 'Gap Hazard', key: 'gap', icon: '⏱', color: '#ff375f' },
+      { name: 'Markov', key: 'markov', icon: '🔗', color: '#5e5ce6' },
+      { name: 'Fourier', key: 'fourier', icon: '〜', color: '#ff9f0a' }
+    ];
+    wc.innerHTML = trisModels.sort((a,b) => (trisW[b.key]||0) - (trisW[a.key]||0)).map(m => {
+      const pct = ((trisW[m.key] || 0) * 100).toFixed(1);
+      return `<div class="weight-item">
+        <div class="weight-head">
+          <span class="weight-label"><span>${m.icon}</span>${m.name}</span>
+          <span class="weight-pct">${pct}%</span>
+        </div>
+        <div class="weight-bar"><div class="weight-bar-fill" style="width:${pct}%;background:${m.color};"></div></div>
+        <div class="weight-score">modelo posicional Tris</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── Tris Predictions Render ───────────────────────────────────
+function renderTrisPredictions(result) {
+  if (!result) return;
+  const c = document.getElementById('pred-results');
+  if (!c) return;
+
+  // Mostrar la predicción posicional por posición
+  const posLabels = ['P1', 'P2', 'P3', 'P4', 'P5'];
+  let html = `<div style="margin-bottom:14px;font-size:13px;color:var(--text-3);">
+    Predicción posicional · Confianza: <strong style="color:#30d158;">${result.confidence}%</strong>
+  </div>`;
+
+  // Generar combinaciones usando los top dígitos por posición
+  const combos = [];
+  for (let c2 = 0; c2 < (state.count || 3); c2++) {
+    const ticket = result.predictions.map((best, pos) => {
+      const opts = result.allOptions[pos];
+      return opts[c2 % opts.length];
+    });
+    combos.push(ticket);
+  }
+
+  // Diversificar combos (pequeña variación aleatoria)
+  const uniqueCombos = [];
+  const seen = new Set();
+  combos.forEach(t => {
+    const k = t.join(',');
+    if (!seen.has(k)) { seen.add(k); uniqueCombos.push(t); }
+  });
+  // Completar con variaciones si hacen falta
+  while (uniqueCombos.length < (state.count || 3)) {
+    const base = result.predictions.map((_, pos) => {
+      const opts = result.allOptions[pos];
+      return opts[Math.floor(Math.random() * opts.length)];
+    });
+    const k = base.join(',');
+    if (!seen.has(k)) { seen.add(k); uniqueCombos.push(base); }
+  }
+
+  state.lastPredictions = uniqueCombos.slice(0, state.count || 3).map(t => ({
+    ticket: t, score: { totalScore: result.confidence / 100, sum: t.reduce((a,b)=>a+b,0),
+    evens: t.filter(x=>x%2===0).length, odds: t.filter(x=>x%2!==0).length,
+    mean: t.reduce((a,b)=>a+b,0)/5, gap: 0 }
+  }));
+
+  html += `<div style="margin-bottom:16px;">
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:8px;">Top dígitos por posición:</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
+      ${result.positionStats.map((ps, i) => `
+        <div style="text-align:center;">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">${posLabels[i]}</div>
+          ${ps.sorted.slice(0,3).map((d, ri) => `
+            <div class="ball sm" style="margin:2px auto;opacity:${1-ri*0.25};${ri===0?'background:var(--accent);color:#000;':''}">
+              ${d.digit}
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>
+  </div>`;
+
+  html += state.lastPredictions.map((p, i) => `
+    <div class="glass pred-item" id="pred-${i}">
+      <div class="pred-head">
+        <div class="pred-rank">#${i+1}</div>
+        <div class="pred-score" style="color:#bf5af2;">${(p.score.totalScore*100).toFixed(1)}</div>
+      </div>
+      <div class="pred-balls">
+        ${p.ticket.map(d => `<div class="ball">${d}</div>`).join('')}
+      </div>
+      <div class="pred-meta">
+        <span class="tag">Σ ${p.score.sum}</span>
+        <span class="tag">Pares: ${p.score.evens}</span>
+        <span class="tag">Nones: ${p.score.odds}</span>
+      </div>
+      <div class="pred-actions">
+        <button class="pred-action-btn" onclick="savePrediction(${i}, this)">💾 Guardar</button>
+        <button class="pred-action-btn" onclick="copyTicket(${i})">📋 Copiar</button>
+      </div>
+    </div>`).join('');
+
+  c.innerHTML = html;
+  showToast('Predicción Tris generada ✨', 'success');
 }
 
 function modelDisplayName(key) {
@@ -5651,13 +5725,15 @@ function modelDisplayName(key) {
 function renderTop15() {
   const c = document.getElementById('top15-list');
   if (!c) return;
+  if (!state.fusedProbs) { c.innerHTML = ''; return; }
+  const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
   const list = [];
-  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: state.fusedProbs[n] });
+  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: state.fusedProbs[n] || 0 });
   list.sort((a, b) => b.p - a.p);
   const top = list.slice(0, 15);
   const mx = top[0].p;
   const f = computeFrequencies(state.draws, state.maxNumber);
-  const exp = state.draws.length * 6 / state.maxNumber;
+  const exp = state.draws.length * pick / state.maxNumber;
   c.innerHTML = top.map((x, i) => {
     const pct = (x.p / mx * 100).toFixed(0);
     const ratio = f[x.n] / exp;
@@ -5676,6 +5752,7 @@ function renderTop15() {
 function renderWeights() {
   const c = document.getElementById('weights-list');
   if (!c) return;
+  if (!state.weights || !state.performance) { c.innerHTML = '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:12px;">Evolución disponible con más datos</div>'; return; }
   const models = [
     { name: 'Bayesiano', key: 'bayesian', icon: '🧮', color: '#0a84ff' },
     { name: 'Gap Hazard', key: 'gapHazard', icon: '⏱', color: '#ff375f' },
@@ -6037,6 +6114,13 @@ function applyModeBias(fusedProbs, mode, maxN) {
 }
 
 function generatePredictions() {
+  // Tris usa motor posicional
+  if (state.currentGame === 'tris') {
+    const result = computeTrisModels(state.draws);
+    state.trisPrediction = result;
+    renderTrisPredictions(result);
+    return;
+  }
   // Portfolio mode goes to dedicated function
   if (state.mode === 'portfolio') {
     generatePortfolioMode();
