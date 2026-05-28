@@ -203,9 +203,13 @@ body {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 8px rgba(0,0,0,0.2);
 }
 .game-btn.tris { background: linear-gradient(135deg, rgba(255,159,10,0.2), rgba(255,159,10,0.05)); border-color: rgba(255,159,10,0.3); color: #ff9f0a; }
-.game-btn.tris.active { background: linear-gradient(135deg, rgba(255,159,10,0.4), rgba(255,159,10,0.2)); border-color: #ff9f0a; }
+.game-btn.tris.active { background: linear-gradient(135deg, rgba(255,159,10,0.4), rgba(255,159,10,0.2)); border-color: #ff9f0a; box-shadow: 0 0 12px rgba(255,159,10,0.4); }
 .game-btn.chispazo { background: linear-gradient(135deg, rgba(48,209,88,0.2), rgba(48,209,88,0.05)); border-color: rgba(48,209,88,0.3); color: #30d158; }
-.game-btn.chispazo.active { background: linear-gradient(135deg, rgba(48,209,88,0.4), rgba(48,209,88,0.2)); border-color: #30d158; }
+.game-btn.chispazo.active { background: linear-gradient(135deg, rgba(48,209,88,0.4), rgba(48,209,88,0.2)); border-color: #30d158; box-shadow: 0 0 12px rgba(48,209,88,0.4); }
+.tris-digit-box { display:inline-flex; flex-direction:column; align-items:center; gap:4px; }
+.tris-alts { display:flex; gap:3px; margin-top:2px; }
+.tris-alt-digit { font-size:10px; opacity:0.55; background:rgba(255,255,255,0.08); border-radius:4px; padding:1px 4px; }
+.ai-model-count { font-size:11px; color:rgba(255,255,255,0.45); margin-top:4px; }
 
 /* CONTENT */
 .content {
@@ -3229,65 +3233,440 @@ function momentumModel(d, maxN, alpha = 0.15) {
 //  TRIS AI — Análisis posicional de dígitos
 // ═══════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════
+//  TRIS AI v2 — Motor posicional completo con 4 modelos
+// ═══════════════════════════════════════════════════════════
+
+function trisBayesian(draws, pos, decay = 0.95) {
+  const counts = new Array(10).fill(1.0);
+  draws.forEach((draw, i) => {
+    const w = Math.pow(decay, draws.length - 1 - i);
+    const d = Array.isArray(draw) ? draw[pos] : undefined;
+    if (d !== undefined && d >= 0 && d <= 9) counts[d] += w;
+  });
+  const tot = counts.reduce((a, b) => a + b, 0);
+  return counts.map(c => c / tot);
+}
+
+function trisGapHazard(draws, pos) {
+  const last = new Array(10).fill(-1);
+  const totGap = new Array(10).fill(0);
+  const gapCnt = new Array(10).fill(0);
+  draws.forEach((draw, i) => {
+    const d = Array.isArray(draw) ? draw[pos] : undefined;
+    if (d !== undefined && d >= 0 && d <= 9) {
+      if (last[d] >= 0) { totGap[d] += i - last[d]; gapCnt[d]++; }
+      last[d] = i;
+    }
+  });
+  const n = draws.length;
+  const h = new Array(10).fill(0);
+  for (let digit = 0; digit <= 9; digit++) {
+    const avg = gapCnt[digit] > 0 ? totGap[digit] / gapCnt[digit] : n / 10;
+    const cur = last[digit] >= 0 ? n - 1 - last[digit] : n;
+    const ratio = cur / Math.max(avg, 1);
+    h[digit] = 1 / (1 + Math.exp(-2.0 * (ratio - 1)));
+  }
+  const tot = h.reduce((a, b) => a + b, 0);
+  return h.map(x => x / (tot || 1));
+}
+
+function trisMarkov(draws, pos) {
+  if (draws.length < 5) return new Array(10).fill(0.1);
+  const trans = Array.from({ length: 10 }, () => new Array(10).fill(0.5));
+  for (let t = 1; t < draws.length; t++) {
+    const prev = Array.isArray(draws[t-1]) ? draws[t-1][pos] : undefined;
+    const curr = Array.isArray(draws[t]) ? draws[t][pos] : undefined;
+    if (prev !== undefined && curr !== undefined && prev >= 0 && prev <= 9 && curr >= 0 && curr <= 9) {
+      trans[prev][curr]++;
+    }
+  }
+  for (let i = 0; i < 10; i++) {
+    const s = trans[i].reduce((a, b) => a + b, 0);
+    if (s > 0) trans[i] = trans[i].map(x => x / s);
+  }
+  const last = draws[draws.length - 1];
+  const lastDigit = Array.isArray(last) ? last[pos] : undefined;
+  if (lastDigit !== undefined && lastDigit >= 0 && lastDigit <= 9) {
+    return trans[lastDigit];
+  }
+  const avg = new Array(10).fill(0);
+  for (let i = 0; i < 10; i++) for (let j = 0; j < 10; j++) avg[j] += trans[i][j] / 10;
+  return avg;
+}
+
+function trisFourier(draws, pos) {
+  const n = draws.length;
+  if (n < 30) return new Array(10).fill(0.1);
+  const series = draws.map(draw => Array.isArray(draw) ? (draw[pos] !== undefined ? draw[pos] : -1) : -1);
+  const probs = new Array(10).fill(0);
+  for (let digit = 0; digit <= 9; digit++) {
+    const binary = series.map(d => d === digit ? 1 : 0);
+    const mean = binary.reduce((a, b) => a + b, 0) / n;
+    let var0 = 0;
+    binary.forEach(v => { var0 += (v - mean) ** 2; });
+    var0 /= n;
+    if (var0 < 1e-9) { probs[digit] = 0.1; continue; }
+    const maxLag = Math.min(30, Math.floor(n / 3));
+    let bestCorr = 0, bestLag = 0;
+    for (let lag = 1; lag <= maxLag; lag++) {
+      let cov = 0;
+      for (let i = 0; i < n - lag; i++) cov += (binary[i] - mean) * (binary[i + lag] - mean);
+      cov /= (n - lag);
+      const corr = cov / var0;
+      if (Math.abs(corr) > Math.abs(bestCorr)) { bestCorr = corr; bestLag = lag; }
+    }
+    let prob = 0.1;
+    if (Math.abs(bestCorr) > 0.05 && bestLag > 0) {
+      let lastIdx = -1;
+      for (let t = n - 1; t >= 0; t--) if (binary[t] === 1) { lastIdx = t; break; }
+      if (lastIdx >= 0) {
+        const sinceLast = n - 1 - lastIdx;
+        const distToReturn = (bestLag - sinceLast % bestLag) % bestLag;
+        const boost = Math.exp(-distToReturn / (bestLag * 0.4)) * Math.abs(bestCorr);
+        prob = 0.1 * (1 + 3 * boost);
+      }
+    }
+    probs[digit] = Math.max(prob, 0.01);
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map(p => p / (tot || 1));
+}
+
 function computeTrisModels(draws) {
   const POSITIONS = 5;
-  const results = { predictions: [], confidence: 0, positionStats: [] };
-  
+  const results = { predictions: [], confidence: 0, positionStats: [], allOptions: [] };
+
   if (!draws || draws.length === 0) {
     results.predictions = [0, 0, 0, 0, 0];
+    results.allOptions = Array.from({length: 5}, () => [0,1,2,3,4,5,6,7,8,9].slice(0,3));
     results.confidence = 10;
     return results;
   }
-  
+
+  // Pesos de modelos para Tris (se pueden evolucionar)
+  const trisWeights = state.trisWeights || { bayesian: 0.30, gap: 0.28, markov: 0.25, fourier: 0.17 };
+
   for (let pos = 0; pos < POSITIONS; pos++) {
-    const freq = new Array(10).fill(0);
-    const lastSeen = new Array(10).fill(-1);
-    const n = draws.length;
-    
-    draws.forEach((draw, i) => {
-      const digit = draw[pos];
-      if (digit !== undefined && digit >= 0 && digit <= 9) {
-        freq[digit]++;
-        lastSeen[digit] = i;
-      }
-    });
-    
-    // Score combinado: frecuencia (inversa) + brecha temporal
-    const scores = new Array(10).fill(0);
-    const expectedFreq = n / 10;
-    
+    const bayP = trisBayesian(draws, pos);
+    const gapP = trisGapHazard(draws, pos);
+    const marP = trisMarkov(draws, pos);
+    const fouP = trisFourier(draws, pos);
+
+    const fusedScores = new Array(10).fill(0);
     for (let d = 0; d <= 9; d++) {
-      const freqScore = n > 0 ? (expectedFreq - freq[d] + expectedFreq) / (2 * expectedFreq) : 0.5;
-      const gap = lastSeen[d] === -1 ? n : n - lastSeen[d];
-      const expectedGap = 10;
-      const gapScore = Math.min(gap / expectedGap, 2) / 2;
-      
-      // Trend: apariciones en últimos 20 sorteos
-      const recent = draws.slice(-20);
-      const recentCount = recent.filter(d2 => d2[pos] === d).length;
-      const trendScore = recentCount / 20;
-      
-      scores[d] = 0.35 * freqScore + 0.35 * gapScore + 0.30 * trendScore;
-      scores[d] += (Math.random() - 0.5) * 0.05; // small noise
+      fusedScores[d] =
+        trisWeights.bayesian * bayP[d] +
+        trisWeights.gap * gapP[d] +
+        trisWeights.markov * marP[d] +
+        trisWeights.fourier * fouP[d];
+      fusedScores[d] += (Math.random() - 0.5) * 0.008; // tiny noise for diversity
     }
-    
-    const bestDigit = scores.indexOf(Math.max(...scores));
-    results.predictions.push(bestDigit);
-    
-    // Stats para UI
-    const sorted = scores.map((s, i) => ({ digit: i, score: s, freq: freq[i], gap: n - lastSeen[i] }))
+
+    const sorted = fusedScores
+      .map((s, i) => ({ digit: i, score: s }))
       .sort((a, b) => b.score - a.score);
-    results.positionStats.push({ position: pos + 1, sorted, hot: sorted[0].digit, cold: sorted[sorted.length-1].digit });
+
+    const bestDigit = sorted[0].digit;
+    results.predictions.push(bestDigit);
+    results.allOptions.push(sorted.slice(0, 3).map(x => x.digit));
+
+    // Frecuencia real por posición para stats
+    const freq = new Array(10).fill(0);
+    draws.forEach(draw => {
+      const d = Array.isArray(draw) ? draw[pos] : undefined;
+      if (d !== undefined && d >= 0 && d <= 9) freq[d]++;
+    });
+    const lastSeen = new Array(10).fill(-1);
+    draws.forEach((draw, i) => {
+      const d = Array.isArray(draw) ? draw[pos] : undefined;
+      if (d !== undefined && d >= 0 && d <= 9) lastSeen[d] = i;
+    });
+
+    results.positionStats.push({
+      position: pos + 1,
+      sorted: sorted.map(x => ({
+        digit: x.digit,
+        score: x.score,
+        freq: freq[x.digit],
+        gap: lastSeen[x.digit] >= 0 ? draws.length - lastSeen[x.digit] : draws.length
+      })),
+      hot: sorted[0].digit,
+      cold: sorted[sorted.length - 1].digit
+    });
   }
-  
-  const dataScore = Math.min(draws.length / 100, 1);
-  results.confidence = Math.round(20 + dataScore * 65);
+
+  const dataScore = Math.min(draws.length / 80, 1);
+  results.confidence = Math.round(18 + dataScore * 70);
   return results;
 }
 
 function predictTris() {
-  const draws = state.draws; // draws aquí son arrays de 5 dígitos
-  return computeTrisModels(draws);
+  return computeTrisModels(state.draws);
+}
+
+// Evolución de pesos Tris — evalúa cada modelo en últimos N sorteos
+function evolveTrisWeights(draws) {
+  if (draws.length < 20) return;
+  const window = Math.min(draws.length - 5, 50);
+  const testStart = draws.length - window;
+  const modelNames = ['bayesian', 'gap', 'markov', 'fourier'];
+  const hits = { bayesian: 0, gap: 0, markov: 0, fourier: 0 };
+  let total = 0;
+
+  for (let t = testStart; t < draws.length; t++) {
+    const train = draws.slice(0, t);
+    const actual = draws[t];
+    for (let pos = 0; pos < 5; pos++) {
+      const actualDigit = Array.isArray(actual) ? actual[pos] : undefined;
+      if (actualDigit === undefined) continue;
+      const preds = {
+        bayesian: trisBayesian(train, pos),
+        gap: trisGapHazard(train, pos),
+        markov: trisMarkov(train, pos),
+        fourier: trisFourier(train, pos)
+      };
+      for (const name of modelNames) {
+        const top3 = preds[name].map((p, i) => ({p, i})).sort((a,b) => b.p - a.p).slice(0, 3).map(x => x.i);
+        if (top3.includes(actualDigit)) hits[name]++;
+      }
+      total++;
+    }
+  }
+
+  if (total === 0) return;
+  const scores = {};
+  for (const name of modelNames) scores[name] = hits[name] / total;
+  const maxScore = Math.max(...Object.values(scores));
+  const exps = {};
+  let sumExp = 0;
+  for (const name of modelNames) { exps[name] = Math.exp((scores[name] - maxScore) * 30); sumExp += exps[name]; }
+  const newWeights = {};
+  for (const name of modelNames) newWeights[name] = Math.max(0.08, exps[name] / sumExp);
+  const tot = Object.values(newWeights).reduce((a, b) => a + b, 0);
+  for (const name of modelNames) newWeights[name] /= tot;
+  state.trisWeights = newWeights;
+}
+
+
+// ── M10: Delta Pattern Model ─────────────────────────────────
+// Analiza las diferencias entre números consecutivos dentro de un sorteo
+// Los "deltas" tienen una distribución histórica — la usamos para puntuar boletos
+function deltaPatternModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(0);
+  if (d.length < 20) return probs.map((_, i) => i === 0 ? 0 : 1 / maxN);
+
+  // Aprende distribución de deltas históricos
+  const deltaFreq = new Array(maxN + 1).fill(0);
+  let deltaTot = 0;
+  d.forEach(draw => {
+    const s = [...draw].sort((a, b) => a - b);
+    for (let i = 1; i < s.length; i++) {
+      const delta = s[i] - s[i - 1];
+      if (delta >= 1 && delta <= maxN) { deltaFreq[delta]++; deltaTot++; }
+    }
+  });
+  const deltaProb = deltaFreq.map(f => f / (deltaTot || 1));
+
+  // Puntúa cada número por cuánto contribuye a deltas probables
+  // Si num = k, su probabilidad incluye la prob de que sea precedido/seguido por algún delta típico
+  for (let num = 1; num <= maxN; num++) {
+    let score = 0;
+    for (let delta = 1; delta <= Math.min(num - 1, maxN); delta++) {
+      score += deltaProb[delta] * (num - delta >= 1 ? 1 : 0);
+    }
+    for (let delta = 1; delta + num <= maxN; delta++) {
+      score += deltaProb[delta];
+    }
+    probs[num] = score;
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
+}
+
+// ── M11: Hot Streak Detector ─────────────────────────────────
+// Detecta números en racha caliente o fría reciente (ventana 15 sorteos)
+// Un número que aparece 3+ veces en los últimos 15 está "en racha"
+function hotStreakModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(1 / maxN);
+  if (d.length < 15) return probs;
+  const window = Math.min(15, d.length);
+  const recent = d.slice(-window);
+  const freq = new Array(maxN + 1).fill(0);
+  recent.forEach(r => r.forEach(n => { if (n >= 1 && n <= maxN) freq[n]++; }));
+  const expected = window * 6 / maxN;
+  for (let n = 1; n <= maxN; n++) {
+    const ratio = freq[n] / Math.max(expected, 0.1);
+    // Racha caliente: boost; racha fría: ligero boost por "rebote"
+    if (ratio >= 2.0) probs[n] = 1 / maxN * 1.8;       // muy caliente
+    else if (ratio >= 1.4) probs[n] = 1 / maxN * 1.3;  // caliente
+    else if (ratio === 0) probs[n] = 1 / maxN * 1.2;   // frío total → posible rebote
+    else probs[n] = 1 / maxN * (0.8 + ratio * 0.2);
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
+}
+
+// ── M12: Zone Pressure Model ─────────────────────────────────
+// Divide el rango en 4 zonas iguales. Zona sub-representada recientemente → boost
+function zonePressureModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(1 / maxN);
+  if (d.length < 10) return probs;
+  const nZones = 4;
+  const zoneSize = Math.ceil(maxN / nZones);
+  const recent = d.slice(-20);
+  const zoneFreq = new Array(nZones).fill(0);
+  let zoneTotal = 0;
+  recent.forEach(r => r.forEach(n => {
+    if (n >= 1 && n <= maxN) {
+      const z = Math.min(Math.floor((n - 1) / zoneSize), nZones - 1);
+      zoneFreq[z]++;
+      zoneTotal++;
+    }
+  }));
+  const zoneExpected = zoneTotal / nZones;
+  for (let n = 1; n <= maxN; n++) {
+    const z = Math.min(Math.floor((n - 1) / zoneSize), nZones - 1);
+    const deficit = Math.max(0, zoneExpected - zoneFreq[z]);
+    const boost = 1 + (deficit / Math.max(zoneExpected, 1)) * 0.5;
+    probs[n] = (1 / maxN) * boost;
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
+}
+
+// ── M13: Pair Intelligence ───────────────────────────────────
+// Pares de números que aparecen juntos con más frecuencia de lo esperado
+// Mejora sobre M3 (co-ocurrencia simple): usa lift = P(a,b) / P(a)*P(b)
+function pairLiftModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(0);
+  if (d.length < 30) return probs.map((_, i) => i === 0 ? 0 : 1 / maxN);
+  const freq = computeFrequencies(d, maxN);
+  const n = d.length;
+  const cooc = {};
+  d.forEach(r => {
+    for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+      const k = `${Math.min(r[i],r[j])}_${Math.max(r[i],r[j])}`;
+      cooc[k] = (cooc[k] || 0) + 1;
+    }
+  });
+  const recent = d.slice(-25);
+  const recentSet = new Set(recent.flat());
+  for (let num = 1; num <= maxN; num++) {
+    let lift = 0;
+    recentSet.forEach(o => {
+      if (o === num) return;
+      const k = `${Math.min(num,o)}_${Math.max(num,o)}`;
+      const pAB = (cooc[k] || 0) / n;
+      const pA = freq[num] / (n * 6);
+      const pB = freq[o] / (n * 6);
+      if (pA > 0 && pB > 0) lift += pAB / (pA * pB * n);
+    });
+    probs[num] = lift;
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
+}
+
+
+// ── M10: Delta Pattern Model ─────────────────────────────────
+function deltaPatternModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(0);
+  if (d.length < 20) return probs.map((_, i) => i === 0 ? 0 : 1 / maxN);
+  const deltaFreq = new Array(maxN + 1).fill(0);
+  let deltaTot = 0;
+  d.forEach(draw => {
+    const s = [...draw].sort((a, b) => a - b);
+    for (let i = 1; i < s.length; i++) {
+      const delta = s[i] - s[i - 1];
+      if (delta >= 1 && delta <= maxN) { deltaFreq[delta]++; deltaTot++; }
+    }
+  });
+  const deltaProb = deltaFreq.map(f => f / (deltaTot || 1));
+  for (let num = 1; num <= maxN; num++) {
+    let score = 0;
+    for (let delta = 1; delta <= Math.min(num - 1, maxN); delta++) score += deltaProb[delta];
+    for (let delta = 1; delta + num <= maxN; delta++) score += deltaProb[delta];
+    probs[num] = score;
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
+}
+
+// ── M11: Hot Streak Detector ─────────────────────────────────
+function hotStreakModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(1 / maxN);
+  if (d.length < 15) return probs;
+  const window = Math.min(15, d.length);
+  const recent = d.slice(-window);
+  const freq = new Array(maxN + 1).fill(0);
+  recent.forEach(r => r.forEach(n => { if (n >= 1 && n <= maxN) freq[n]++; }));
+  const expected = window * 6 / maxN;
+  for (let n = 1; n <= maxN; n++) {
+    const ratio = freq[n] / Math.max(expected, 0.1);
+    if (ratio >= 2.0) probs[n] = 1 / maxN * 1.8;
+    else if (ratio >= 1.4) probs[n] = 1 / maxN * 1.3;
+    else if (ratio === 0) probs[n] = 1 / maxN * 1.2;
+    else probs[n] = 1 / maxN * (0.8 + ratio * 0.2);
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
+}
+
+// ── M12: Zone Pressure Model ─────────────────────────────────
+function zonePressureModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(1 / maxN);
+  if (d.length < 10) return probs;
+  const nZones = 4;
+  const zoneSize = Math.ceil(maxN / nZones);
+  const recent = d.slice(-20);
+  const zoneFreq = new Array(nZones).fill(0);
+  let zoneTotal = 0;
+  recent.forEach(r => r.forEach(n => {
+    if (n >= 1 && n <= maxN) {
+      const z = Math.min(Math.floor((n - 1) / zoneSize), nZones - 1);
+      zoneFreq[z]++; zoneTotal++;
+    }
+  }));
+  const zoneExpected = zoneTotal / nZones;
+  for (let n = 1; n <= maxN; n++) {
+    const z = Math.min(Math.floor((n - 1) / zoneSize), nZones - 1);
+    const deficit = Math.max(0, zoneExpected - zoneFreq[z]);
+    probs[n] = (1 / maxN) * (1 + (deficit / Math.max(zoneExpected, 1)) * 0.5);
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
+}
+
+// ── M13: Pair Lift Model ─────────────────────────────────────
+function pairLiftModel(d, maxN) {
+  const probs = new Array(maxN + 1).fill(0);
+  if (d.length < 30) return probs.map((_, i) => i === 0 ? 0 : 1 / maxN);
+  const freq = computeFrequencies(d, maxN);
+  const n = d.length;
+  const cooc = {};
+  d.forEach(r => {
+    for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+      const k = `${Math.min(r[i],r[j])}_${Math.max(r[i],r[j])}`;
+      cooc[k] = (cooc[k] || 0) + 1;
+    }
+  });
+  const recent = d.slice(-25);
+  const recentSet = new Set(recent.flat());
+  for (let num = 1; num <= maxN; num++) {
+    let lift = 0;
+    recentSet.forEach(o => {
+      if (o === num) return;
+      const k = `${Math.min(num,o)}_${Math.max(num,o)}`;
+      const pAB = (cooc[k] || 0) / n;
+      const pA = freq[num] / (n * 6);
+      const pB = freq[o] / (n * 6);
+      if (pA > 0 && pB > 0) lift += pAB / (pA * pB * n);
+    });
+    probs[num] = lift;
+  }
+  const tot = probs.reduce((a, b) => a + b, 0);
+  return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
 }
 
 function computeAllModels(d, maxN) {
@@ -3300,7 +3679,11 @@ function computeAllModels(d, maxN) {
     markov: markovModel(d, maxN),
     fourier: fourierModel(d, maxN),
     positional: positionalModel(d, maxN),
-    gaussian: gaussianMixtureModel(d, maxN)
+    gaussian: gaussianMixtureModel(d, maxN),
+    delta: deltaPatternModel(d, maxN),
+    hotStreak: hotStreakModel(d, maxN),
+    zonePressure: zonePressureModel(d, maxN),
+    pairLift: pairLiftModel(d, maxN)
   };
 }
 
@@ -3308,15 +3691,19 @@ function computeAllModels(d, maxN) {
 function fuseModels(models, weights, maxN) {
   const res = new Array(maxN + 1).fill(0);
   for (let n = 1; n <= maxN; n++) {
-    res[n] = (weights.bayesian || 0) * models.bayesian[n]
-           + (weights.gapHazard || 0) * models.gapHazard[n]
-           + (weights.cooccurrence || 0) * models.cooccurrence[n]
-           + (weights.frequency || 0) * models.frequency[n]
-           + (weights.momentum || 0) * models.momentum[n]
+    res[n] = (weights.bayesian || 0) * (models.bayesian ? models.bayesian[n] : 0)
+           + (weights.gapHazard || 0) * (models.gapHazard ? models.gapHazard[n] : 0)
+           + (weights.cooccurrence || 0) * (models.cooccurrence ? models.cooccurrence[n] : 0)
+           + (weights.frequency || 0) * (models.frequency ? models.frequency[n] : 0)
+           + (weights.momentum || 0) * (models.momentum ? models.momentum[n] : 0)
            + (weights.markov || 0) * (models.markov ? models.markov[n] : 0)
            + (weights.fourier || 0) * (models.fourier ? models.fourier[n] : 0)
            + (weights.positional || 0) * (models.positional ? models.positional[n] : 0)
-           + (weights.gaussian || 0) * (models.gaussian ? models.gaussian[n] : 0);
+           + (weights.gaussian || 0) * (models.gaussian ? models.gaussian[n] : 0)
+           + (weights.delta || 0) * (models.delta ? models.delta[n] : 0)
+           + (weights.hotStreak || 0) * (models.hotStreak ? models.hotStreak[n] : 0)
+           + (weights.zonePressure || 0) * (models.zonePressure ? models.zonePressure[n] : 0)
+           + (weights.pairLift || 0) * (models.pairLift ? models.pairLift[n] : 0);
   }
   const s = res.reduce((a, b) => a + b, 0);
   return res.map(x => x / (s || 1));
@@ -3363,8 +3750,8 @@ function evaluateModelOnDraws(model, draws, maxN, minTrain = 100) {
 // Walk-forward over a small window to quickly evaluate models
 function quickEvalModels(draws, maxN) {
   // Smaller eval window to run fast
-  const testStart = Math.max(100, draws.length - 40);
-  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian'];
+  const testStart = Math.max(50, draws.length - 80); // multi-ventana: evalúa más historia
+  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
   const scores = {}, hits = {};
   modelNames.forEach(n => { scores[n] = 0; hits[n] = 0; });
   let total = 0;
@@ -3382,7 +3769,11 @@ function quickEvalModels(draws, maxN) {
       markov: markovModel(train, maxN),
       fourier: fourierModel(train, maxN),
       positional: positionalModel(train, maxN),
-      gaussian: gaussianMixtureModel(train, maxN)
+      gaussian: gaussianMixtureModel(train, maxN),
+      delta: deltaPatternModel(train, maxN),
+      hotStreak: hotStreakModel(train, maxN),
+      zonePressure: zonePressureModel(train, maxN),
+      pairLift: pairLiftModel(train, maxN)
     };
     
     for (const [name, probs] of Object.entries(allProbs)) {
@@ -3458,11 +3849,12 @@ function evolveEnsemble(draws, maxN) {
 //  TICKET GENERATION
 // ═══════════════════════════════════════════════════════════
 
-function generateTicket(probs, maxN, rng) {
+function generateTicket(probs, maxN, rng, pick) {
+  const pickN = pick || (state && GAME_CONFIG[state.currentGame] ? (GAME_CONFIG[state.currentGame].pick || 6) : 6);
   const t = [];
   const used = new Set();
   let attempts = 0;
-  while (t.length < 6 && attempts < 1000) {
+  while (t.length < pickN && attempts < 1000) {
     attempts++;
     const r = rng();
     let cum = 0;
@@ -3472,7 +3864,7 @@ function generateTicket(probs, maxN, rng) {
       if (r <= cum) { t.push(n); used.add(n); break; }
     }
   }
-  for (let n = 1; n <= maxN && t.length < 6; n++) {
+  for (let n = 1; n <= maxN && t.length < pickN; n++) {
     if (!used.has(n)) { t.push(n); used.add(n); }
   }
   return t.sort((a, b) => a - b);
@@ -3486,11 +3878,12 @@ function jaccard(a, b) {
 }
 
 function scoreTicket(t, p, d, maxN) {
+  const pickLen = t.length || 6;
   let pr = 0;
   t.forEach(n => { pr += Math.log(Math.max(p[n], 1e-10)); });
-  pr /= 6;
+  pr /= pickLen;
   const evens = t.filter(n => n % 2 === 0).length;
-  const parity = 1 - Math.abs(evens / 6 - 0.5) * 2;
+  const parity = 1 - Math.abs(evens / pickLen - 0.5) * 2;
   const dec = t.map(n => Math.floor((n - 1) / 10));
   const decUnique = new Set(dec).size;
   const spread = decUnique / Math.ceil(maxN / 10);
@@ -3502,10 +3895,10 @@ function scoreTicket(t, p, d, maxN) {
   t.forEach(num => {
     const avg = n / Math.max(f[num], 1);
     const cur = last[num] >= 0 ? n - 1 - last[num] : n;
-    gap += Math.min(cur / avg, 2) / 6;
+    gap += Math.min(cur / avg, 2) / pickLen;
   });
   const sum = t.reduce((a, b) => a + b, 0);
-  const mean = sum / 6;
+  const mean = sum / pickLen;
   const range = Math.max(...t) - Math.min(...t);
   return {
     probScore: Math.exp(pr),
@@ -3853,7 +4246,7 @@ function deepBacktest(draws, maxN, options = {}) {
   
   let totalSpent = 0;
   let totalWon = 0;
-  let modelHits = { bayesian: 0, gapHazard: 0, cooccurrence: 0, frequency: 0, momentum: 0, markov: 0, fourier: 0, positional: 0, gaussian: 0 };
+  let modelHits = { bayesian: 0, gapHazard: 0, cooccurrence: 0, frequency: 0, momentum: 0, markov: 0, fourier: 0, positional: 0, gaussian: 0, delta: 0, hotStreak: 0, zonePressure: 0, pairLift: 0 };
   let modelTotals = 0;
   
   // En fastMode, reusa los pesos por más tiempo
@@ -4192,7 +4585,7 @@ function whatIfAnalysis(actualDraw, models, weights, draws, maxN, userTickets = 
   
   // Cada modelo individual: top-6 según ese modelo
   const modelAnalysis = {};
-  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian'];
+  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
   modelNames.forEach(name => {
     if (!models[name]) return;
     const r = [];
@@ -4231,7 +4624,7 @@ function whatIfAnalysis(actualDraw, models, weights, draws, maxN, userTickets = 
 // Para una bolita específica, calcular contribución de cada modelo
 function explainNumber(num, models, weights, draws, maxN) {
   const explanations = {};
-  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian'];
+  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
   
   modelNames.forEach(name => {
     if (!models[name]) return;
@@ -4972,6 +5365,8 @@ const state = {
   currentGame: 'melate',
   draws: [],
   userDraws: { melate: [], revancha: [], retro: [], tris: [], chispazo: [] },
+  trisWeights: { bayesian: 0.30, gap: 0.28, markov: 0.25, fourier: 0.17 },
+  trisWeights: { bayesian: 0.30, gap: 0.28, markov: 0.25, fourier: 0.17 },
   maxNumber: 56,
   
   models: null,          // precomputed M1-M9 outputs
@@ -5065,6 +5460,7 @@ function loadGame(game) {
 function runEvolution(silent = false) {
   // Tris usa modelo posicional especial, no ensemble de bolillas
   if (state.currentGame === 'tris') {
+    evolveTrisWeights(state.draws);
     state.trisPrediction = computeTrisModels(state.draws);
     renderAll();
     return;
@@ -5094,7 +5490,7 @@ function runEvolution(silent = false) {
   
   // Calibración Platt — solo si hay suficientes datos
   let calibrated = rawFused;
-  if (state.draws.length >= 250) {
+  if (state.draws.length >= 100) {
     try {
       const platt = fitPlattScaling(
         (train, maxN) => {
@@ -5229,7 +5625,11 @@ function modelDisplayName(key) {
     markov: 'Markov',
     fourier: 'Fourier',
     positional: 'Posicional',
-    gaussian: 'Gaussiano'
+    gaussian: 'Gaussiano',
+    delta: 'Delta Pattern',
+    hotStreak: 'Hot Streak',
+    zonePressure: 'Zone Pressure',
+    pairLift: 'Pair Lift'
   };
   return names[key] || key;
 }
@@ -5311,15 +5711,9 @@ function updateNavBadge() {
 
 function showSection(name) {
   // Si estamos en modo Progol y hacen tap en bottom nav, regresamos a Melate
-  if (state.progolMode && name !== 'progol') {
+  if (state.progolMode) {
     state.progolMode = false;
-    document.querySelectorAll('.game-btn').forEach(b => b.classList.toggle('active', b.dataset.game === 'melate'));
-    if (state.currentGame !== 'melate') {
-      // Si veníamos de progol, recargamos melate
-      loadGame('melate');
-      runEvolution(true);
-      renderAll();
-    }
+    document.querySelectorAll('.game-btn').forEach(b => b.classList.toggle('active', b.dataset.game === state.currentGame || b.dataset.game === 'melate'));
   }
   
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
