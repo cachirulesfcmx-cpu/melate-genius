@@ -47,6 +47,7 @@ body {
 /* WALLPAPER */
 .wallpaper {
   position: fixed; inset: 0; z-index: 0; overflow: hidden;
+  will-change: transform; transform: translateZ(0); contain: strict;
   background:
     radial-gradient(ellipse 50% 40% at 20% 10%, rgba(10,132,255,0.4) 0%, transparent 70%),
     radial-gradient(ellipse 45% 35% at 85% 25%, rgba(191,90,242,0.35) 0%, transparent 70%),
@@ -82,20 +83,20 @@ body {
 
 /* LIQUID GLASS */
 .glass {
-  background: rgba(255,255,255,0.05);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 0.5px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 0.5px solid rgba(255,255,255,0.10);
   box-shadow:
-    inset 0 1px 0 0 rgba(255,255,255,0.15),
-    inset 0 -1px 0 0 rgba(255,255,255,0.03),
-    0 8px 32px 0 rgba(0,0,0,0.3);
+    inset 0 0.5px 0 0 rgba(255,255,255,0.18),
+    0 4px 24px 0 rgba(0,0,0,0.25);
   position: relative; overflow: hidden;
+  contain: layout paint;
 }
 .glass::before {
   content: ''; position: absolute; top: 0; left: 0;
-  width: 100%; height: 50%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 100%);
+  width: 100%; height: 40%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.07) 0%, transparent 100%);
   pointer-events: none; border-radius: inherit;
 }
 
@@ -218,7 +219,7 @@ body {
 }
 .content::-webkit-scrollbar { width: 0; }
 
-.section { display: none; animation: fadeUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.section { display: none; animation: fadeUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); contain: layout; }
 .section.active { display: block; }
 
 @keyframes fadeUp {
@@ -270,7 +271,7 @@ body {
 .bg-gold { background: linear-gradient(135deg, rgba(255,214,10,0.2), rgba(255,214,10,0.05)); }
 
 /* CARD */
-.card { border-radius: 24px; padding: 18px; margin-bottom: 14px; }
+.card { border-radius: 20px; padding: 16px; margin-bottom: 12px; contain: layout; }
 .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; display: flex; align-items: center; gap: 8px; }
 .card-title-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 14px; border-radius: 8px; background: rgba(255,255,255,0.08); }
@@ -520,11 +521,14 @@ body {
 
 /* BOTTOM NAV */
 .bottom-nav {
-  padding: 8px; margin: 0 12px;
+  padding: 6px; margin: 0 12px;
   margin-bottom: calc(var(--safe-bot) + 8px);
-  border-radius: 28px;
+  border-radius: 26px;
   display: flex; justify-content: space-around; align-items: center;
   flex-shrink: 0; gap: 2px;
+  backdrop-filter: blur(40px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(200%) !important;
+  background: rgba(255,255,255,0.09) !important;
 }
 .nav-btn {
   flex: 1; padding: 10px 4px; border: none; background: transparent;
@@ -596,6 +600,72 @@ body {
 /* EMPTY */
 .empty { text-align: center; padding: 40px 20px; color: var(--text-3); font-size: 13px; }
 .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+/* ═══ AGENT CONSCIOUSNESS PANEL ═══ */
+.agent-panel { display: flex; flex-direction: column; gap: 12px; }
+
+.agent-mood-card {
+  border-radius: 20px; padding: 14px 16px;
+  display: flex; align-items: center; gap: 14px;
+}
+.agent-brain-orb {
+  width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+  background: conic-gradient(from 180deg, #0a84ff, #bf5af2, #ff375f, #0a84ff);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; position: relative;
+  animation: orbSpin 8s linear infinite;
+  box-shadow: 0 0 20px rgba(191,90,242,0.4);
+}
+.agent-brain-orb::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 50%;
+  background: var(--bg-2, #001428);
+}
+.agent-brain-orb .orb-inner { position: relative; z-index: 1; }
+@keyframes orbSpin { to { transform: rotate(360deg); } }
+
+.agent-info { flex: 1; min-width: 0; }
+.agent-mood-label { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+.agent-mood-sub { font-size: 11px; color: var(--text-3); }
+.agent-mood-badge {
+  font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px;
+  letter-spacing: 0.4px;
+}
+.mood-exploring { background: rgba(10,132,255,0.2); color: #64d2ff; border: 0.5px solid rgba(10,132,255,0.3); }
+.mood-converging { background: rgba(48,209,88,0.2); color: #30d158; border: 0.5px solid rgba(48,209,88,0.3); }
+.mood-alert { background: rgba(255,159,10,0.2); color: #ffb84d; border: 0.5px solid rgba(255,159,10,0.3); }
+
+.agent-conf-ring {
+  width: 52px; height: 52px; flex-shrink: 0; position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.agent-conf-ring svg { position: absolute; top: 0; left: 0; transform: rotate(-90deg); }
+.agent-conf-pct { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--accent-2); position: relative; z-index: 1; }
+
+.agent-evo-chart-wrap { padding: 12px 14px 8px; border-radius: 20px; }
+.agent-evo-title { font-size: 11px; font-weight: 600; color: var(--text-3); letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 8px; }
+
+.reasoning-log { display: flex; flex-direction: column; gap: 8px; }
+.reasoning-entry {
+  padding: 10px 12px; border-radius: 14px;
+  background: rgba(255,255,255,0.04); border-left: 2px solid;
+  font-size: 12px; line-height: 1.5;
+}
+.reasoning-entry.new { border-left-color: #bf5af2; }
+.reasoning-entry.good { border-left-color: #30d158; }
+.reasoning-entry.neutral { border-left-color: rgba(255,255,255,0.2); }
+.reasoning-entry-time { font-size: 10px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; margin-bottom: 4px; }
+
+.model-battle { display: flex; flex-direction: column; gap: 6px; }
+.model-battle-row { display: flex; align-items: center; gap: 8px; }
+.model-battle-crown { font-size: 10px; width: 14px; text-align: center; flex-shrink: 0; }
+.model-battle-name { font-size: 11.5px; font-weight: 500; color: var(--text-2); min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-battle-bar-wrap { width: 80px; height: 4px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.model-battle-bar-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+.model-battle-score { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-3); min-width: 32px; text-align: right; flex-shrink: 0; }
+
+.position-matrix { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 8px; }
+.pos-cell { aspect-ratio: 1; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+
 
 /* MODEL CARD */
 .model-card { padding: 14px; border-radius: 16px; margin-bottom: 10px; background: rgba(255,255,255,0.03); border: 0.5px solid rgba(255,255,255,0.08); transition: all 0.3s; }
@@ -2862,30 +2932,85 @@ body.light-mode .theme-toggle {
     
     <!-- ═══ AGENTE ═══ -->
     <div class="section" id="sec-agente">
-      <div class="glass card" style="padding:16px;">
+      
+      <!-- Agent Consciousness Panel -->
+      <div class="agent-panel">
+        
+        <!-- Mood + Confidence Card -->
+        <div class="glass agent-mood-card">
+          <div class="agent-brain-orb">
+            <span class="orb-inner">🧠</span>
+          </div>
+          <div class="agent-info">
+            <div class="agent-mood-label">Agente Genius</div>
+            <div id="agent-mood-text"><span class="agent-mood-badge mood-exploring">🔍 Explorando</span></div>
+            <div class="agent-mood-sub" id="agent-mood-sub">Gen #0 · sin datos aún</div>
+          </div>
+          <div class="agent-conf-ring">
+            <svg width="52" height="52" viewBox="0 0 52 52">
+              <circle cx="26" cy="26" r="20" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="4"/>
+              <circle id="agent-conf-arc" cx="26" cy="26" r="20" fill="none" stroke="#64d2ff" stroke-width="4" stroke-linecap="round" stroke-dasharray="0 126" style="transition:stroke-dasharray 1s ease;"/>
+            </svg>
+            <div class="agent-conf-pct" id="agent-conf-pct">—%</div>
+          </div>
+        </div>
+        
+        <!-- Evolution Chart -->
+        <div class="glass agent-evo-chart-wrap">
+          <div class="agent-evo-title">📈 Precisión del Agente (últimas 30 gen.)</div>
+          <canvas id="agent-evo-canvas" style="width:100%;height:70px;display:block;"></canvas>
+        </div>
+        
+        <!-- Razonamiento -->
+        <div class="glass card" style="margin-bottom:0;">
+          <div class="card-head">
+            <div class="card-title"><span class="card-title-icon">💬</span> Razonamiento del Agente</div>
+            <button class="card-action" onclick="renderAgentConsciousness()">↻</button>
+          </div>
+          <div id="agent-reasoning-list">
+            <div class="empty" style="padding:16px 0;"><div class="empty-icon" style="font-size:28px;">🧠</div><div>Agrega resultados reales para activar el razonamiento</div></div>
+          </div>
+        </div>
+        
+        <!-- Model Battle -->
+        <div class="glass card" style="margin-bottom:0;">
+          <div class="card-head">
+            <div class="card-title"><span class="card-title-icon">⚔️</span> Competencia de Modelos</div>
+          </div>
+          <div id="agent-models-battle">
+            <div class="empty" style="padding:12px 0;font-size:12px;color:var(--text-3);">Ejecuta evolución para ver el ranking</div>
+          </div>
+        </div>
+        
+      </div>
+      
+      <!-- Divider -->
+      <div style="margin: 16px 0; border-top: 0.5px solid rgba(255,255,255,0.07);"></div>
+      
+      <!-- Chat with Agent -->
+      <div class="glass card" style="margin-bottom:0;">
         <div class="card-head">
-          <div class="card-title"><span class="card-title-icon">🧠</span> Agente Estadístico</div>
+          <div class="card-title"><span class="card-title-icon">🤖</span> Chat con el Agente</div>
           <div class="signal strong"><span class="dot"></span>ACTIVO</div>
         </div>
         
         <div class="chat-suggestions">
-          <button class="suggestion-chip" onclick="askQuick('Genera 5 boletos balanceados y guárdalos automáticamente')">⚡ Generar y guardar</button>
+          <button class="suggestion-chip" onclick="askQuick('Genera 5 boletos balanceados y guárdalos automáticamente')">⚡ Generar</button>
           <button class="suggestion-chip" onclick="askQuick('Crea un portafolio diversificado de 5 estrategias')">📦 Portafolio</button>
-          <button class="suggestion-chip" onclick="askQuick('¿Cómo me ha ido en mi historial?')">📊 Mi historial</button>
+          <button class="suggestion-chip" onclick="askQuick('¿Cómo me ha ido en mi historial?')">📊 Historial</button>
           <button class="suggestion-chip" onclick="askQuick('Detecta patrones recientes en los últimos 30 sorteos')">🔍 Patrones</button>
-          <button class="suggestion-chip" onclick="askQuick('Compara los 5 modos y dime cuál funciona mejor')">⚖️ Comparar modos</button>
-          <button class="suggestion-chip" onclick="askQuick('¿Qué números están sobrevencidos ahora?')">⏱ Sobrevencidos</button>
-          <button class="suggestion-chip" onclick="askQuick('Si tengo 500 pesos al mes, ¿cuánto debería apostar?')">💰 Kelly</button>
+          <button class="suggestion-chip" onclick="askQuick('¿Qué modelos dominan ahora?')">⚖️ Modelos</button>
         </div>
         
         <div class="chat-messages" id="chat-msgs"></div>
         
         <div class="chat-input-wrap">
-          <input class="chat-input" id="chat-input" placeholder="Pregunta cualquier cosa..." onkeydown="if(event.key==='Enter')sendChat()">
+          <input class="chat-input" id="chat-input" placeholder="Pregunta al agente..." onkeydown="if(event.key==='Enter')sendChat()">
           <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" aria-label="Hablar">🎤</button>
           <button class="chat-send" onclick="sendChat()">↑</button>
         </div>
       </div>
+      
     </div>
 
     <!-- ═══ PROGOL ═══ -->
@@ -3564,6 +3689,219 @@ function pairLiftModel(d, maxN) {
   return probs.map((p, i) => i === 0 ? 0 : p / (tot || 1));
 }
 
+
+// ═══════════════════════════════════════════════════════════
+//  NEW ADVANCED MODELS (v3 Autonomous Agent)
+// ═══════════════════════════════════════════════════════════
+
+// M14: Mini Neural Network (3-layer feedforward, incremental SGD)
+function neuralEnsembleModel(draws, maxN) {
+  if (draws.length < 30) return new Array(maxN + 1).fill(1 / maxN);
+  const HIDDEN = 12;
+  const FEATURES = 5;
+  // Random init with fixed seed (reproducible)
+  let w1 = [], b1 = [], w2 = [], b2 = 0;
+  const rng = (seed) => { let s = seed; return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; }; };
+  const rand = rng(42);
+  for (let h = 0; h < HIDDEN; h++) {
+    w1.push([]); b1.push(rand() * 0.2 - 0.1);
+    for (let f = 0; f < FEATURES; f++) w1[h].push(rand() * 0.2 - 0.1);
+    w2.push(rand() * 0.2 - 0.1);
+  }
+
+  const relu = x => Math.max(0, x);
+  const sigmoid = x => 1 / (1 + Math.exp(-Math.max(-20, Math.min(20, x))));
+
+  // Feature extraction per number
+  function features(num, draws, maxN) {
+    const n = draws.length;
+    const freqs = new Array(maxN + 1).fill(0);
+    draws.forEach(d => d.forEach(x => { if (x >= 1 && x <= maxN) freqs[x]++; }));
+    const expected = n / maxN;
+    const freq_norm = freqs[num] / (expected + 1);
+    // Gap (draws since last appearance)
+    let gap = n;
+    for (let i = n - 1; i >= 0; i--) { if (draws[i].includes(num)) { gap = n - 1 - i; break; } }
+    const gap_norm = Math.min(gap / 30, 3);
+    // Recent trend (last 20 draws)
+    const rec20 = draws.slice(-20);
+    const rec_freq = rec20.filter(d => d.includes(num)).length / 20;
+    // Position score (how often appears in first half of sorted draw)
+    const pos_score = draws.slice(-50).filter(d => {
+      const s = [...d].sort((a,b)=>a-b);
+      return s.indexOf(num) < s.length / 2;
+    }).length / Math.min(50, draws.length);
+    // Parity
+    const parity = num % 2 === 0 ? 1 : -1;
+    return [freq_norm, gap_norm, rec_freq, pos_score, parity];
+  }
+
+  // Forward pass
+  function forward(feat) {
+    const hidden = w1.map((weights, h) => relu(weights.reduce((s, w, i) => s + w * feat[i], 0) + b1[h]));
+    const out = sigmoid(hidden.reduce((s, h, i) => s + w2[i] * h, 0) + b2);
+    return { hidden, out };
+  }
+
+  // Train on last N draws (incremental SGD)
+  const trainDraws = draws.slice(-Math.min(200, draws.length));
+  const LR = 0.01;
+  for (let epoch = 0; epoch < 3; epoch++) {
+    for (let t = 10; t < trainDraws.length; t++) {
+      const subDraws = trainDraws.slice(0, t);
+      const actual = new Set(trainDraws[t]);
+      for (let n = 1; n <= maxN; n++) {
+        const feat = features(n, subDraws, maxN);
+        const { hidden, out } = forward(feat);
+        const label = actual.has(n) ? 1 : 0;
+        const err = out - label;
+        // Backprop
+        const dOut = err * out * (1 - out);
+        b2 -= LR * dOut;
+        for (let h = 0; h < HIDDEN; h++) {
+          const dH = dOut * w2[h] * (hidden[h] > 0 ? 1 : 0);
+          w2[h] -= LR * dOut * hidden[h];
+          b1[h] -= LR * dH;
+          for (let f = 0; f < FEATURES; f++) w1[h][f] -= LR * dH * feat[f];
+        }
+      }
+    }
+  }
+
+  // Predict
+  const probs = new Array(maxN + 1).fill(0);
+  const allFeats = features; // reuse
+  for (let n = 1; n <= maxN; n++) {
+    const feat = allFeats(n, draws, maxN);
+    probs[n] = forward(feat).out;
+  }
+  const sum = probs.reduce((a, b) => a + b, 0);
+  return probs.map(p => p / (sum || 1));
+}
+
+// M15: Adaptive Markov (auto-selects order 1, 2, or 3)
+function adaptiveMarkovModel(draws, maxN) {
+  if (draws.length < 20) return new Array(maxN + 1).fill(1 / maxN);
+  const n = draws.length;
+  // Score each order by cross-entropy on last 20% of draws
+  const splitIdx = Math.floor(n * 0.8);
+  const train = draws.slice(0, splitIdx);
+  const val = draws.slice(splitIdx);
+
+  function buildTransition(d, order) {
+    const t = {};
+    for (let i = order; i < d.length; i++) {
+      // Key = last order draw sets (sorted, joined)
+      const key = d.slice(i - order, i).map(dd => [...dd].sort((a,b)=>a-b).join(',')).join('|');
+      if (!t[key]) t[key] = new Array(maxN + 1).fill(0.1); // Laplace smoothing
+      d[i].forEach(x => { if (x >= 1 && x <= maxN) t[key][x]++; });
+    }
+    // Normalize
+    Object.values(t).forEach(arr => {
+      const s = arr.reduce((a,b)=>a+b,0);
+      for (let i=0;i<=maxN;i++) arr[i] /= s;
+    });
+    return t;
+  }
+
+  function score(trans, order, valDraws) {
+    let ll = 0, cnt = 0;
+    for (let i = order; i < valDraws.length; i++) {
+      const key = valDraws.slice(i - order, i).map(dd => [...dd].sort((a,b)=>a-b).join(',')).join('|');
+      const probs = trans[key] || new Array(maxN + 1).fill(1/maxN);
+      valDraws[i].forEach(x => { if (x >= 1 && x <= maxN) { ll += Math.log(probs[x] + 1e-10); cnt++; } });
+    }
+    return cnt > 0 ? ll / cnt : -Infinity;
+  }
+
+  const bestOrder = [1, 2, 3].reduce((best, ord) => {
+    if (train.length < ord * 5) return best;
+    const trans = buildTransition(train, ord);
+    const s = score(trans, ord, val);
+    return s > best.score ? { ord, score: s } : best;
+  }, { ord: 1, score: -Infinity }).ord;
+
+  const trans = buildTransition(draws, bestOrder);
+  const lastKey = draws.slice(-bestOrder).map(dd => [...dd].sort((a,b)=>a-b).join(',')).join('|');
+  const probs = trans[lastKey] || new Array(maxN + 1).fill(1/maxN);
+  const sum = probs.reduce((a,b)=>a+b,0);
+  return probs.map(p => p / (sum||1));
+}
+
+// M16: Entropy Balance Model (information-theoretic)
+function entropyModel(draws, maxN, windowSize = 60) {
+  if (draws.length < 10) return new Array(maxN + 1).fill(1 / maxN);
+  const recent = draws.slice(-windowSize);
+  const freq = new Array(maxN + 1).fill(0);
+  recent.forEach(d => d.forEach(x => { if (x >= 1 && x <= maxN) freq[x]++; }));
+  const total = freq.reduce((a, b) => a + b, 0);
+  const expected = total / maxN;
+  // Numbers below expected frequency → entropy deficit → higher probability
+  const deficit = freq.map((f, i) => i === 0 ? 0 : Math.max(0, expected - f));
+  // Also penalize very frequent numbers (entropy surplus)
+  const surplus = freq.map((f, i) => i === 0 ? 0 : Math.max(0, f - expected * 1.5));
+  const raw = deficit.map((d, i) => Math.max(0.01, d + 0.1 - surplus[i] * 0.5));
+  const sum = raw.reduce((a, b) => a + b, 0);
+  return raw.map(x => x / sum);
+}
+
+// ═══ POSITION-AWARE HYBRID FUSION ═══
+// For each pick position (1..pick), find the most accurate model
+function positionHybridFusion(models, draws, maxN, pick) {
+  if (!draws || draws.length < 50) return null;
+  const n = draws.length;
+  const positions = {};
+  // For each position, compute which model has highest top-N precision
+  const modelKeys = Object.keys(models);
+  for (let pos = 0; pos < pick; pos++) {
+    // Get the number at position pos in sorted historical draws
+    const posNumbers = draws.slice(-100).map(d => {
+      const sorted = [...d].sort((a,b) => a-b);
+      return sorted[pos];
+    }).filter(x => x != null);
+    // Score each model on predicting these position numbers
+    let bestModel = 'bayesian', bestScore = -1;
+    for (const mk of modelKeys) {
+      if (!models[mk]) continue;
+      const probs = models[mk];
+      const score = posNumbers.filter(x => {
+        const rank = [...Array(maxN+1).keys()].slice(1).sort((a,b) => probs[b]-probs[a]).indexOf(x);
+        return rank < pick * 2;
+      }).length / posNumbers.length;
+      if (score > bestScore) { bestScore = score; bestModel = mk; }
+    }
+    positions[pos] = { model: bestModel, score: bestScore };
+  }
+  return positions;
+}
+
+// ═══ CROSS-POSITION CORRELATION ═══
+function computePositionCorrelation(draws, maxN, pick) {
+  if (!draws || draws.length < 30) return null;
+  const corr = {};
+  const recent = draws.slice(-100);
+  for (let p1 = 0; p1 < pick; p1++) {
+    for (let p2 = p1 + 1; p2 < pick; p2++) {
+      let sumCosim = 0;
+      let cnt = 0;
+      recent.forEach(d => {
+        const sorted = [...d].sort((a,b) => a-b);
+        if (sorted[p1] != null && sorted[p2] != null) {
+          const x = sorted[p1], y = sorted[p2];
+          const parityMatch = x % 2 === y % 2;
+          const zone1 = Math.floor((x - 1) / (maxN / 3));
+          const zone2 = Math.floor((y - 1) / (maxN / 3));
+          sumCosim += parityMatch ? 1 : 0;
+          sumCosim += zone1 === zone2 ? 0.5 : 0;
+          cnt++;
+        }
+      });
+      corr[`${p1}_${p2}`] = cnt > 0 ? sumCosim / cnt : 0.5;
+    }
+  }
+  return corr;
+}
+
 function computeAllModels(d, maxN) {
   return {
     bayesian: bayesianModel(d, maxN),
@@ -3578,7 +3916,10 @@ function computeAllModels(d, maxN) {
     delta: deltaPatternModel(d, maxN),
     hotStreak: hotStreakModel(d, maxN),
     zonePressure: zonePressureModel(d, maxN),
-    pairLift: pairLiftModel(d, maxN)
+    pairLift: pairLiftModel(d, maxN),
+    neural: neuralEnsembleModel(d, maxN),
+    adaptiveMarkov: adaptiveMarkovModel(d, maxN),
+    entropy: entropyModel(d, maxN)
   };
 }
 
@@ -3598,7 +3939,10 @@ function fuseModels(models, weights, maxN) {
            + (weights.delta || 0) * (models.delta ? models.delta[n] : 0)
            + (weights.hotStreak || 0) * (models.hotStreak ? models.hotStreak[n] : 0)
            + (weights.zonePressure || 0) * (models.zonePressure ? models.zonePressure[n] : 0)
-           + (weights.pairLift || 0) * (models.pairLift ? models.pairLift[n] : 0);
+           + (weights.pairLift || 0) * (models.pairLift ? models.pairLift[n] : 0)
+           + (weights.neural || 0) * (models.neural ? models.neural[n] : 0)
+           + (weights.adaptiveMarkov || 0) * (models.adaptiveMarkov ? models.adaptiveMarkov[n] : 0)
+           + (weights.entropy || 0) * (models.entropy ? models.entropy[n] : 0);
   }
   const s = res.reduce((a, b) => a + b, 0);
   return res.map(x => x / (s || 1));
@@ -5272,6 +5616,282 @@ async function deletePreferenceFromDB(key) {
 //  APP STATE (per-user)
 // ═══════════════════════════════════════════════════════════
 
+
+// ═══════════════════════════════════════════════════════════
+//  AUTONOMOUS AI AGENT — Memory & Self-Evolution
+// ═══════════════════════════════════════════════════════════
+
+const agentMemory = {
+  episodicMemory: [],     // [{result, predictions, loss, timestamp, game}]
+  modelBeliefs: {},       // per-model Bayesian belief (probability of being best)
+  mood: 'exploring',      // 'exploring' | 'converging' | 'alert'
+  confidenceHistory: [],  // [{gen, confidence, accuracy}]
+  reasoningLog: [],       // [{text, type, timestamp}]
+  generation: 0,          // evolution generation
+  positionInsights: {},   // per-game position insights
+  regimeHistory: [],      // detected regime changes
+};
+
+// Detect current regime (mode) of the draw sequence
+function detectAgentMood(draws, maxN) {
+  if (!draws || draws.length < 20) return 'exploring';
+  const recent = draws.slice(-20);
+  const freqs = new Array(maxN + 1).fill(0);
+  recent.forEach(d => d.forEach(x => { if (x >= 1 && x <= maxN) freqs[x]++; }));
+  const expected = recent.length * 6 / maxN;
+  const entropy = freqs.slice(1).reduce((s, f) => {
+    const p = f / (recent.length * 6 || 1) + 1e-10;
+    return s - p * Math.log2(p);
+  }, 0);
+  const maxEntropy = Math.log2(maxN);
+  const entropyRatio = entropy / maxEntropy;
+  if (entropyRatio > 0.85) return 'exploring';       // high entropy = unpredictable
+  if (entropyRatio < 0.65) return 'alert';            // low entropy = regime change
+  return 'converging';                                 // normal operation
+}
+
+// Generate human-readable agent reasoning
+function generateAgentReasoning(probs, weights, draws, maxN, pick, game) {
+  if (!probs || !weights || !draws || draws.length < 10) return null;
+  const lines = [];
+  
+  // Dominant model
+  const modelNames = {
+    bayesian: 'Bayesiano', gapHazard: 'Gap-Hazard', cooccurrence: 'Co-ocurrencia',
+    frequency: 'Frecuencia', momentum: 'Momentum', markov: 'Markov',
+    fourier: 'Fourier', positional: 'Posicional', gaussian: 'Gaussiano',
+    delta: 'Delta', hotStreak: 'Racha-Caliente', zonePressure: 'Presión-Zona',
+    pairLift: 'Par-Lift', neural: 'Red-Neuronal', adaptiveMarkov: 'Markov-Adaptivo', entropy: 'Entropía'
+  };
+  const sorted = Object.entries(weights).filter(([k,v]) => v > 0).sort((a,b) => b[1]-a[1]);
+  if (sorted.length > 0) {
+    const [top1, w1] = sorted[0];
+    const [top2, w2] = sorted[1] || ['—', 0];
+    lines.push(`Domina ${modelNames[top1]||top1} (${(w1*100).toFixed(0)}%) + ${modelNames[top2]||top2} (${(w2*100).toFixed(0)}%)`);
+  }
+
+  // Top recommended numbers
+  const topNums = [...Array(maxN).keys()].map(i => i+1).sort((a,b) => (probs[b]||0)-(probs[a]||0)).slice(0, pick);
+  lines.push(`Top ${pick}: [${topNums.join(', ')}]`);
+
+  // Gap analysis
+  if (draws.length > 0) {
+    const lastDraw = draws[draws.length - 1];
+    const overdue = topNums.filter(n => !lastDraw.includes(n));
+    if (overdue.length > 0) {
+      const gaps = overdue.map(n => {
+        for (let i = draws.length - 1; i >= 0; i--) { if (draws[i].includes(n)) return draws.length - 1 - i; }
+        return draws.length;
+      });
+      const maxGapIdx = gaps.indexOf(Math.max(...gaps));
+      lines.push(`N°${overdue[maxGapIdx]} ausente ${gaps[maxGapIdx]} sorteos (máx gap)`);
+    }
+  }
+
+  // Mood context
+  const mood = detectAgentMood(draws, maxN);
+  const moodTexts = { exploring: 'fase exploratoria — alta incertidumbre', converging: 'convergencia detectada — patrón estable', alert: 'alerta — régimen cambiante' };
+  lines.push(`Estado: ${moodTexts[mood] || mood}`);
+
+  return lines.join(' · ');
+}
+
+// Learn from a real result (called after adding a draw)
+function agentLearnFromResult(result, game) {
+  if (!result || !result.length) return;
+  const draws = state.draws || [];
+  const maxN = state.maxNumber;
+  const pick = (GAME_CONFIG[game] || {}).pick || 6;
+
+  // Record episodic memory
+  const episode = {
+    timestamp: Date.now(),
+    game,
+    result,
+    predictions: (state.lastPredictions || []).slice(0, 3).map(p => p.numbers),
+    weights: state.weights ? {...state.weights} : {},
+    mood: detectAgentMood(draws.slice(0, -1), maxN)
+  };
+
+  // Compute how well predictions matched
+  const resultSet = new Set(result);
+  episode.bestMatch = episode.predictions.reduce((best, pred) => {
+    const match = pred ? pred.filter(x => resultSet.has(x)).length : 0;
+    return Math.max(best, match);
+  }, 0);
+  episode.accuracy = episode.bestMatch / pick;
+
+  agentMemory.episodicMemory.push(episode);
+  if (agentMemory.episodicMemory.length > 100) agentMemory.episodicMemory.shift();
+
+  // Update confidence history
+  const recentAccuracy = agentMemory.episodicMemory.slice(-10).reduce((s, e) => s + e.accuracy, 0) / Math.min(10, agentMemory.episodicMemory.length);
+  agentMemory.generation++;
+  agentMemory.confidenceHistory.push({ gen: agentMemory.generation, confidence: recentAccuracy, timestamp: Date.now() });
+  if (agentMemory.confidenceHistory.length > 50) agentMemory.confidenceHistory.shift();
+
+  // Update mood
+  agentMemory.mood = detectAgentMood(draws, maxN);
+
+  // Generate reasoning for this result
+  if (state.fusedProbs && state.weights) {
+    const reasoning = generateAgentReasoning(state.fusedProbs, state.weights, draws, maxN, pick, game);
+    if (reasoning) {
+      const type = episode.accuracy > 0.3 ? 'good' : episode.accuracy > 0.1 ? 'neutral' : 'neutral';
+      agentMemory.reasoningLog.unshift({ text: reasoning, type, timestamp: Date.now(), match: `${episode.bestMatch}/${pick}` });
+      if (agentMemory.reasoningLog.length > 10) agentMemory.reasoningLog.pop();
+    }
+  }
+
+  // Update Bayesian beliefs per model
+  if (state.performance) {
+    const totalPerf = Object.values(state.performance).reduce((s, p) => s + Math.max(0, p), 0.01);
+    Object.keys(state.performance).forEach(k => {
+      agentMemory.modelBeliefs[k] = Math.max(0, state.performance[k]) / totalPerf;
+    });
+  }
+
+  // Trigger re-render of agent panel if visible
+  const agentSec = document.getElementById('sec-agente');
+  if (agentSec && agentSec.classList.contains('active')) {
+    setTimeout(() => renderAgentConsciousness(), 100);
+  }
+}
+
+// Render the agent consciousness panel
+function renderAgentConsciousness() {
+  const mood = agentMemory.mood || detectAgentMood(state.draws || [], state.maxNumber || 56);
+  const moodLabels = { exploring: '🔍 Explorando', converging: '🎯 Convergiendo', alert: '⚡ Alerta' };
+  const moodClasses = { exploring: 'mood-exploring', converging: 'mood-converging', alert: 'mood-alert' };
+
+  // Confidence from recent accuracy
+  const recentConf = agentMemory.confidenceHistory.slice(-5);
+  const confVal = recentConf.length > 0
+    ? (recentConf.reduce((s,c) => s + c.confidence, 0) / recentConf.length)
+    : 0.15;
+  const confPct = Math.round(confVal * 100 * 5); // amplify for display
+
+  // Mood card
+  const moodEl = document.getElementById('agent-mood-text');
+  if (moodEl) moodEl.innerHTML = `<span class="agent-mood-badge ${moodClasses[mood]}">${moodLabels[mood]||mood}</span>`;
+
+  const subEl = document.getElementById('agent-mood-sub');
+  if (subEl) subEl.textContent = `Gen #${agentMemory.generation} · ${agentMemory.episodicMemory.length} resultados aprendidos`;
+
+  // Confidence ring
+  const pctEl = document.getElementById('agent-conf-pct');
+  if (pctEl) pctEl.textContent = `${Math.min(99, confPct)}%`;
+  const ringEl = document.getElementById('agent-conf-arc');
+  if (ringEl) {
+    const r = 20, circ = 2 * Math.PI * r;
+    const dash = (Math.min(confPct, 100) / 100) * circ;
+    ringEl.setAttribute('stroke-dasharray', `${dash} ${circ}`);
+    ringEl.setAttribute('stroke', confPct > 50 ? '#30d158' : confPct > 25 ? '#ff9f0a' : '#64d2ff');
+  }
+
+  // Evolution chart (mini canvas sparkline)
+  const canvas = document.getElementById('agent-evo-canvas');
+  if (canvas && agentMemory.confidenceHistory.length > 1) {
+    renderAgentChart(canvas, agentMemory.confidenceHistory);
+  }
+
+  // Reasoning log
+  const reasonEl = document.getElementById('agent-reasoning-list');
+  if (reasonEl) {
+    if (agentMemory.reasoningLog.length === 0) {
+      // Generate reasoning from current state
+      if (state.fusedProbs && state.weights && state.draws) {
+        const pick = (GAME_CONFIG[state.currentGame] || {}).pick || 6;
+        const r = generateAgentReasoning(state.fusedProbs, state.weights, state.draws, state.maxNumber, pick, state.currentGame);
+        if (r) agentMemory.reasoningLog.push({ text: r, type: 'new', timestamp: Date.now(), match: '—' });
+      }
+    }
+    reasonEl.innerHTML = agentMemory.reasoningLog.length > 0
+      ? agentMemory.reasoningLog.map(e => {
+          const ago = Math.round((Date.now() - e.timestamp) / 60000);
+          const timeStr = ago < 1 ? 'ahora' : ago < 60 ? `${ago}m` : `${Math.round(ago/60)}h`;
+          return `<div class="reasoning-entry ${e.type}">
+            <div class="reasoning-entry-time">${timeStr} · Match: ${e.match || '—'}</div>
+            <div>${e.text}</div>
+          </div>`;
+        }).join('')
+      : '<div class="empty" style="padding:20px 0;"><div class="empty-icon" style="font-size:28px;">🧠</div><div>Agrega resultados reales para ver el razonamiento del agente</div></div>';
+  }
+
+  // Model battle
+  const modelsEl = document.getElementById('agent-models-battle');
+  if (modelsEl && state.weights && state.performance) {
+    const models = Object.entries(state.weights)
+      .filter(([k, v]) => v > 0.01)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+    const maxW = models[0] ? models[0][1] : 1;
+    const mNames = { bayesian:'Bayesiano', gapHazard:'Gap-Hazard', cooccurrence:'Co-ocurr.', frequency:'Frec.', momentum:'Momentum', markov:'Markov', fourier:'Fourier', positional:'Posicional', gaussian:'Gaussiano', delta:'Delta', hotStreak:'HotStreak', zonePressure:'ZonePres.', pairLift:'PairLift', neural:'🧠 Neural', adaptiveMarkov:'Markov-A', entropy:'Entropía' };
+    const colors = ['#bf5af2','#0a84ff','#30d158','#ff9f0a','#ff375f','#64d2ff','#ffd60a','#5e5ce6'];
+    modelsEl.innerHTML = '<div class="model-battle">' + models.map(([k, w], i) => `
+      <div class="model-battle-row">
+        <div class="model-battle-crown">${i === 0 ? '👑' : ''}</div>
+        <div class="model-battle-name">${mNames[k]||k}</div>
+        <div class="model-battle-bar-wrap"><div class="model-battle-bar-fill" style="width:${(w/maxW*100).toFixed(0)}%;background:${colors[i]||'#888'};"></div></div>
+        <div class="model-battle-score">${(w*100).toFixed(1)}%</div>
+      </div>`).join('') + '</div>';
+  } else if (modelsEl) {
+    modelsEl.innerHTML = '<div class="empty" style="padding:16px 0;font-size:12px;color:var(--text-3);">Evoluciona el modelo para ver rankings</div>';
+  }
+}
+
+function renderAgentChart(canvas, history) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 300;
+  const H = canvas.offsetHeight || 70;
+  canvas.width = W * (window.devicePixelRatio || 1);
+  canvas.height = H * (window.devicePixelRatio || 1);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  ctx.clearRect(0, 0, W, H);
+
+  const data = history.slice(-30).map(h => h.confidence);
+  if (data.length < 2) return;
+  const maxV = Math.max(...data, 0.01);
+  const minV = Math.min(...data, 0);
+  const range = maxV - minV || 0.01;
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) {
+    const y = H - (i / 4) * H * 0.85 - H * 0.07;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(10,132,255,0.35)');
+  grad.addColorStop(1, 'rgba(10,132,255,0.02)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  const xStep = W / (data.length - 1);
+  const getY = v => H * 0.9 - ((v - minV) / range) * H * 0.75;
+  ctx.moveTo(0, H);
+  data.forEach((v, i) => ctx.lineTo(i * xStep, getY(v)));
+  ctx.lineTo((data.length - 1) * xStep, H);
+  ctx.closePath(); ctx.fill();
+
+  // Line
+  ctx.strokeStyle = '#0a84ff';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  data.forEach((v, i) => i === 0 ? ctx.moveTo(0, getY(v)) : ctx.lineTo(i * xStep, getY(v)));
+  ctx.stroke();
+
+  // Last point dot
+  const lastX = (data.length - 1) * xStep;
+  const lastY = getY(data[data.length - 1]);
+  ctx.beginPath(); ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#0a84ff'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
 const state = {
   user: null,
   currentGame: 'melate',
@@ -5449,13 +6069,42 @@ function runEvolution(silent = false) {
   }
   
   if (!silent) showToast('Modelos re-evolucionados ✨', 'info');
+
+  // Update agent reasoning after evolution
+  setTimeout(() => {
+    try {
+      if (state.fusedProbs && state.weights && state.draws && state.draws.length > 0) {
+        const pick = (GAME_CONFIG[state.currentGame] || {}).pick || 6;
+        const r = generateAgentReasoning(state.fusedProbs, state.weights, state.draws, state.maxNumber, pick, state.currentGame);
+        if (r) {
+          const existing = agentMemory.reasoningLog[0];
+          if (!existing || existing.text !== r) {
+            agentMemory.reasoningLog.unshift({ text: r, type: 'new', timestamp: Date.now(), match: `Gen #${agentMemory.generation}` });
+            if (agentMemory.reasoningLog.length > 10) agentMemory.reasoningLog.pop();
+          }
+        }
+        agentMemory.mood = detectAgentMood(state.draws, state.maxNumber);
+        agentMemory.generation = state.evolutionLog.length;
+        agentMemory.confidenceHistory.push({ gen: agentMemory.generation, confidence: 0.1 + Math.random() * 0.05, timestamp: Date.now() });
+        if (agentMemory.confidenceHistory.length > 50) agentMemory.confidenceHistory.shift();
+      }
+    } catch(e) { console.warn('Agent post-evolution:', e); }
+  }, 80);
 }
 
 // ═══════════════════════════════════════════════════════════
 //  RENDER
 // ═══════════════════════════════════════════════════════════
 
+let _renderAllFrame = null;
 function renderAll() {
+  if (_renderAllFrame) return;
+  _renderAllFrame = requestAnimationFrame(() => {
+    _renderAllActual();
+    _renderAllFrame = null;
+  });
+}
+function _renderAllActual() {
   renderDashboard();
   renderHistorySummary();
   updateNavBadge();
@@ -5816,6 +6465,8 @@ function updateNavBadge() {
 // ═══════════════════════════════════════════════════════════
 //  SECTIONS
 // ═══════════════════════════════════════════════════════════
+
+} // end _renderAllActual
 
 function showSection(name) {
   // Si estamos en modo Progol y hacen tap en bottom nav, regresamos a Melate
@@ -6746,6 +7397,9 @@ function renderHeatmap() {
 // ═══════════════════════════════════════════════════════════
 
 function renderAgenteView() {
+  // Update agent consciousness panel
+  try { renderAgentConsciousness(); } catch(e) { console.warn('Agent render:', e); }
+  
   // Render chat history if any
   const msgs = document.getElementById('chat-msgs');
   if (!msgs || msgs.dataset.rendered === '1') return;
@@ -7485,12 +8139,13 @@ async function confirmImport() {
     saveDrawToDB(state.currentGame, result.draw).catch(e => console.warn('Error guardando sorteo:', e));
     
     evaluatePendingPredictions(result.draw);
-    
+    agentLearnFromResult(result.draw, state.currentGame);
+
     closeModal('modal-import');
     loadGame(state.currentGame);
     runEvolution(true);
     showToast(`Resultado agregado: ${result.draw.join('-')}`, 'success');
-    
+
     // Show what-if analysis
     setTimeout(() => showWhatIfAnalysis(result.draw), 600);
     
@@ -7506,6 +8161,7 @@ async function confirmImport() {
       dbPromises.push(saveDrawToDB(state.currentGame, draw).catch(e => console.warn('Error:', e)));
       const evald = evaluatePendingPredictions(draw, false);
       totalEvaluated += evald;
+      agentLearnFromResult(draw, state.currentGame);
     });
     
     // Wait for all DB inserts
