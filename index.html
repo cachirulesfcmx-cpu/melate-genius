@@ -11,21 +11,21 @@
 <style>* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 :root {
-  --bg: #000814;
-  --bg-2: #001428;
-  --surface: rgba(255,255,255,0.04);
-  --surface-2: rgba(255,255,255,0.08);
-  --stroke: rgba(255,255,255,0.08);
-  --stroke-2: rgba(255,255,255,0.14);
+  --bg: #05070f;
+  --bg-2: #0c1220;
+  --surface: rgba(255,255,255,0.07);
+  --surface-2: rgba(255,255,255,0.12);
+  --stroke: rgba(255,255,255,0.12);
+  --stroke-2: rgba(255,255,255,0.20);
   --text: #ffffff;
-  --text-2: rgba(255,255,255,0.7);
+  --text-2: rgba(255,255,255,0.75);
   --text-3: rgba(255,255,255,0.45);
-  --accent: #0a84ff;
-  --accent-2: #64d2ff;
+  --accent: #2f8bff;
+  --accent-2: #78c8ff;
   --hot: #ff375f;
   --warm: #ff9f0a;
-  --cool: #30d158;
-  --purple: #bf5af2;
+  --cool: #32d74b;
+  --purple: #c96df4;
   --gold: #ffd60a;
   --safe-top: env(safe-area-inset-top);
   --safe-bot: env(safe-area-inset-bottom);
@@ -49,21 +49,23 @@ body {
   position: fixed; inset: 0; z-index: 0; overflow: hidden;
   will-change: transform; transform: translateZ(0); contain: strict;
   background:
-    radial-gradient(ellipse 50% 40% at 20% 10%, rgba(10,132,255,0.4) 0%, transparent 70%),
-    radial-gradient(ellipse 45% 35% at 85% 25%, rgba(191,90,242,0.35) 0%, transparent 70%),
-    radial-gradient(ellipse 60% 50% at 50% 80%, rgba(255,55,95,0.25) 0%, transparent 70%),
-    radial-gradient(ellipse 40% 30% at 15% 90%, rgba(48,209,88,0.15) 0%, transparent 70%),
-    linear-gradient(180deg, #000814 0%, #001428 50%, #000814 100%);
+    radial-gradient(ellipse 70% 55% at 15% 5%,  rgba(47,139,255,0.55) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 88% 18%,  rgba(201,109,244,0.50) 0%, transparent 60%),
+    radial-gradient(ellipse 65% 50% at 55% 85%,  rgba(255,55,95,0.35) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 35% at 5% 75%,   rgba(50,215,75,0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 75% 55%,  rgba(255,214,10,0.12) 0%, transparent 60%),
+    linear-gradient(160deg, #05070f 0%, #0c1220 40%, #080c18 100%);
 }
 .wallpaper::after {
   content: ''; position: absolute; inset: 0;
   background-image:
-    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.3) 0, transparent 1px),
-    radial-gradient(1px 1px at 60% 70%, rgba(255,255,255,0.2) 0, transparent 1px),
-    radial-gradient(1px 1px at 80% 40%, rgba(255,255,255,0.25) 0, transparent 1px),
-    radial-gradient(1px 1px at 30% 80%, rgba(255,255,255,0.15) 0, transparent 1px);
-  background-size: 200px 200px, 240px 240px, 180px 180px, 220px 220px;
-  opacity: 0.6;
+    radial-gradient(1.5px 1.5px at 15% 25%, rgba(255,255,255,0.45) 0, transparent 1px),
+    radial-gradient(1px 1px at 55% 65%,    rgba(255,255,255,0.30) 0, transparent 1px),
+    radial-gradient(1.5px 1.5px at 80% 38%, rgba(255,255,255,0.35) 0, transparent 1px),
+    radial-gradient(1px 1px at 35% 82%,    rgba(255,255,255,0.25) 0, transparent 1px),
+    radial-gradient(1px 1px at 90% 70%,    rgba(255,255,255,0.20) 0, transparent 1px);
+  background-size: 180px 180px, 220px 220px, 160px 160px, 200px 200px, 240px 240px;
+  opacity: 0.7;
 }
 
 .app {
@@ -83,20 +85,22 @@ body {
 
 /* LIQUID GLASS */
 .glass {
-  background: rgba(255,255,255,0.06);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border: 0.5px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.09);
+  backdrop-filter: blur(28px) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.05);
+  border: 0.5px solid rgba(255,255,255,0.18);
   box-shadow:
-    inset 0 0.5px 0 0 rgba(255,255,255,0.18),
-    0 4px 24px 0 rgba(0,0,0,0.25);
+    inset 0 1px 0 0 rgba(255,255,255,0.22),
+    inset 0 -0.5px 0 0 rgba(255,255,255,0.06),
+    0 8px 32px rgba(0,0,0,0.35),
+    0 2px 8px rgba(0,0,0,0.20);
   position: relative; overflow: hidden;
   contain: layout paint;
 }
 .glass::before {
   content: ''; position: absolute; top: 0; left: 0;
-  width: 100%; height: 40%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.07) 0%, transparent 100%);
+  width: 100%; height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.11) 0%, transparent 100%);
   pointer-events: none; border-radius: inherit;
 }
 
@@ -160,17 +164,22 @@ body {
 
 /* HEADER */
 .header {
-  padding: 10px 20px 12px; flex-shrink: 0;
+  padding: 6px 20px 10px; flex-shrink: 0;
   display: flex; justify-content: space-between; align-items: center;
 }
 .header-left h1 {
   font-family: 'Instrument Serif', serif;
-  font-size: 30px; font-weight: 400; letter-spacing: -1.2px; line-height: 1;
-  background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.6) 100%);
+  font-size: 34px; font-weight: 400; letter-spacing: -1.6px; line-height: 1;
+  background: linear-gradient(135deg, #ffffff 0%, rgba(255,255,255,0.8) 100%);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.header-left h1 em { font-style: italic; color: var(--accent-2); -webkit-text-fill-color: var(--accent-2); }
+.header-left h1 em {
+  font-style: italic;
+  background: linear-gradient(135deg, #78c8ff 0%, #c96df4 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 .header-left .subtitle { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
 
 .user-chip {
@@ -521,8 +530,8 @@ body {
 
 /* BOTTOM NAV */
 .bottom-nav {
-  padding: 6px; margin: 0 12px;
-  margin-bottom: calc(var(--safe-bot) + 8px);
+  padding: 6px; margin: 0 14px;
+  margin-bottom: calc(var(--safe-bot) + 10px);
   border-radius: 26px;
   display: flex; justify-content: space-around; align-items: center;
   flex-shrink: 0; gap: 2px;
@@ -538,7 +547,11 @@ body {
 }
 .nav-btn .nav-icon { font-size: 18px; line-height: 1; }
 .nav-btn .nav-label { font-size: 9.5px; font-weight: 600; letter-spacing: 0.2px; }
-.nav-btn.active { color: var(--accent-2); background: rgba(255,255,255,0.08); }
+.nav-btn.active {
+  color: var(--accent-2);
+  background: rgba(47,139,255,0.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+}
 .nav-btn:active { transform: scale(0.92); }
 .nav-badge {
   position: absolute; top: 4px; right: 18%;
@@ -2912,7 +2925,22 @@ body.light-mode .theme-toggle {
           ⚡ GENERAR PRO
         </button>
       </div>
-      
+
+      <!-- AI Intelligence — model leaderboard + top numbers -->
+      <div class="glass card" id="pred-ai-panel" style="margin-bottom:12px;">
+        <div class="card-head" style="margin-bottom:10px;">
+          <div class="card-title"><span class="card-title-icon">🧠</span> Inteligencia Activa</div>
+          <button class="card-action" onclick="runEvolution();renderAll();">↻ Re-evolucionar</button>
+        </div>
+        <!-- Top numbers row -->
+        <div style="margin-bottom:10px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-3);margin-bottom:6px;">Top números favorecidos</div>
+          <div class="ai-pulse-numbers" id="pred-top-numbers" style="gap:5px;"></div>
+        </div>
+        <!-- Model leaderboard compact -->
+        <div id="pred-model-leaderboard" style="font-size:11px;color:var(--text-3);"></div>
+      </div>
+
       <div id="pred-results">
         <div class="empty">
           <div class="empty-icon">🎯</div>
@@ -3153,7 +3181,7 @@ body.light-mode .theme-toggle {
     
   </div>
   
-  <!-- Bottom nav -->
+  <!-- Bottom nav — 4 tabs, Agente merged into Predicciones -->
   <div class="glass bottom-nav">
     <button class="nav-btn active" data-nav="dashboard" onclick="showSection('dashboard')">
       <span class="nav-icon">🏠</span>
@@ -3171,10 +3199,6 @@ body.light-mode .theme-toggle {
     <button class="nav-btn" data-nav="analisis" onclick="showSection('analisis')">
       <span class="nav-icon">📊</span>
       <span class="nav-label">Análisis</span>
-    </button>
-    <button class="nav-btn" data-nav="agente" onclick="showSection('agente')">
-      <span class="nav-icon">🧠</span>
-      <span class="nav-label">Agente</span>
     </button>
   </div>
   
@@ -6356,11 +6380,20 @@ function renderDashboard() {
   renderWeights();
 }
 
+function _buildTopNumsHTML(count, classes) {
+  if (!state.fusedProbs) return '<span class="ai-computing-badge"><span class="dot-spin"></span> Calculando…</span>';
+  const list = [];
+  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: state.fusedProbs[n] || 0 });
+  list.sort((a, b) => b.p - a.p);
+  const classMap = { 0: 'top1', 1: 'top2', 2: 'top3' };
+  return list.slice(0, count).map((x, i) =>
+    `<div class="ai-pulse-num ${classMap[i] || ''}" title="${(x.p*100).toFixed(2)}%">${x.n}</div>`
+  ).join('');
+}
+
 function renderAIPulse() {
-  const card = document.getElementById('ai-pulse-card');
   const numEl = document.getElementById('ai-pulse-numbers');
   const modelEl = document.getElementById('ai-pulse-model-label');
-  if (!card || !numEl) return;
 
   if (!state.fusedProbs || !state.performance) {
     if (numEl) numEl.innerHTML = '<span class="ai-computing-badge"><span class="dot-spin"></span> Calculando modelos…</span>';
@@ -6368,24 +6401,39 @@ function renderAIPulse() {
     return;
   }
 
-  // Build top numbers
-  const list = [];
-  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: state.fusedProbs[n] || 0 });
-  list.sort((a, b) => b.p - a.p);
-  const top7 = list.slice(0, 7);
+  if (numEl) numEl.innerHTML = _buildTopNumsHTML(7);
 
-  const classMap = { 0: 'top1', 1: 'top2', 2: 'top3' };
-  numEl.innerHTML = top7.map((x, i) =>
-    `<div class="ai-pulse-num ${classMap[i] || ''}" title="${(x.p*100).toFixed(2)}%">${x.n}</div>`
-  ).join('');
-
-  // Best model label
-  if (modelEl && state.performance) {
+  if (modelEl) {
     const best = Object.entries(state.performance).sort((a, b) => (b[1].score||0) - (a[1].score||0))[0];
     if (best) {
       const pct = ((best[1].score || 0) * 100).toFixed(1);
       modelEl.textContent = `Líder: ${modelDisplayName(best[0])} · ${pct}% precisión · 16 modelos activos`;
     }
+  }
+
+  // Also update Predicciones AI panel if present
+  _renderPredAIPanel();
+}
+
+function _renderPredAIPanel() {
+  const numEl2 = document.getElementById('pred-top-numbers');
+  const lbEl = document.getElementById('pred-model-leaderboard');
+  if (!state.fusedProbs || !state.performance) return;
+
+  if (numEl2) numEl2.innerHTML = _buildTopNumsHTML(10);
+
+  if (lbEl) {
+    const sorted = Object.entries(state.performance)
+      .sort((a, b) => (b[1].score||0) - (a[1].score||0)).slice(0, 5);
+    const medals = ['🥇','🥈','🥉','4º','5º'];
+    lbEl.innerHTML = sorted.map(([k, p], i) => {
+      const pct = ((p.score||0)*100).toFixed(1);
+      const w = ((state.weights?.[k]||0)*100).toFixed(0);
+      return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:0.5px solid rgba(255,255,255,0.05);">
+        <span>${medals[i]} <strong style="color:var(--text-2)">${modelDisplayName(k)}</strong></span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;">${pct}% · ${w}%</span>
+      </div>`;
+    }).join('') + '<div style="font-size:9.5px;color:var(--text-3);margin-top:6px;">precisión top-15 · peso ensemble</div>';
   }
 }
 
@@ -7047,6 +7095,7 @@ function renderPredictionsView() {
   if (cv) cv.textContent = state.count;
   const cs = document.getElementById('count-slider');
   if (cs) cs.value = state.count;
+  _renderPredAIPanel(); // AI model leaderboard + top numbers
   
   const c = document.getElementById('pred-results');
   if (!c) return;
@@ -9525,62 +9574,7 @@ function _agentModelRanking() {
 
 // ── AGENT LOOP — CLIENT-SIDE (no backend required) ─────────
 async function callAgentWithTools(userMessage, conversationHistory = []) {
-  // Fake system prompt kept for legacy reference:
-  const _unused_systemPrompt = `Eres "Genius", un agente estadístico avanzado nivel PhD especializado en lotería mexicana Melate/Revancha/Retro.
-
-CONTEXTO ACTUAL:
-- Usuario: ${ctx.user}
-- Juego activo: ${ctx.game} (números 1-${ctx.maxNumber})
-- Datos disponibles: ${ctx.totalDraws.toLocaleString()} sorteos históricos${ctx.userDraws > 0 ? ` (${ctx.userDraws} agregados por el usuario)` : ''}
-- Modelo líder actual: ${ctx.bestModel.name} (precisión top-15: ${ctx.bestModel.score}%)
-- Pesos evolucionados: ${ctx.weightsTop3}
-- Top 10 números actuales: ${ctx.topNumbers}
-
-HISTORIAL DEL USUARIO:
-- Predicciones guardadas: ${ctx.historyStats.total}
-- Evaluadas: ${ctx.historyStats.evaluated} (promedio ${ctx.historyStats.avgHits} aciertos)
-- Pendientes: ${ctx.historyStats.pending}
-
-PREFERENCIAS DEL USUARIO:
-${ctx.preferences}
-
-CAPACIDADES:
-Tienes acceso a 10 herramientas reales que modifican el estado de la app:
-- generar_predicciones: crea boletos visibles en pantalla
-- consultar_historial: revisa predicciones guardadas y stats
-- analizar_numero: explica probabilidad de un número específico
-- ejecutar_backtest: simula performance histórica
-- detectar_patron: encuentra tendencias en sorteos recientes
-- comparar_modos: cuál estrategia funciona mejor
-- recordar_preferencia: guarda info personal del usuario para futuras sesiones
-- consultar_preferencias: revisa qué sabes del usuario
-- calcular_kelly: cuánto debería apostar según su bankroll (Kelly Criterion)
-- cambiar_juego: alternar entre Melate/Revancha/Retro
-
-REGLAS DE COMPORTAMIENTO:
-
-1. **USA LAS HERRAMIENTAS**. Si el usuario pide algo accionable (generar boletos, ver historial, ejecutar backtest), USA la herramienta correspondiente. NO simules ni hables del resultado sin ejecutarlo.
-
-2. **RAZONAMIENTO PASO A PASO**. Para preguntas complejas, piensa en pasos antes de actuar:
-   - "Primero voy a X..."
-   - "Después analizo Y..."
-   - "Conclusión: Z"
-
-3. **RECUERDA Y APLICA PREFERENCIAS**. Si el usuario menciona algo personal ("prefiero números bajos", "evito el 13"), GUÁRDALO con recordar_preferencia. Y cuando generes predicciones, considera estas preferencias.
-
-4. **HONESTIDAD MATEMÁTICA**. La lotería tiene house edge ~45-55%. Nunca prometas ganar. Si el usuario está apostando demasiado, sugiérele calcular_kelly. Tu deber es proteger su bienestar financiero, no maximizar engagement.
-
-5. **RESPUESTAS CORTAS Y ACCIONABLES**. Pantallas móviles. Máx 3-4 párrafos. Cifras concretas. Sin relleno.
-
-6. **ESPAÑOL MEXICANO NATURAL**. Como amigo experto, no como bot.
-
-7. **PROACTIVIDAD INTELIGENTE**. Si detectas patrones interesantes mientras analizas, menciónalos sin que pregunten.
-
-8. **RAZONA COMO ESTADÍSTICO**. Cita modelos específicos: "Markov sugiere X porque...", "Gap Hazard indica Y...". No solo digas "el modelo dice".
-
-Si el usuario pregunta algo trivial sin necesidad de herramientas, responde directo. Si necesita acción, USA herramientas.`;
-
-  // ── Pure client-side dispatch — no backend needed ──────────
+  // Pure client-side dispatch — no backend needed
   const toolUseLog = [];
   const gameName = GAME_CONFIG[state.currentGame]?.name || state.currentGame;
   const bestModel = _agentBestModel();
