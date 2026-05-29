@@ -4131,8 +4131,10 @@ function evaluateModelOnDraws(model, draws, maxN, minTrain = 100) {
 
 // Walk-forward over a small window to quickly evaluate models
 function quickEvalModels(draws, maxN) {
-  // Smaller eval window to run fast — keep at 20 iterations for snappy performance
-  const testStart = Math.max(20, draws.length - 20);
+  // 50-draw walk-forward window: balance between speed and statistical robustness.
+  // The real speedup is the _gameComputeCache + async defer in initApp/selectGame —
+  // this function only runs once per dataset, not on every render.
+  const testStart = Math.max(30, draws.length - 50);
   const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift', 'neural', 'adaptiveMarkov', 'entropy'];
   const scores = {}, hits = {};
   modelNames.forEach(n => { scores[n] = 0; hits[n] = 0; });
