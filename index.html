@@ -3695,8 +3695,14 @@ function pairLiftModel(d, maxN) {
 // ═══════════════════════════════════════════════════════════
 
 // M14: Mini Neural Network (3-layer feedforward, incremental SGD)
+// Cache to avoid retraining on every quickEvalModels iteration
+const _nnCache = { drawsLen: -1, maxN: -1, probs: null };
 function neuralEnsembleModel(draws, maxN) {
   if (draws.length < 30) return new Array(maxN + 1).fill(1 / maxN);
+  // Return cached result if data hasn't changed
+  if (_nnCache.drawsLen === draws.length && _nnCache.maxN === maxN && _nnCache.probs) {
+    return _nnCache.probs;
+  }
   const HIDDEN = 12;
   const FEATURES = 5;
   // Random init with fixed seed (reproducible)
@@ -3776,7 +3782,12 @@ function neuralEnsembleModel(draws, maxN) {
     probs[n] = forward(feat).out;
   }
   const sum = probs.reduce((a, b) => a + b, 0);
-  return probs.map(p => p / (sum || 1));
+  const normProbs = probs.map(p => p / (sum || 1));
+  // Store in cache
+  _nnCache.drawsLen = draws.length;
+  _nnCache.maxN = maxN;
+  _nnCache.probs = normProbs;
+  return normProbs;
 }
 
 // M15: Adaptive Markov (auto-selects order 1, 2, or 3)
@@ -3990,15 +4001,17 @@ function evaluateModelOnDraws(model, draws, maxN, minTrain = 100) {
 function quickEvalModels(draws, maxN) {
   // Smaller eval window to run fast
   const testStart = Math.max(50, draws.length - 80); // multi-ventana: evalúa más historia
-  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
+  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift', 'neural', 'adaptiveMarkov', 'entropy'];
   const scores = {}, hits = {};
   modelNames.forEach(n => { scores[n] = 0; hits[n] = 0; });
   let total = 0;
-  
+  // Determine pick size dynamically from the draw data
+  const pickN = (draws.length > 0 && draws[0]) ? draws[0].length : 6;
+
   for (let t = testStart; t < draws.length; t++) {
     const train = draws.slice(0, t);
     const actual = new Set(draws[t]);
-    
+
     const allProbs = {
       bayesian: bayesianModel(train, maxN),
       gapHazard: gapHazardModel(train, maxN),
@@ -4012,9 +4025,12 @@ function quickEvalModels(draws, maxN) {
       delta: deltaPatternModel(train, maxN),
       hotStreak: hotStreakModel(train, maxN),
       zonePressure: zonePressureModel(train, maxN),
-      pairLift: pairLiftModel(train, maxN)
+      pairLift: pairLiftModel(train, maxN),
+      neural: neuralEnsembleModel(train, maxN),
+      adaptiveMarkov: adaptiveMarkovModel(train, maxN),
+      entropy: entropyModel(train, maxN)
     };
-    
+
     for (const [name, probs] of Object.entries(allProbs)) {
       const sorted = [];
       for (let n = 1; n <= maxN; n++) sorted.push({ n, p: probs[n] });
@@ -4023,12 +4039,12 @@ function quickEvalModels(draws, maxN) {
       let h = 0;
       actual.forEach(n => { if (top15.has(n)) h++; });
       hits[name] += h;
-      
+
       let ll = 0;
       actual.forEach(n => { ll += Math.log(Math.max(probs[n], 1e-10)); });
       scores[name] += ll;
     }
-    total += 6;
+    total += pickN;
   }
   
   const nEval = draws.length - testStart;
@@ -4147,34 +4163,36 @@ function scoreTicket(t, p, d, maxN) {
 }
 
 // Generate N diverse tickets using fused probabilities
-function generateTickets(fusedProbs, draws, maxN, count = 5, mode = 'balanced', seed = null) {
+function generateTickets(fusedProbs, draws, maxN, count = 5, mode = 'balanced', seed = null, pick = null) {
   let s = seed || Date.now();
   const rng = () => { s = (s * 16807 + 0) % 2147483647; return s / 2147483647; };
-  
+  // Resolve pick from game config if not provided
+  const pickN = pick || (state && GAME_CONFIG[state.currentGame] ? (GAME_CONFIG[state.currentGame].pick || 6) : 6);
+
   const tickets = [];
   const used = [];
   let tries = 0;
   const maxTries = count * 50;
-  
+
   while (tickets.length < count && tries < maxTries) {
     tries++;
-    const t = generateTicket(fusedProbs, maxN, rng);
-    
+    const t = generateTicket(fusedProbs, maxN, rng, pickN);
+
     // Check diversity
     let close = false;
     for (const u of used) {
       if (jaccard(t, u) > 0.6) { close = true; break; }
     }
     if (close && tries < maxTries * 0.7) continue;
-    
+
     const sc = scoreTicket(t, fusedProbs, draws, maxN);
     tickets.push({ ticket: t, score: sc });
     used.push(t);
   }
-  
+
   // Fill if not enough
   while (tickets.length < count) {
-    const t = generateTicket(fusedProbs, maxN, rng);
+    const t = generateTicket(fusedProbs, maxN, rng, pickN);
     const sc = scoreTicket(t, fusedProbs, draws, maxN);
     tickets.push({ ticket: t, score: sc });
   }
@@ -5898,7 +5916,6 @@ const state = {
   draws: [],
   userDraws: { melate: [], revancha: [], retro: [], tris: [], chispazo: [] },
   trisWeights: { bayesian: 0.30, gap: 0.28, markov: 0.25, fourier: 0.17 },
-  trisWeights: { bayesian: 0.30, gap: 0.28, markov: 0.25, fourier: 0.17 },
   maxNumber: 56,
   
   models: null,          // precomputed M1-M9 outputs
@@ -6383,7 +6400,10 @@ function modelDisplayName(key) {
     delta: 'Delta Pattern',
     hotStreak: 'Hot Streak',
     zonePressure: 'Zone Pressure',
-    pairLift: 'Pair Lift'
+    pairLift: 'Pair Lift',
+    neural: 'Red Neuronal',
+    adaptiveMarkov: 'Markov Adaptativo',
+    entropy: 'Entropía'
   };
   return names[key] || key;
 }
@@ -6465,8 +6485,6 @@ function updateNavBadge() {
 // ═══════════════════════════════════════════════════════════
 //  SECTIONS
 // ═══════════════════════════════════════════════════════════
-
-} // end _renderAllActual
 
 function showSection(name) {
   // Si estamos en modo Progol y hacen tap en bottom nav, regresamos a Melate
