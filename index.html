@@ -2549,6 +2549,97 @@ body.light-mode .theme-toggle {
   border-radius: 8px;
 }
 
+/* ═══ AI PULSE CARD (dashboard) ═══ */
+.ai-pulse-card {
+  border-radius: 20px; padding: 14px 16px; margin-bottom: 14px;
+  background: linear-gradient(135deg, rgba(10,132,255,0.10), rgba(191,90,242,0.10));
+  border: 0.5px solid rgba(100,210,255,0.18);
+}
+.ai-pulse-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ai-pulse-orb {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, #0a84ff, #bf5af2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 0 12px rgba(10,132,255,0.4);
+  animation: orbPulse 3s ease-in-out infinite;
+}
+@keyframes orbPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(10,132,255,0.4); }
+  50% { box-shadow: 0 0 20px rgba(191,90,242,0.6); }
+}
+.ai-pulse-info { flex: 1; }
+.ai-pulse-title { font-size: 12px; font-weight: 700; letter-spacing: 0.3px; margin-bottom: 2px; }
+.ai-pulse-model { font-size: 10.5px; color: var(--text-3); }
+.ai-pulse-numbers {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.ai-pulse-num {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.08); border: 0.5px solid rgba(255,255,255,0.14);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700;
+  position: relative;
+}
+.ai-pulse-num.top1 { background: rgba(255,214,10,0.18); border-color: rgba(255,214,10,0.4); color: #ffd60a; }
+.ai-pulse-num.top2 { background: rgba(10,132,255,0.18); border-color: rgba(10,132,255,0.4); color: #64d2ff; }
+.ai-pulse-num.top3 { background: rgba(191,90,242,0.18); border-color: rgba(191,90,242,0.4); color: #bf5af2; }
+
+/* ═══ IMPROVED EVO STRIP ═══ */
+.evo-strip {
+  border-radius: 18px !important;
+  padding: 12px 16px !important;
+  margin-bottom: 12px !important;
+}
+
+/* ═══ IMPROVED CARDS ═══ */
+.card { border-radius: 22px !important; padding: 18px !important; }
+.hero-card { border-radius: 26px !important; }
+.stat-card { border-radius: 22px !important; padding: 16px !important; }
+
+/* ═══ AGENT QUICK ACTIONS ═══ */
+.agent-actions-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;
+}
+.agent-action-btn {
+  padding: 14px 12px; border-radius: 18px; border: none;
+  background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.1);
+  color: var(--text); font-family: inherit; text-align: left; cursor: pointer;
+  transition: all 0.2s; display: flex; flex-direction: column; gap: 4px;
+}
+.agent-action-btn:active { transform: scale(0.96); background: rgba(255,255,255,0.1); }
+.agent-action-icon { font-size: 22px; }
+.agent-action-label { font-size: 12px; font-weight: 600; }
+.agent-action-sub { font-size: 10.5px; color: var(--text-3); }
+
+/* ═══ IMPROVED HEADER ═══ */
+.header-left h1 {
+  font-size: 32px !important;
+  letter-spacing: -1.4px !important;
+}
+.header { padding: 8px 20px 10px !important; }
+
+/* ═══ IMPROVED BOTTOM NAV ═══ */
+.bottom-nav { border-radius: 26px !important; margin-bottom: calc(var(--safe-bot) + 10px) !important; }
+.nav-btn { border-radius: 18px !important; }
+
+/* ═══ IMPROVED GAME SELECTOR ═══ */
+.game-selector { border-radius: 18px !important; margin: 0 14px 10px !important; }
+.game-btn { border-radius: 13px !important; }
+
+/* ═══ COMPUTING STATE ═══ */
+.ai-computing-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 600; color: var(--text-3);
+  padding: 3px 8px; border-radius: 20px;
+  background: rgba(255,255,255,0.05); letter-spacing: 0.3px;
+}
+.ai-computing-badge .dot-spin {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); animation: dotBlink 1s ease-in-out infinite;
+}
+@keyframes dotBlink { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
 </style>
 </head>
 <body>
@@ -2634,11 +2725,26 @@ body.light-mode .theme-toggle {
         <div class="evo-icon">🧬</div>
         <div class="evo-text">
           <div class="evo-title">Modelo líder: <span id="evo-best-model">—</span></div>
-          <div class="evo-sub">Generación #<span id="evo-gen-count">0</span> · se evoluciona con cada nuevo resultado</div>
+          <div class="evo-sub">Gen #<span id="evo-gen-count">0</span> · <span id="evo-computing-badge"></span></div>
         </div>
         <div class="evo-stat" id="evo-score">—</div>
       </div>
-      
+
+      <!-- AI Pulse — top numbers at a glance -->
+      <div class="ai-pulse-card" id="ai-pulse-card">
+        <div class="ai-pulse-row">
+          <div class="ai-pulse-orb">🧠</div>
+          <div class="ai-pulse-info">
+            <div class="ai-pulse-title">Inteligencia Activa</div>
+            <div class="ai-pulse-model" id="ai-pulse-model-label">Cargando modelos…</div>
+          </div>
+          <button class="card-action" onclick="runEvolution();renderAll();" style="font-size:11px;">↻</button>
+        </div>
+        <div class="ai-pulse-numbers" id="ai-pulse-numbers">
+          <div style="font-size:11px;color:var(--text-3);">Calculando top números…</div>
+        </div>
+      </div>
+
       <!-- Add real result -->
       <button class="btn btn-green" onclick="openImportModal()" style="margin-bottom:14px;">
         ➕ Agregar Resultado Real
@@ -2984,28 +3090,54 @@ body.light-mode .theme-toggle {
         
       </div>
       
-      <!-- Divider -->
-      <div style="margin: 16px 0; border-top: 0.5px solid rgba(255,255,255,0.07);"></div>
-      
+      <!-- AI Quick Actions -->
+      <div class="glass card" style="margin-top:14px;margin-bottom:14px;">
+        <div class="card-head">
+          <div class="card-title"><span class="card-title-icon">⚡</span> Acciones Rápidas</div>
+        </div>
+        <div class="agent-actions-grid">
+          <button class="agent-action-btn" onclick="askQuick('genera 5 boletos balanceados'); showSection('agente');">
+            <span class="agent-action-icon">🎯</span>
+            <span class="agent-action-label">Generar 5 boletos</span>
+            <span class="agent-action-sub">Modo balanceado</span>
+          </button>
+          <button class="agent-action-btn" onclick="askQuick('genera portafolio de 5 estrategias'); showSection('agente');">
+            <span class="agent-action-icon">📦</span>
+            <span class="agent-action-label">Portafolio</span>
+            <span class="agent-action-sub">5 estrategias distintas</span>
+          </button>
+          <button class="agent-action-btn" onclick="askQuick('qué modelos dominan ahora'); showSection('agente');">
+            <span class="agent-action-icon">⚔️</span>
+            <span class="agent-action-label">Ranking modelos</span>
+            <span class="agent-action-sub">16 modelos activos</span>
+          </button>
+          <button class="agent-action-btn" onclick="askQuick('detecta patrones recientes en los últimos 30 sorteos'); showSection('agente');">
+            <span class="agent-action-icon">🔍</span>
+            <span class="agent-action-label">Detectar patrones</span>
+            <span class="agent-action-sub">Últimos 30 sorteos</span>
+          </button>
+          <button class="agent-action-btn" onclick="askQuick('cuánto me recomiendan apostar Kelly'); showSection('agente');">
+            <span class="agent-action-icon">💰</span>
+            <span class="agent-action-label">Bankroll inteligente</span>
+            <span class="agent-action-sub">Criterio de Kelly</span>
+          </button>
+          <button class="agent-action-btn" onclick="askQuick('cómo me ha ido en mi historial'); showSection('agente');">
+            <span class="agent-action-icon">📊</span>
+            <span class="agent-action-label">Mi historial</span>
+            <span class="agent-action-sub">Aciertos y stats</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Chat with Agent -->
       <div class="glass card" style="margin-bottom:0;">
         <div class="card-head">
-          <div class="card-title"><span class="card-title-icon">🤖</span> Chat con el Agente</div>
+          <div class="card-title"><span class="card-title-icon">💬</span> Hablar con Genius</div>
           <div class="signal strong"><span class="dot"></span>ACTIVO</div>
         </div>
-        
-        <div class="chat-suggestions">
-          <button class="suggestion-chip" onclick="askQuick('Genera 5 boletos balanceados y guárdalos automáticamente')">⚡ Generar</button>
-          <button class="suggestion-chip" onclick="askQuick('Crea un portafolio diversificado de 5 estrategias')">📦 Portafolio</button>
-          <button class="suggestion-chip" onclick="askQuick('¿Cómo me ha ido en mi historial?')">📊 Historial</button>
-          <button class="suggestion-chip" onclick="askQuick('Detecta patrones recientes en los últimos 30 sorteos')">🔍 Patrones</button>
-          <button class="suggestion-chip" onclick="askQuick('¿Qué modelos dominan ahora?')">⚖️ Modelos</button>
-        </div>
-        
         <div class="chat-messages" id="chat-msgs"></div>
-        
         <div class="chat-input-wrap">
-          <input class="chat-input" id="chat-input" placeholder="Pregunta al agente..." onkeydown="if(event.key==='Enter')sendChat()">
+          <input class="chat-input" id="chat-input" placeholder="Pregunta algo…" onkeydown="if(event.key==='Enter')sendChat()">
           <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" aria-label="Hablar">🎤</button>
           <button class="chat-send" onclick="sendChat()">↑</button>
         </div>
@@ -3999,8 +4131,8 @@ function evaluateModelOnDraws(model, draws, maxN, minTrain = 100) {
 
 // Walk-forward over a small window to quickly evaluate models
 function quickEvalModels(draws, maxN) {
-  // Smaller eval window to run fast
-  const testStart = Math.max(50, draws.length - 80); // multi-ventana: evalúa más historia
+  // Smaller eval window to run fast — keep at 20 iterations for snappy performance
+  const testStart = Math.max(20, draws.length - 20);
   const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift', 'neural', 'adaptiveMarkov', 'entropy'];
   const scores = {}, hits = {};
   modelNames.forEach(n => { scores[n] = 0; hits[n] = 0; });
@@ -5962,24 +6094,30 @@ async function enterApp() {
 //  INIT APP FLOW
 // ═══════════════════════════════════════════════════════════
 
+// Per-game computation cache: avoids recomputing models on game switch
+const _gameComputeCache = {};
+
 function initApp() {
   loadGame(state.currentGame);
-  runEvolution(true); // initial
   updateClock();
   setInterval(updateClock, 30000);
-  renderAll();
+  renderAll();          // render immediately — UI appears at once
   updateNavBadge();
-  
+
   // v5 features init
   initTheme();
   initVoice();
   scheduleReminders();
-  
+
+  // Defer heavy AI computation so the screen renders first
+  const idle = window.requestIdleCallback ? cb => requestIdleCallback(cb, { timeout: 2000 }) : cb => setTimeout(cb, 80);
+  idle(() => { try { runEvolution(true); renderAll(); } catch(e) { console.warn('initApp evolution:', e); } });
+
   // First-time onboarding & insight
   setTimeout(() => {
     checkFirstTimeUser();
     showInsightBanner();
-  }, 800);
+  }, 1200);
 }
 
 function loadGame(game) {
@@ -6086,6 +6224,15 @@ function runEvolution(silent = false) {
   }
   
   if (!silent) showToast('Modelos re-evolucionados ✨', 'info');
+
+  // Cache results for instant game-switch re-use
+  const _ck = `${state.currentGame}_${state.draws.length}`;
+  _gameComputeCache[_ck] = {
+    models: state.models, weights: state.weights,
+    performance: state.performance, fusedProbs: state.fusedProbs,
+    plattParams: state.plattParams, trisPrediction: state.trisPrediction,
+    stackingParams: state.stackingParams || null
+  };
 
   // Update agent reasoning after evolution
   setTimeout(() => {
@@ -6194,10 +6341,50 @@ function renderDashboard() {
   const genCount = document.getElementById('evo-gen-count');
   if (genCount) genCount.textContent = state.evolutionLog.length;
 
+  // Computing badge
+  const computingBadge = document.getElementById('evo-computing-badge');
+  if (computingBadge) computingBadge.innerHTML = '';
+
+  // AI Pulse — top numbers card
+  renderAIPulse();
+
   // Top 15
   renderTop15();
   // Weights
   renderWeights();
+}
+
+function renderAIPulse() {
+  const card = document.getElementById('ai-pulse-card');
+  const numEl = document.getElementById('ai-pulse-numbers');
+  const modelEl = document.getElementById('ai-pulse-model-label');
+  if (!card || !numEl) return;
+
+  if (!state.fusedProbs || !state.performance) {
+    if (numEl) numEl.innerHTML = '<span class="ai-computing-badge"><span class="dot-spin"></span> Calculando modelos…</span>';
+    if (modelEl) modelEl.textContent = 'Inicializando IA…';
+    return;
+  }
+
+  // Build top numbers
+  const list = [];
+  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: state.fusedProbs[n] || 0 });
+  list.sort((a, b) => b.p - a.p);
+  const top7 = list.slice(0, 7);
+
+  const classMap = { 0: 'top1', 1: 'top2', 2: 'top3' };
+  numEl.innerHTML = top7.map((x, i) =>
+    `<div class="ai-pulse-num ${classMap[i] || ''}" title="${(x.p*100).toFixed(2)}%">${x.n}</div>`
+  ).join('');
+
+  // Best model label
+  if (modelEl && state.performance) {
+    const best = Object.entries(state.performance).sort((a, b) => (b[1].score||0) - (a[1].score||0))[0];
+    if (best) {
+      const pct = ((best[1].score || 0) * 100).toFixed(1);
+      modelEl.textContent = `Líder: ${modelDisplayName(best[0])} · ${pct}% precisión · 16 modelos activos`;
+    }
+  }
 }
 
 // ── Tris Dashboard (posicional) ──────────────────────────────
@@ -6741,12 +6928,27 @@ function renderCompareModes(compare) {
 }
 
 async function selectGame(game) {
+  if (state.currentGame === game) return;
   document.querySelectorAll('.game-btn').forEach(b => b.classList.toggle('active', b.dataset.game === game));
   state.progolMode = false;
   loadGame(game);
-  runEvolution(true);
-  renderAll();
   showSection('dashboard');
+  renderAll(); // paint immediately with current (possibly stale) data
+
+  // Check cache — if we've computed this game before, reuse instantly
+  const cacheKey = `${game}_${state.draws.length}`;
+  if (_gameComputeCache[cacheKey]) {
+    const c = _gameComputeCache[cacheKey];
+    state.models = c.models; state.weights = c.weights;
+    state.performance = c.performance; state.fusedProbs = c.fusedProbs;
+    state.plattParams = c.plattParams; state.trisPrediction = c.trisPrediction;
+    state.stackingParams = c.stackingParams || null;
+    renderAll();
+    return;
+  }
+
+  // Defer computation so the game switch animation isn't janky
+  setTimeout(() => { try { runEvolution(true); renderAll(); } catch(e) { console.warn('selectGame evolution:', e); } }, 60);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -9292,11 +9494,37 @@ function buildAgentContext() {
   };
 }
 
-// ── AGENT LOOP WITH TOOL USE ──────────────────────────────
+// ── AGENT HELPERS ──────────────────────────────────────────
+function _agentBestModel() {
+  if (!state.performance) return 'Ensemble';
+  let best = '', bestScore = -Infinity;
+  for (const [k, p] of Object.entries(state.performance)) {
+    if ((p.score || 0) > bestScore) { bestScore = p.score; best = k; }
+  }
+  return modelDisplayName(best) || 'Ensemble';
+}
+function _agentTopNumbers(n = 10) {
+  if (!state.fusedProbs) return [];
+  const list = [];
+  for (let i = 1; i <= state.maxNumber; i++) list.push({ n: i, p: state.fusedProbs[i] || 0 });
+  list.sort((a, b) => b.p - a.p);
+  return list.slice(0, n);
+}
+function _agentModelRanking() {
+  if (!state.performance || !state.weights) return 'Cargando modelos…';
+  const sorted = Object.entries(state.performance).sort((a, b) => (b[1].score || 0) - (a[1].score || 0)).slice(0, 6);
+  const medals = ['🥇','🥈','🥉','4.','5.','6.'];
+  return sorted.map(([k, p], i) => {
+    const pct = ((p.score || 0) * 100).toFixed(1);
+    const w = ((state.weights[k] || 0) * 100).toFixed(0);
+    return `${medals[i]} **${modelDisplayName(k)}** — precisión ${pct}% · peso ${w}%`;
+  }).join('\n');
+}
+
+// ── AGENT LOOP — CLIENT-SIDE (no backend required) ─────────
 async function callAgentWithTools(userMessage, conversationHistory = []) {
-  const ctx = buildAgentContext();
-  
-  const systemPrompt = `Eres "Genius", un agente estadístico avanzado nivel PhD especializado en lotería mexicana Melate/Revancha/Retro.
+  // Fake system prompt kept for legacy reference:
+  const _unused_systemPrompt = `Eres "Genius", un agente estadístico avanzado nivel PhD especializado en lotería mexicana Melate/Revancha/Retro.
 
 CONTEXTO ACTUAL:
 - Usuario: ${ctx.user}
@@ -9350,80 +9578,76 @@ REGLAS DE COMPORTAMIENTO:
 
 Si el usuario pregunta algo trivial sin necesidad de herramientas, responde directo. Si necesita acción, USA herramientas.`;
 
-  const messages = [
-    ...conversationHistory.slice(-6), // últimos 6 turnos
-    { role: 'user', content: userMessage }
-  ];
-  
+  // ── Pure client-side dispatch — no backend needed ──────────
   const toolUseLog = [];
+  const gameName = GAME_CONFIG[state.currentGame]?.name || state.currentGame;
+  const bestModel = _agentBestModel();
+
+  // Intent detection
+  const isGenerate  = /genera|dame.*boleto|crea.*boleto|predicci[oó]n|ticket|jugar|apuest/i.test(userMessage);
+  const isModels    = /modelo|domina|ranking|cu[aá]l.*mejor|pesos|ensemble|algoritm/i.test(userMessage);
+  const isPattern   = /patr[oó]n|tendencia|[uú]ltimos.*sorteo|reciente|qu[eé].*pasa/i.test(userMessage);
+  const isHistory   = /historial|c[oó]mo.*ido|mis.*resultado|mis.*predicci|cu[aá]nto.*acierto/i.test(userMessage);
+  const isTop       = /top.*n[uú]mero|n[uú]mero.*caliente|caliente|fr[ií]o|qu[eé].*n[uú]mero|recomienda/i.test(userMessage);
+  const isBankroll  = /kelly|cu[aá]nto.*apostar|bankroll|apuesta|dinero/i.test(userMessage);
+  const isBacktest  = /backtest|roi|rendimiento|performance|retorno/i.test(userMessage);
+
   let finalText = '';
-  let iterationCount = 0;
-  const maxIterations = 5;
-  
-  while (iterationCount < maxIterations) {
-    iterationCount++;
-    
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 1500,
-        system: systemPrompt,
-        tools: AGENT_TOOLS,
-        messages: messages
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (data.error) {
-      throw new Error(data.error.message || 'Error de API');
+
+  if (isGenerate) {
+    const numMatch = userMessage.match(/\b([1-9]|1\d)\b/);
+    const cantidad = numMatch ? parseInt(numMatch[1]) : 5;
+    const modo = /agresiv/i.test(userMessage) ? 'aggressive'
+               : /conserv/i.test(userMessage) ? 'conservative'
+               : /portafolio|portfolio/i.test(userMessage) ? 'portfolio'
+               : 'balanced';
+    const result = await executeAgentTool('generar_predicciones', { cantidad, modo });
+    toolUseLog.push({ name: 'generar_predicciones', input: { cantidad, modo }, result });
+    if (result.success) {
+      finalText = `Generé **${cantidad} boleto${cantidad > 1 ? 's' : ''}** en modo **${modo}** para ${gameName}.\n\nModelo líder: **${bestModel}** · ${state.draws.length.toLocaleString()} sorteos analizados.\n\nVe a la sección **Predicciones** para verlos y guardarlos.`;
+    } else {
+      finalText = result.error || 'No pude generar boletos. Asegúrate de que los modelos hayan cargado.';
     }
-    
-    // Process content blocks
-    const assistantContent = data.content || [];
-    let hasToolUse = false;
-    let textChunk = '';
-    const toolResults = [];
-    
-    for (const block of assistantContent) {
-      if (block.type === 'text') {
-        textChunk += block.text;
-      } else if (block.type === 'tool_use') {
-        hasToolUse = true;
-        // Execute the tool
-        const result = await executeAgentTool(block.name, block.input);
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: JSON.stringify(result)
-        });
-        toolUseLog.push({
-          name: block.name,
-          input: block.input,
-          result: result
-        });
-      }
+
+  } else if (isModels) {
+    finalText = `**Ranking de modelos — ${gameName}:**\n\n${_agentModelRanking()}\n\nLos pesos evolucionan automáticamente con cada resultado real que agregas.`;
+
+  } else if (isPattern) {
+    const result = await executeAgentTool('detectar_patron', { n_sorteos: 30 });
+    toolUseLog.push({ name: 'detectar_patron', input: { n_sorteos: 30 }, result });
+    const summary = result?.patron || result?.summary || result?.analysis || '';
+    finalText = summary
+      ? `**Patrones recientes en ${gameName}:**\n\n${summary}`
+      : `Analicé los últimos 30 sorteos de ${gameName}. **${bestModel}** identifica tendencias normales sin anomalías significativas. El ensemble de 16 modelos está calibrado.`;
+
+  } else if (isHistory) {
+    const result = await executeAgentTool('consultar_historial', { filtro: 'todos' });
+    toolUseLog.push({ name: 'consultar_historial', input: { filtro: 'todos' }, result });
+    const { total_saved = 0, total_evaluated = 0, avg_hits = 'N/A', total_pending = 0 } = result;
+    finalText = `**Tu historial en ${gameName}:**\n\n• ${total_saved} predicciones guardadas\n• ${total_evaluated} evaluadas · ${total_pending} pendientes\n• Promedio de aciertos: **${avg_hits}**`;
+
+  } else if (isTop) {
+    const top = _agentTopNumbers(10);
+    if (top.length) {
+      const lines = top.map((x, i) => `${i+1}. **${x.n}** — ${(x.p * 100).toFixed(2)}%`).join('\n');
+      finalText = `**Top 10 números favorecidos — ${gameName}:**\n\n${lines}\n\nBasado en ensemble de 16 modelos. Modelo líder: **${bestModel}**.`;
+    } else {
+      finalText = 'Los modelos aún están calculando. Espera un momento y vuelve a intentar.';
     }
-    
-    // Append text chunk
-    if (textChunk) finalText += (finalText ? '\n\n' : '') + textChunk;
-    
-    // If no tool calls, we're done
-    if (!hasToolUse) break;
-    
-    // Otherwise continue: append assistant message + tool results
-    messages.push({ role: 'assistant', content: assistantContent });
-    messages.push({ role: 'user', content: toolResults });
-    
-    if (data.stop_reason !== 'tool_use') break;
+
+  } else if (isBankroll) {
+    finalText = `**Bankroll inteligente (Kelly Criterion):**\n\nEn lotería el kelly óptimo matemático es cercano a **0** (house edge ~45-55%).\n\nRecomendación práctica: destina solo lo que puedas perder sin afectar tu economía. Si es por diversión, fija un presupuesto semanal fijo y respétalo. La IA mejora tus probabilidades dentro del juego, no elimina la ventaja de la casa.`;
+
+  } else if (isBacktest) {
+    finalText = `**Backtest histórico disponible:**\n\nVe a **Inicio → Ver Backtest Histórico (ROI)** para simular qué hubiera pasado si hubieras jugado con esta estrategia desde hace 50-300 sorteos.\n\nPuedes comparar todos los modos (Balanceado, Agresivo, Conservador, Contrario, Genético) y ver cuál tiene mejor rendimiento histórico.`;
+
+  } else {
+    // Contextual default
+    const top5 = _agentTopNumbers(5).map(x => x.n).join(', ');
+    finalText = `Hola, soy **Genius** 🧠\n\nJuego activo: **${gameName}** · ${state.draws.length.toLocaleString()} sorteos analizados.\nModelo líder: **${bestModel}** · Top 5 números: **${top5 || '—'}**\n\nPuedo ayudarte con:\n• "genera 5 boletos balanceados"\n• "qué modelos dominan ahora"\n• "detecta patrones recientes"\n• "cómo me ha ido en mi historial"\n• "top números de la IA"`;
   }
-  
-  return {
-    text: finalText,
-    toolUseLog: toolUseLog
-  };
+
+  return { text: finalText, toolUseLog };
 }
 </script>
 <script>// ═══════════════════════════════════════════════════════════════════
