@@ -7617,6 +7617,10 @@ function submitRealResult() {
 //  EVOLUTION FEEDBACK (shown after adding a real result)
 // ══════════════════════════════════════════════════════════
 function showEvolutionFeedback(nums, weightsBefore, fusedProbsBefore) {
+  try { _showEvolutionFeedbackImpl(nums, weightsBefore, fusedProbsBefore); }
+  catch(e) { console.warn('showEvolutionFeedback error:', e); showToast('Modelos evolucionaron ✨', 'info'); }
+}
+function _showEvolutionFeedbackImpl(nums, weightsBefore, fusedProbsBefore) {
   const pick = nums.length;
 
   // --- 1. How many actual numbers were in the ensemble's top-15 PRE-evolution ---
@@ -7719,7 +7723,8 @@ function showEvolutionFeedback(nums, weightsBefore, fusedProbsBefore) {
 
   const contentEl = document.getElementById('modal-evolution-content');
   if (contentEl) contentEl.innerHTML = content;
-  openModal('modal-evolution');
+  const evoModal = document.getElementById('modal-evolution');
+  if (evoModal) evoModal.classList.add('show');
 }
 
 // ═══════════════════════════════════════════════════════════
