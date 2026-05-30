@@ -5027,7 +5027,8 @@ function whatIfAnalysis(actualDraw, models, weights, draws, maxN, userTickets = 
   // Stats de tickets del usuario
   let userBest = 0, userWorst = pick, userAvg = 0;
   if (userTickets.length > 0) {
-    const hits = userTickets.map(t => t.ticket.filter(n => actualSet.has(n)).length);
+    const currentGame = (typeof state !== 'undefined') ? state.currentGame : 'melate';
+    const hits = userTickets.map(t => computeHits(t.ticket, actualDraw, currentGame).hits);
     userBest = Math.max(...hits);
     userWorst = Math.min(...hits);
     userAvg = hits.reduce((a, b) => a + b, 0) / hits.length;
@@ -5468,10 +5469,11 @@ function generatePostDrawInsight(actualDraw, userTickets, models, weights, draws
   // 1. Cómo le fue al usuario
   let userPerformance = '';
   if (userTickets.length > 0) {
-    const hits = userTickets.map(t => t.ticket.filter(n => actualSet.has(n)).length);
+    const currentGame = (typeof state !== 'undefined') ? state.currentGame : 'melate';
+    const hits = userTickets.map(t => computeHits(t.ticket, actualDraw, currentGame).hits);
     const maxHits = Math.max(...hits);
     const avgHits = hits.reduce((a, b) => a + b, 0) / hits.length;
-    
+
     if (maxHits >= 4) userPerformance = `🏆 ¡Felicidades! Tu mejor ticket tuvo ${maxHits} aciertos.`;
     else if (maxHits >= 3) userPerformance = `⭐ Buen sorteo: tu mejor ticket tuvo ${maxHits} aciertos.`;
     else if (avgHits >= 1.5) userPerformance = `Tu promedio de ${avgHits.toFixed(1)} aciertos está por encima del azar (~0.6).`;
@@ -7413,19 +7415,27 @@ function renderHistoryItem(h) {
     statusEl = `<span class="hist-status ${cls}">${label}</span>`;
     
     // Show actual with highlighted matches
-    const matched = new Set(h.matchedNumbers || []);
+    // Tris: positional (matchedPositions = index array), ball games: value-based
+    const isTrisItem = h.game === 'tris';
+    const matchedPosSet = new Set(h.matchedPositions || []);
+    const matchedValSet = new Set(h.matchedNumbers || []);
     actualEl = `<div class="hist-actual">
       Resultado real:
       <div class="hist-actual-balls">
-        ${h.actual.map(n => `<div class="ball xs ${matched.has(n) ? 'win' : 'cold'}">${n}</div>`).join('')}
+        ${(h.actual || []).map((n, i) => {
+          const isMatch = isTrisItem ? matchedPosSet.has(i) : matchedValSet.has(n);
+          return `<div class="ball xs ${isMatch ? 'win' : 'cold'}">${n}</div>`;
+        }).join('')}
       </div>
     </div>`;
   }
-  
-  const ticketBalls = h.ticket.map(n => {
+
+  const isTrisItem = h.game === 'tris';
+  const matchedPosSet = new Set(h.matchedPositions || []);
+  const ticketBalls = h.ticket.map((n, i) => {
     if (h.status === 'checked' && h.matchedNumbers) {
-      const matched = h.matchedNumbers.includes(n);
-      return `<div class="ball sm ${matched ? 'win' : 'miss cold'}">${n}</div>`;
+      const isMatch = isTrisItem ? matchedPosSet.has(i) : h.matchedNumbers.includes(n);
+      return `<div class="ball sm ${isMatch ? 'win' : 'miss cold'}">${n}</div>`;
     }
     return `<div class="ball sm cool">${n}</div>`;
   }).join('');
@@ -7452,6 +7462,27 @@ function setHistFilter(f) {
 // ═══════════════════════════════════════════════════════════
 //  ADD REAL RESULT — evaluates pending predictions + evolves
 // ═══════════════════════════════════════════════════════════
+
+// ── Hit comparison: positional for Tris, set-based for ball games ──────────
+// Tris: position matters. "6,4,0,1,9" vs "3,0,3,6,0" → only pos where equal
+// Ball games: order irrelevant, count shared values.
+function computeHits(ticket, actual, game) {
+  if (game === 'tris') {
+    const matchedNumbers = [];
+    const matchedPositions = [];
+    for (let i = 0; i < ticket.length; i++) {
+      if (i < actual.length && ticket[i] === actual[i]) {
+        matchedNumbers.push(ticket[i]);
+        matchedPositions.push(i);
+      }
+    }
+    return { hits: matchedNumbers.length, matchedNumbers, matchedPositions };
+  } else {
+    const actualSet = new Set(actual);
+    const matchedNumbers = ticket.filter(n => actualSet.has(n));
+    return { hits: matchedNumbers.length, matchedNumbers, matchedPositions: null };
+  }
+}
 
 function openAddResultModal() {
   const modal = document.getElementById('modal-add-result');
@@ -7532,14 +7563,15 @@ function submitRealResult() {
   const modelTotals = { bayesian: 0, gapHazard: 0, cooccurrence: 0, frequency: 0, momentum: 0, markov: 0, fourier: 0, positional: 0, gaussian: 0 };
   
   pending.forEach(p => {
-    const matched = p.ticket.filter(n => nums.includes(n));
-    p.hits = matched.length;
-    p.matchedNumbers = matched;
+    const { hits, matchedNumbers, matchedPositions } = computeHits(p.ticket, nums, state.currentGame);
+    p.hits = hits;
+    p.matchedNumbers = matchedNumbers;
+    p.matchedPositions = matchedPositions; // null for ball games, index array for Tris
     p.actual = nums;
     p.status = 'checked';
     p.checkedAt = Date.now();
-    
-    results.push({ id: p.id, ticket: p.ticket, hits: matched.length });
+
+    results.push({ id: p.id, ticket: p.ticket, hits });
     
     // Actualizar en Supabase
     updatePredictionInDB(p).catch(e => console.warn('Error actualizando predicción:', e));
@@ -8660,9 +8692,10 @@ function evaluatePendingPredictions(actualDraw, showFeedback = true) {
   const pending = state.history.filter(h => h.game === state.currentGame && h.status === 'pending');
   let count = 0;
   pending.forEach(p => {
-    const matched = p.ticket.filter(n => actualDraw.includes(n));
-    p.hits = matched.length;
-    p.matchedNumbers = matched;
+    const { hits, matchedNumbers, matchedPositions } = computeHits(p.ticket, actualDraw, state.currentGame);
+    p.hits = hits;
+    p.matchedNumbers = matchedNumbers;
+    p.matchedPositions = matchedPositions;
     p.actual = actualDraw;
     p.status = 'checked';
     p.checkedAt = Date.now();
