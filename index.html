@@ -4080,6 +4080,8 @@ function computePositionCorrelation(draws, maxN, pick) {
   return corr;
 }
 
+// The 13 core models — neural/adaptiveMarkov/entropy were removed (added by mistake,
+// not requested, and their NN re-trains randomly on each eval step → noisy).
 function computeAllModels(d, maxN) {
   return {
     bayesian: bayesianModel(d, maxN),
@@ -4094,14 +4096,11 @@ function computeAllModels(d, maxN) {
     delta: deltaPatternModel(d, maxN),
     hotStreak: hotStreakModel(d, maxN),
     zonePressure: zonePressureModel(d, maxN),
-    pairLift: pairLiftModel(d, maxN),
-    neural: neuralEnsembleModel(d, maxN),
-    adaptiveMarkov: adaptiveMarkovModel(d, maxN),
-    entropy: entropyModel(d, maxN)
+    pairLift: pairLiftModel(d, maxN)
   };
 }
 
-// Meta-ensemble: fuse all 9 with weights
+// Fuse 13 models with their learned weights
 function fuseModels(models, weights, maxN) {
   const res = new Array(maxN + 1).fill(0);
   for (let n = 1; n <= maxN; n++) {
@@ -4117,13 +4116,98 @@ function fuseModels(models, weights, maxN) {
            + (weights.delta || 0) * (models.delta ? models.delta[n] : 0)
            + (weights.hotStreak || 0) * (models.hotStreak ? models.hotStreak[n] : 0)
            + (weights.zonePressure || 0) * (models.zonePressure ? models.zonePressure[n] : 0)
-           + (weights.pairLift || 0) * (models.pairLift ? models.pairLift[n] : 0)
-           + (weights.neural || 0) * (models.neural ? models.neural[n] : 0)
-           + (weights.adaptiveMarkov || 0) * (models.adaptiveMarkov ? models.adaptiveMarkov[n] : 0)
-           + (weights.entropy || 0) * (models.entropy ? models.entropy[n] : 0);
+           + (weights.pairLift || 0) * (models.pairLift ? models.pairLift[n] : 0);
   }
   const s = res.reduce((a, b) => a + b, 0);
   return res.map(x => x / (s || 1));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  META-CONCIENCIA — capa de aprendizaje por errores
+// ═══════════════════════════════════════════════════════════
+//
+// Sobre la base fusionada de los 13 modelos, esta capa aplica
+// correcciones específicas basadas en el historial REAL de predicciones:
+//
+//  1. Consenso: números que VARIOS modelos favorecen → más peso
+//  2. Sobre-predicción: números que el sistema eligió pero fallaron → penalizar
+//  3. Sub-predicción: números que salieron pero el sistema ignoró → boostear
+//  4. Aceleración: números que están mejorando en los últimos sorteos → bonus
+//
+// El resultado es state.metaProbs — la distribución más inteligente disponible.
+// Los tickets de Predicciones usan metaProbs si está disponible.
+
+function computeMetaProbs(fusedProbs, models, history, draws, maxN) {
+  if (!fusedProbs || !maxN) return fusedProbs;
+
+  // ── 1. Consenso entre modelos: cuántos modelos tienen el número en top-15 ──
+  const consensusCount = new Array(maxN + 1).fill(0);
+  for (const modelProbs of Object.values(models)) {
+    if (!modelProbs) continue;
+    const sorted = [];
+    for (let n = 1; n <= maxN; n++) sorted.push({ n, p: modelProbs[n] || 0 });
+    sorted.sort((a, b) => b.p - a.p);
+    sorted.slice(0, 15).forEach(({ n }) => consensusCount[n]++);
+  }
+  const nModels = Object.keys(models).length || 1;
+  // consensusScore[n] ∈ [0, 1]: fracción de modelos que recomiendan n
+  const consensusScore = consensusCount.map(c => c / nModels);
+
+  // ── 2. Memoria de errores: últimas 15 predicciones evaluadas ──
+  const recentChecked = (history || [])
+    .filter(h => h.status === 'checked' && h.actual && h.ticket)
+    .slice(-15);
+
+  const overPredicted = new Array(maxN + 1).fill(0);  // predije pero no salió
+  const underPredicted = new Array(maxN + 1).fill(0); // salió pero no predije
+  const n15 = recentChecked.length || 1;
+
+  recentChecked.forEach(h => {
+    const predicted = new Set(h.ticket);
+    const actual = new Set(h.actual);
+    h.ticket.forEach(n => { if (n >= 1 && n <= maxN && !actual.has(n)) overPredicted[n]++; });
+    h.actual.forEach(n => { if (n >= 1 && n <= maxN && !predicted.has(n)) underPredicted[n]++; });
+  });
+
+  // ── 3. Aceleración: números con tendencia creciente en últimos 10 sorteos ──
+  const recentDraws = draws.slice(-10);
+  const olderDraws = draws.slice(-20, -10);
+  const recentFreq = new Array(maxN + 1).fill(0);
+  const olderFreq = new Array(maxN + 1).fill(0);
+  recentDraws.forEach(d => d.forEach(n => { if (n >= 1 && n <= maxN) recentFreq[n]++; }));
+  olderDraws.forEach(d => d.forEach(n => { if (n >= 1 && n <= maxN) olderFreq[n]++; }));
+  const recentN = recentDraws.length || 1;
+  const olderN = olderDraws.length || 1;
+
+  // ── 4. Combinar todo en la distribución meta ──
+  const meta = new Array(maxN + 1).fill(0);
+  for (let n = 1; n <= maxN; n++) {
+    const base = fusedProbs[n] || 0;
+
+    // Consenso: hasta +25% de bonus cuando todos los modelos coinciden
+    const consensusBonus = consensusScore[n] * 0.25 * base;
+
+    // Sobre-predicción: penalizar números que fallamos repetidamente
+    // max penalización: -30% del valor base si falló en los últimos 5+
+    const overRate = overPredicted[n] / n15;
+    const overPenalty = overRate * 0.30 * base;
+
+    // Sub-predicción: boostear números que salieron y no estábamos prediciendo
+    // max bonus: +20% del valor base si salió en los últimos 5+
+    const underRate = underPredicted[n] / n15;
+    const underBonus = underRate * 0.20 * base;
+
+    // Aceleración: pequeño bonus si la frecuencia reciente supera la histórica
+    const recentRate = recentFreq[n] / recentN;
+    const olderRate = olderFreq[n] / olderN;
+    const accelBonus = recentRate > olderRate ? (recentRate - olderRate) * 0.5 * base : 0;
+
+    meta[n] = Math.max(0.0001, base + consensusBonus - overPenalty + underBonus + accelBonus);
+  }
+
+  // Normalizar
+  const sum = meta.reduce((a, b) => a + b, 0);
+  return meta.map(p => p / sum);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4164,12 +4248,8 @@ function evaluateModelOnDraws(model, draws, maxN, minTrain = 100) {
   };
 }
 
-// Walk-forward over a window to evaluate the 13 statistically-stable models.
-// neural/adaptiveMarkov/entropy are excluded: neuralEnsembleModel retrains with
-// random init on each walk-forward step → noisy scores → corrupts softmax weights.
-// These 3 models still contribute to predictions via fixed weights injected in evolveWeights.
+// Walk-forward evaluation of the 13 core models over last 80 draws.
 function quickEvalModels(draws, maxN) {
-  // 80-draw window: larger = more stable scores for softmax weight allocation.
   const testStart = Math.max(30, draws.length - 80);
   const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum',
     'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
@@ -4223,32 +4303,16 @@ function quickEvalModels(draws, maxN) {
       score: total > 0 ? (hits[name] / total) : 0
     };
   }
-  // Add fixed synthetic scores for the 3 complex models so they appear in state.performance
-  // but do NOT compete in softmax — their weights are injected by evolveWeights instead.
-  const avgScore = Object.values(perf).reduce((s, p) => s + p.score, 0) / modelNames.length;
-  perf.neural = { hitRate: avgScore, logLike: 0, score: avgScore };
-  perf.adaptiveMarkov = { hitRate: avgScore, logLike: 0, score: avgScore };
-  perf.entropy = { hitRate: avgScore, logLike: 0, score: avgScore };
   return perf;
 }
 
-// Evolve weights based on model performance (softmax).
-// The 3 complex models (neural/adaptiveMarkov/entropy) get a fixed combined budget
-// of 12% (4% each) — they aren't walk-forward evaluated so we don't let them
-// compete in softmax. The remaining 88% is distributed via softmax among the 13 stable models.
-const _COMPLEX_MODELS = new Set(['neural', 'adaptiveMarkov', 'entropy']);
-const _COMPLEX_WEIGHT = 0.04; // fixed weight per complex model (3 × 4% = 12% total)
-
+// Evolve weights based on model performance (softmax over 13 models)
 function evolveWeights(performance, temperature = 50.0) {
-  // Separate stable vs complex models
-  const stablePerf = {};
+  const scores = {};
   for (const [name, perf] of Object.entries(performance)) {
-    if (!_COMPLEX_MODELS.has(name)) stablePerf[name] = perf;
+    scores[name] = perf.score;
   }
 
-  // Softmax over the 13 stable models
-  const scores = {};
-  for (const [name, perf] of Object.entries(stablePerf)) scores[name] = perf.score;
   const maxScore = Math.max(...Object.values(scores));
   const exps = {};
   let sumExp = 0;
@@ -4258,22 +4322,16 @@ function evolveWeights(performance, temperature = 50.0) {
   }
 
   const weights = {};
-  const stableBudget = 1 - _COMPLEX_WEIGHT * _COMPLEX_MODELS.size; // 0.88
   for (const [name, e] of Object.entries(exps)) {
-    weights[name] = (e / sumExp) * stableBudget;
+    weights[name] = e / sumExp;
   }
 
-  // Floor for diversity among stable models
-  const nStable = Object.keys(weights).length;
-  const floor = Math.min(0.02, (stableBudget * 0.20) / nStable);
+  // Floor to keep diversity
+  const nModels = Object.keys(weights).length;
+  const floor = Math.min(0.03, 0.30 / nModels);
   for (const name of Object.keys(weights)) {
     if (weights[name] < floor) weights[name] = floor;
   }
-
-  // Inject fixed weights for complex models
-  for (const name of _COMPLEX_MODELS) weights[name] = _COMPLEX_WEIGHT;
-
-  // Re-normalize to exactly 1
   const sum = Object.values(weights).reduce((a, b) => a + b, 0);
   for (const name of Object.keys(weights)) weights[name] /= sum;
 
@@ -6280,6 +6338,21 @@ function runEvolution(silent = false) {
     state.fusedProbs = calibrated;
   }
   
+  // ── Meta-conciencia: corregir probs por errores recientes ──
+  if (state.currentGame !== 'tris') {
+    try {
+      state.metaProbs = computeMetaProbs(
+        state.fusedProbs, state.models,
+        state.history.filter(h => h.game === state.currentGame),
+        state.draws, state.maxNumber
+      );
+    } catch(e) {
+      state.metaProbs = state.fusedProbs; // fallback
+    }
+  } else {
+    state.metaProbs = null;
+  }
+
   if (!silent) showToast('Modelos re-evolucionados ✨', 'info');
 
   // Cache results for instant game-switch re-use
@@ -6287,6 +6360,7 @@ function runEvolution(silent = false) {
   _gameComputeCache[_ck] = {
     models: state.models, weights: state.weights,
     performance: state.performance, fusedProbs: state.fusedProbs,
+    metaProbs: state.metaProbs || null,
     plattParams: state.plattParams, trisPrediction: state.trisPrediction,
     stackingParams: state.stackingParams || null
   };
@@ -6428,10 +6502,11 @@ function _buildTopNumsHTML(count) {
       </div>`;
     }).join('');
   }
-  // Ball games (Melate, Revancha, Retro, Chispazo)
-  if (!state.fusedProbs) return '<span class="ai-computing-badge"><span class="dot-spin"></span> Calculando…</span>';
+  // Ball games: use metaProbs (error-aware) if available, else fusedProbs
+  const displayProbs = (state.metaProbs) ? state.metaProbs : state.fusedProbs;
+  if (!displayProbs) return '<span class="ai-computing-badge"><span class="dot-spin"></span> Calculando…</span>';
   const list = [];
-  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: state.fusedProbs[n] || 0 });
+  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: displayProbs[n] || 0 });
   list.sort((a, b) => b.p - a.p);
   const classMap = { 0: 'top1', 1: 'top2', 2: 'top3' };
   return list.slice(0, count).map((x, i) =>
@@ -7100,6 +7175,7 @@ async function selectGame(game) {
     const c = _gameComputeCache[cacheKey];
     state.models = c.models; state.weights = c.weights;
     state.performance = c.performance; state.fusedProbs = c.fusedProbs;
+    state.metaProbs = c.metaProbs || null;
     state.plattParams = c.plattParams; state.trisPrediction = c.trisPrediction;
     state.stackingParams = c.stackingParams || null;
     renderAll();
@@ -7184,7 +7260,9 @@ function generatePredictions() {
     return;
   }
   
-  const probs = applyModeBias(state.fusedProbs, state.mode, state.maxNumber);
+  // Use metaProbs (error-aware) if available, otherwise fall back to fusedProbs
+  const baseProbs = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
+  const probs = applyModeBias(baseProbs, state.mode, state.maxNumber);
   const tickets = generateTickets(probs, state.draws, state.maxNumber, state.count, state.mode, Date.now());
   state.lastPredictions = tickets;
   renderPredictionsView();
