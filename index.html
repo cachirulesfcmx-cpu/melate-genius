@@ -4164,17 +4164,18 @@ function evaluateModelOnDraws(model, draws, maxN, minTrain = 100) {
   };
 }
 
-// Walk-forward over a small window to quickly evaluate models
+// Walk-forward over a window to evaluate the 13 statistically-stable models.
+// neural/adaptiveMarkov/entropy are excluded: neuralEnsembleModel retrains with
+// random init on each walk-forward step → noisy scores → corrupts softmax weights.
+// These 3 models still contribute to predictions via fixed weights injected in evolveWeights.
 function quickEvalModels(draws, maxN) {
-  // 50-draw walk-forward window: balance between speed and statistical robustness.
-  // The real speedup is the _gameComputeCache + async defer in initApp/selectGame —
-  // this function only runs once per dataset, not on every render.
-  const testStart = Math.max(30, draws.length - 50);
-  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum', 'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift', 'neural', 'adaptiveMarkov', 'entropy'];
+  // 80-draw window: larger = more stable scores for softmax weight allocation.
+  const testStart = Math.max(30, draws.length - 80);
+  const modelNames = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum',
+    'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
   const scores = {}, hits = {};
   modelNames.forEach(n => { scores[n] = 0; hits[n] = 0; });
   let total = 0;
-  // Determine pick size dynamically from the draw data
   const pickN = (draws.length > 0 && draws[0]) ? draws[0].length : 6;
 
   for (let t = testStart; t < draws.length; t++) {
@@ -4194,10 +4195,7 @@ function quickEvalModels(draws, maxN) {
       delta: deltaPatternModel(train, maxN),
       hotStreak: hotStreakModel(train, maxN),
       zonePressure: zonePressureModel(train, maxN),
-      pairLift: pairLiftModel(train, maxN),
-      neural: neuralEnsembleModel(train, maxN),
-      adaptiveMarkov: adaptiveMarkovModel(train, maxN),
-      entropy: entropyModel(train, maxN)
+      pairLift: pairLiftModel(train, maxN)
     };
 
     for (const [name, probs] of Object.entries(allProbs)) {
@@ -4215,7 +4213,7 @@ function quickEvalModels(draws, maxN) {
     }
     total += pickN;
   }
-  
+
   const nEval = draws.length - testStart;
   const perf = {};
   for (const name of modelNames) {
@@ -4225,17 +4223,32 @@ function quickEvalModels(draws, maxN) {
       score: total > 0 ? (hits[name] / total) : 0
     };
   }
+  // Add fixed synthetic scores for the 3 complex models so they appear in state.performance
+  // but do NOT compete in softmax — their weights are injected by evolveWeights instead.
+  const avgScore = Object.values(perf).reduce((s, p) => s + p.score, 0) / modelNames.length;
+  perf.neural = { hitRate: avgScore, logLike: 0, score: avgScore };
+  perf.adaptiveMarkov = { hitRate: avgScore, logLike: 0, score: avgScore };
+  perf.entropy = { hitRate: avgScore, logLike: 0, score: avgScore };
   return perf;
 }
 
-// Evolve weights based on model performance (softmax)
+// Evolve weights based on model performance (softmax).
+// The 3 complex models (neural/adaptiveMarkov/entropy) get a fixed combined budget
+// of 12% (4% each) — they aren't walk-forward evaluated so we don't let them
+// compete in softmax. The remaining 88% is distributed via softmax among the 13 stable models.
+const _COMPLEX_MODELS = new Set(['neural', 'adaptiveMarkov', 'entropy']);
+const _COMPLEX_WEIGHT = 0.04; // fixed weight per complex model (3 × 4% = 12% total)
+
 function evolveWeights(performance, temperature = 50.0) {
-  const scores = {};
+  // Separate stable vs complex models
+  const stablePerf = {};
   for (const [name, perf] of Object.entries(performance)) {
-    scores[name] = perf.score;
+    if (!_COMPLEX_MODELS.has(name)) stablePerf[name] = perf;
   }
-  
-  // Softmax over scores
+
+  // Softmax over the 13 stable models
+  const scores = {};
+  for (const [name, perf] of Object.entries(stablePerf)) scores[name] = perf.score;
   const maxScore = Math.max(...Object.values(scores));
   const exps = {};
   let sumExp = 0;
@@ -4243,22 +4256,27 @@ function evolveWeights(performance, temperature = 50.0) {
     exps[name] = Math.exp((s - maxScore) * temperature);
     sumExp += exps[name];
   }
-  
+
   const weights = {};
+  const stableBudget = 1 - _COMPLEX_WEIGHT * _COMPLEX_MODELS.size; // 0.88
   for (const [name, e] of Object.entries(exps)) {
-    weights[name] = e / sumExp;
+    weights[name] = (e / sumExp) * stableBudget;
   }
-  
-  // Floor to keep diversity (escala con número de modelos)
-  const nModels = Object.keys(weights).length;
-  const floor = Math.min(0.03, 0.30 / nModels);
+
+  // Floor for diversity among stable models
+  const nStable = Object.keys(weights).length;
+  const floor = Math.min(0.02, (stableBudget * 0.20) / nStable);
   for (const name of Object.keys(weights)) {
     if (weights[name] < floor) weights[name] = floor;
   }
-  // Re-normalize
+
+  // Inject fixed weights for complex models
+  for (const name of _COMPLEX_MODELS) weights[name] = _COMPLEX_WEIGHT;
+
+  // Re-normalize to exactly 1
   const sum = Object.values(weights).reduce((a, b) => a + b, 0);
   for (const name of Object.keys(weights)) weights[name] /= sum;
-  
+
   return weights;
 }
 
