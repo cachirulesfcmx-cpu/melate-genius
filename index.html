@@ -6834,8 +6834,9 @@ function renderTop15() {
   if (!c) return;
   if (!state.fusedProbs) { c.innerHTML = ''; return; }
   const pick = (GAME_CONFIG[state.currentGame] && GAME_CONFIG[state.currentGame].pick) || 6;
+  const top15Probs = (state.metaProbs) ? state.metaProbs : state.fusedProbs;
   const list = [];
-  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: state.fusedProbs[n] || 0 });
+  for (let n = 1; n <= state.maxNumber; n++) list.push({ n, p: top15Probs[n] || 0 });
   list.sort((a, b) => b.p - a.p);
   const top = list.slice(0, 15);
   const mx = top[0].p;
@@ -7777,7 +7778,8 @@ function _showEvolutionFeedbackImpl(nums, weightsBefore, fusedProbsBefore) {
   // --- 3. New top-10 numbers post-evolution ---
   const topNumsNew = [];
   if (state.fusedProbs) {
-    for (let n = 1; n <= state.maxNumber; n++) topNumsNew.push({ n, p: state.fusedProbs[n] || 0 });
+    const postEvoProbs = (state.metaProbs) ? state.metaProbs : state.fusedProbs;
+    for (let n = 1; n <= state.maxNumber; n++) topNumsNew.push({ n, p: postEvoProbs[n] || 0 });
     topNumsNew.sort((a, b) => b.p - a.p);
   }
 
@@ -8650,7 +8652,8 @@ function generateWheelTickets() {
   const count = parseInt(document.getElementById('wheel-count-slider').value);
   
   try {
-    const tickets = generateWheel(wheelFixed, count, state.fusedProbs, state.draws, state.maxNumber);
+    const wheelBase = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
+    const tickets = generateWheel(wheelFixed, count, wheelBase, state.draws, state.maxNumber);
     state.lastPredictions = tickets.map(t => ({
       ticket: t.ticket,
       score: t.score,
@@ -9487,7 +9490,8 @@ async function executeAgentTool(toolName, toolInput) {
         if (modo === 'portfolio') {
           generatePortfolioMode();
         } else {
-          const probs = applyModeBias(state.fusedProbs, modo, state.maxNumber);
+          const agentBase = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
+          const probs = applyModeBias(agentBase, modo, state.maxNumber);
           const tickets = generateTickets(probs, state.draws, state.maxNumber, cantidad, modo, Date.now());
           state.lastPredictions = tickets;
         }
@@ -9853,7 +9857,8 @@ function buildAgentContext() {
   state.draws.forEach((d, i) => d.forEach(x => { last[x] = i; }));
   
   const topNums = [];
-  for (let num = 1; num <= state.maxNumber; num++) topNums.push({ num, p: state.fusedProbs[num], f: f[num] });
+  const agentCtxProbs = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
+  for (let num = 1; num <= state.maxNumber; num++) topNums.push({ num, p: agentCtxProbs[num], f: f[num] });
   topNums.sort((a, b) => b.p - a.p);
   
   const bestModel = Object.entries(state.performance).sort((a, b) => b[1].score - a[1].score)[0];
@@ -9896,7 +9901,8 @@ function _agentBestModel() {
 function _agentTopNumbers(n = 10) {
   if (!state.fusedProbs) return [];
   const list = [];
-  for (let i = 1; i <= state.maxNumber; i++) list.push({ n: i, p: state.fusedProbs[i] || 0 });
+  const agentTopProbs = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
+  for (let i = 1; i <= state.maxNumber; i++) list.push({ n: i, p: agentTopProbs[i] || 0 });
   list.sort((a, b) => b.p - a.p);
   return list.slice(0, n);
 }
