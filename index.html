@@ -2653,6 +2653,103 @@ body.light-mode .theme-toggle {
 }
 @keyframes dotBlink { 0%,100%{opacity:0.3} 50%{opacity:1} }
 
+/* ═══ MELATE GENIUS · AJUSTES DEL MOTOR (protocolo v7/v8/v9) ═══ */
+.mg-gear {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 0.5px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-2); font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all 0.25s ease;
+}
+.mg-gear:active { transform: scale(0.92); background: rgba(255,255,255,0.14); }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+
+.mg-group-head.collapsed .card-action { transform: rotate(-90deg); }
+.mg-group-head .card-action { transition: transform 0.2s ease; }
+.mg-group-desc {
+  font-size: 11px; line-height: 1.55; color: var(--text-3);
+  padding: 0 0 12px; border-bottom: 0.5px solid rgba(255,255,255,0.06); margin-bottom: 12px;
+}
+.mg-row {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 11px 0; border-bottom: 0.5px solid rgba(255,255,255,0.05);
+}
+.mg-row:last-child { border-bottom: none; }
+.mg-row.col { display: block; }
+.mg-row-main { flex: 1; min-width: 0; }
+.mg-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.mg-row-label { font-size: 12.5px; font-weight: 600; color: var(--text); letter-spacing: -0.1px; }
+.mg-row-value {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700;
+  color: var(--accent-2); flex-shrink: 0;
+}
+.mg-help { font-size: 10.5px; line-height: 1.5; color: var(--text-3); margin-top: 3px; }
+.mg-row.col .slider { margin-top: 8px; }
+.mg-input {
+  width: 100%; margin-top: 8px; padding: 9px 11px; border-radius: 10px;
+  border: 0.5px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05);
+  color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.mg-switch {
+  width: 46px; height: 27px; border-radius: 14px; flex-shrink: 0;
+  border: 0.5px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.08);
+  position: relative; transition: background 0.25s ease; padding: 0;
+}
+.mg-switch.on { background: linear-gradient(135deg, #0a84ff, #bf5af2); border-color: transparent; }
+.mg-knob {
+  position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+.mg-switch.on .mg-knob { transform: translateX(19px); }
+
+.mg-verdict {
+  font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700;
+  letter-spacing: 0.6px; padding: 9px 12px; border-radius: 12px; margin-bottom: 10px;
+  text-align: center;
+}
+.mg-verdict.edge { background: rgba(48,209,88,0.14); color: #30d158; border: 0.5px solid rgba(48,209,88,0.3); }
+.mg-verdict.noedge { background: rgba(255,159,10,0.12); color: #ffb84d; border: 0.5px solid rgba(255,159,10,0.28); }
+.mg-verdict.off { background: rgba(255,255,255,0.06); color: var(--text-3); border: 0.5px solid rgba(255,255,255,0.1); }
+.mg-verdict.pending { background: rgba(10,132,255,0.12); color: #64d2ff; border: 0.5px solid rgba(10,132,255,0.28); }
+
+.mg-kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.mg-kv {
+  background: rgba(255,255,255,0.04); border-radius: 10px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.mg-kv span { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); }
+.mg-kv b { font-size: 12.5px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mg-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 8px; }
+.mg-table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 430px; }
+.mg-table th {
+  text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-3); font-weight: 600; padding: 6px 6px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.1);
+}
+.mg-table td { padding: 7px 6px; border-bottom: 0.5px solid rgba(255,255,255,0.04); font-family: 'JetBrains Mono', monospace; }
+.mg-table td:first-child { font-family: inherit; font-weight: 600; }
+.mg-table tr.pass td { background: rgba(48,209,88,0.07); }
+
+.mg-strip {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: 14px; margin-bottom: 8px;
+  border: 0.5px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05);
+}
+.mg-strip.edge { background: rgba(48,209,88,0.1); border-color: rgba(48,209,88,0.25); }
+.mg-strip.noedge { background: rgba(255,159,10,0.09); border-color: rgba(255,159,10,0.22); }
+.mg-strip.pending { background: rgba(10,132,255,0.1); border-color: rgba(10,132,255,0.24); }
+.mg-strip-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mg-strip-main b { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; letter-spacing: 0.4px; }
+.mg-strip-main span { font-size: 10.5px; color: var(--text-3); line-height: 1.4; }
+.mg-strip-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.mg-audit-note {
+  font-size: 10px; color: var(--text-3); font-family: 'JetBrains Mono', monospace;
+  margin-top: 6px; opacity: 0.75;
+}
+
 </style>
 </head>
 <body>
@@ -2713,9 +2810,12 @@ body.light-mode .theme-toggle {
       <h1>Melate <em>Genius</em></h1>
       <div class="subtitle" id="subtitle">Cargando...</div>
     </div>
-    <div class="user-chip" onclick="handleLogout()">
-      <div class="user-avatar" id="user-avatar">U</div>
-      <div class="user-name" id="user-name">—</div>
+    <div class="header-actions">
+      <button class="mg-gear" onclick="showSection('ajustes')" title="Ajustes del motor" aria-label="Ajustes del motor">⚙︎</button>
+      <div class="user-chip" onclick="handleLogout()">
+        <div class="user-avatar" id="user-avatar">U</div>
+        <div class="user-name" id="user-name">—</div>
+      </div>
     </div>
   </div>
   
@@ -2819,6 +2919,10 @@ body.light-mode .theme-toggle {
       
       <button class="btn btn-ghost" onclick="showSection('stats')" style="margin-top:10px;">
         👤 Mis Estadísticas Personales
+      </button>
+
+      <button class="btn btn-ghost" onclick="showSection('ajustes')" style="margin-top:10px;">
+        ⚙️ Ajustes del Motor · Protocolo v9
       </button>
       
       <div style="display:flex;gap:8px;margin-top:10px;">
@@ -2925,6 +3029,9 @@ body.light-mode .theme-toggle {
           ⚡ GENERAR PRO
         </button>
       </div>
+
+      <!-- Protocolo de investigación v9 — estado en vivo -->
+      <div id="pred-research-panel"></div>
 
       <!-- AI Intelligence — model leaderboard + top numbers -->
       <div class="glass card" id="pred-ai-panel" style="margin-bottom:12px;">
@@ -3149,6 +3256,11 @@ body.light-mode .theme-toggle {
             <span class="agent-action-label">Bankroll inteligente</span>
             <span class="agent-action-sub">Criterio de Kelly</span>
           </button>
+          <button class="agent-action-btn" onclick="askQuick('cómo va el protocolo de investigación'); showSection('agente');">
+            <span class="agent-action-icon">🔬</span>
+            <span class="agent-action-label">Protocolo v9</span>
+            <span class="agent-action-sub">Compuertas y evidencia</span>
+          </button>
           <button class="agent-action-btn" onclick="askQuick('cómo me ha ido en mi historial'); showSection('agente');">
             <span class="agent-action-icon">📊</span>
             <span class="agent-action-label">Mi historial</span>
@@ -3171,6 +3283,28 @@ body.light-mode .theme-toggle {
         </div>
       </div>
       
+    </div>
+
+    <!-- ═══ AJUSTES DEL MOTOR (protocolo v7/v8/v9) ═══ -->
+    <div class="section" id="sec-ajustes">
+      <div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:28px;letter-spacing:-0.8px;margin-bottom:6px;text-align:center;">
+        Ajustes del motor
+      </div>
+      <div style="font-size:11.5px;color:var(--text-3);text-align:center;line-height:1.5;margin-bottom:18px;">
+        Protocolo autónomo v9 · portafolio (v7) + aprendizaje continuo (v8) + inteligencia live (v9).<br>
+        Todo lo que cambies aquí se aplica a <strong>toda la app</strong>: dashboard, predicciones, portafolio, sistémico, backtest y agente.
+      </div>
+
+      <div id="mg-research-status"></div>
+      <div id="mg-settings-body"></div>
+
+      <button class="btn btn-ghost" onclick="mgUiReset()" style="margin-top:14px;">
+        ↺ Restaurar valores por defecto
+      </button>
+
+      <div class="disclaimer-pill" style="margin-top:14px;">
+        ⚠️ Las combinaciones son <strong>candidatos</strong>, nunca garantías. NO_EDGE es un estado válido: significa que no se detectó ventaja predictiva reproducible.
+      </div>
     </div>
 
     <!-- ═══ PROGOL ═══ -->
@@ -5596,6 +5730,2204 @@ function generatePostDrawInsight(actualDraw, userTickets, models, weights, draws
   };
 }
 </script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  MELATE GENIUS · RESEARCH CORE v9 — "Live Intelligence"
+//  ------------------------------------------------------------------
+//  Port a JavaScript del protocolo autónomo v7 (portafolio) + v8
+//  (aprendizaje continuo) + v9 (inteligencia live) para que corra
+//  íntegramente dentro de la app.
+//
+//  Constitución (reglas heredadas 16→42, resumidas):
+//   · El Golden Holdout es intocable: ninguna búsqueda ni evolución
+//     de pesos lo lee.
+//   · Las compuertas estadísticas (alfa, BH, permutación, holdout,
+//     Champion Gate) son inmutables desde el meta-learner y desde el
+//     agente LLM. Sólo el usuario las mueve desde Ajustes.
+//   · El ensemble sólo pondera modelos que pasan las compuertas.
+//   · Si ninguno pasa → NO_EDGE (estado válido, no detiene la app).
+//   · Las combinaciones son candidatos, nunca garantías.
+//   · Live se mantiene separado del backtest y del Golden Holdout.
+//   · Un IC que cruza el baseline no demuestra edge.
+//   · Degradación live puede retirar un Champion, pero nunca promueve
+//     otro automáticamente.
+// ═══════════════════════════════════════════════════════════════════
+
+const MG_VERSION = '9.0';
+const MG_MODEL_KEYS = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum',
+  'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
+
+// Familias de investigación (presupuesto experimental v8/v9)
+const MG_MODEL_FAMILY = {
+  frequency: 'statistical', bayesian: 'statistical', gapHazard: 'statistical',
+  delta: 'statistical', zonePressure: 'statistical',
+  cooccurrence: 'classical_ml', pairLift: 'classical_ml', markov: 'classical_ml',
+  momentum: 'classical_ml', hotStreak: 'classical_ml',
+  positional: 'deep_learning', gaussian: 'deep_learning', fourier: 'deep_learning'
+};
+const MG_FAMILIES = ['statistical', 'classical_ml', 'deep_learning', 'qnn', 'portfolio'];
+
+// Retadores que requieren backend (no disponibles en navegador)
+const MG_CHALLENGERS = [
+  { name: 'lstm', family: 'deep_learning', requires: 'torch' },
+  { name: 'transformer', family: 'deep_learning', requires: 'torch' },
+  { name: 'quantum_neural_network', family: 'qnn', requires: 'pennylane' }
+];
+
+const MG_HYPOTHESIS_CATALOG = [
+  'Dependencia temporal no lineal',
+  'Cambio de régimen detectable',
+  'Dependencia condicional entre pares',
+  'Interacciones de triples',
+  'Información mutua no lineal',
+  'Estructura local preservada bajo block bootstrap',
+  'Ventaja de ensemble sobre todos los baselines'
+];
+
+// ═══════════════════════════════════════════════════════════
+//  1. AJUSTES GLOBALES — usables desde toda la app
+// ═══════════════════════════════════════════════════════════
+
+const MG_DEFAULT_SETTINGS = {
+  version: MG_VERSION,
+
+  // Interruptor maestro del protocolo
+  enabled: true,
+  applyToPredictions: true,   // las compuertas afectan la generación real
+  strictNoEdge: false,        // en NO_EDGE, aplanar hacia uniforme
+  noEdgeUniformBlend: 0.5,    // cuánto se aplana en modo estricto
+
+  // ── Compuertas estadísticas (inmutables para el agente) ──
+  gates: {
+    alpha: 0.05,
+    bhCorrection: true,
+    permutationReps: 200,
+    blockBootstrapReps: 200,
+    blockSize: 10,
+    evalWindow: 80,             // sorteos de validación (antes del holdout)
+    maxTrainDraws: 1500,        // ventana de entrenamiento por paso walk-forward
+    goldenHoldoutFraction: 0.10,
+    goldenHoldoutMinDraws: 20,
+    goldenHoldoutMaxDraws: 60,
+    goldenHoldoutMaxEval: 30,   // pasos evaluados dentro del holdout
+    requireReplication: true,
+    replicationSeeds: [7, 17, 42, 101, 2026],
+    replicationMinFraction: 0.6,
+    minStability: 0.5,
+    stabilityBlocks: 4,
+    minQualifiedModels: 1
+  },
+
+  // ── v7: ensemble dinámico, portafolio, evolución, Monte Carlo ──
+  ensemble: {
+    dynamic: true,
+    blendWithLegacy: 0.5,       // mezcla evidencia validada + softmax histórico
+    temperature: 50,
+    floor: 0.0
+  },
+  portfolio: {
+    enabled: true,
+    overlapLimit: 3,            // números compartidos máximos entre boletos
+    poolFactor: 8,              // candidatos generados por boleto pedido
+    enforceDiversity: true
+  },
+  evolution: {
+    enabled: true,
+    generations: 14,
+    elite: 10,
+    population: 60,
+    mutationRate: 0.7
+  },
+  monteCarlo: {
+    enabled: true,
+    universes: 3000,
+    seed: 42
+  },
+  memory: { enabled: true, maxRecords: 400 },
+
+  // ── v8: aprendizaje continuo ──
+  drift: { threshold: 0.05, window: 150, expandResearchOnDrift: true },
+  champion: { maxBadCycles: 3, minDelta: 0.0, autoRetire: true, autoPromoteFromLive: false },
+  budget: {
+    adaptive: true,
+    statistical: 30, classical_ml: 40, deep_learning: 40, qnn: 40, portfolio: 40
+  },
+  earlyStopping: { enabled: true },
+
+  // ── v9: inteligencia live ──
+  live: {
+    z: 1.96,
+    windows: [20, 40, 60],
+    auditEnabled: true,
+    regressionTolerance: 0.05,
+    separateFromBacktest: true,
+    trainingIncludesLive: true   // frontera temporal nueva (regla 39)
+  },
+
+  // Reproducibilidad
+  seed: 42,
+  deterministic: true
+};
+
+const MG_STATE = {
+  settings: null,
+  research: {},        // por juego → último ciclo
+  runtime: {},         // caches internos
+  memory: [],          // Research Memory (v7 regla 22)
+  championState: {},   // por juego → { model, active, degradation_count }
+  metaLearner: {},     // familia → { n, wins, replications }
+  liveAudits: [],      // registros auditables de predicción live (v8 regla 30)
+  lastDelta: {},       // por juego → delta live previo (regression guard)
+  busy: false
+};
+
+function mgClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+function mgDeepMerge(base, patch) {
+  const out = Array.isArray(base) ? base.slice() : Object.assign({}, base);
+  if (!patch || typeof patch !== 'object') return out;
+  for (const k of Object.keys(patch)) {
+    const bv = out[k], pv = patch[k];
+    if (bv && pv && typeof bv === 'object' && typeof pv === 'object' && !Array.isArray(bv) && !Array.isArray(pv)) {
+      out[k] = mgDeepMerge(bv, pv);
+    } else if (pv !== undefined && pv !== null) {
+      out[k] = Array.isArray(pv) ? pv.slice() : pv;
+    }
+  }
+  return out;
+}
+
+function mgSettings() {
+  if (!MG_STATE.settings) MG_STATE.settings = mgClone(MG_DEFAULT_SETTINGS);
+  return MG_STATE.settings;
+}
+
+function mgGetPath(obj, path) {
+  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+
+function mgSetPath(obj, path, value) {
+  const parts = path.split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+  return obj;
+}
+
+function mgSettingsKey() {
+  try {
+    const uid = (typeof state !== 'undefined' && state.user && state.user.id) ? state.user.id : 'anon';
+    return 'melategenius_research_settings_' + uid;
+  } catch (e) { return 'melategenius_research_settings_anon'; }
+}
+
+function mgLoadSettings() {
+  let loaded = null;
+  try {
+    const fromPrefs = (typeof state !== 'undefined' && state.userPreferences)
+      ? state.userPreferences.research_settings : null;
+    if (fromPrefs) loaded = (typeof fromPrefs === 'string') ? JSON.parse(fromPrefs) : fromPrefs;
+  } catch (e) { console.warn('MG: prefs de investigación ilegibles', e); }
+  if (!loaded) {
+    try {
+      const raw = localStorage.getItem(mgSettingsKey());
+      if (raw) loaded = JSON.parse(raw);
+    } catch (e) { console.warn('MG: settings locales ilegibles', e); }
+  }
+  MG_STATE.settings = loaded ? mgDeepMerge(mgClone(MG_DEFAULT_SETTINGS), loaded) : mgClone(MG_DEFAULT_SETTINGS);
+  MG_STATE.settings.version = MG_VERSION;
+  mgLoadResearchState();
+  return MG_STATE.settings;
+}
+
+function mgSaveSettings() {
+  const s = mgSettings();
+  try { localStorage.setItem(mgSettingsKey(), JSON.stringify(s)); } catch (e) { /* cuota */ }
+  try {
+    if (typeof state !== 'undefined') {
+      if (!state.userPreferences) state.userPreferences = {};
+      state.userPreferences.research_settings = s;
+    }
+    if (typeof savePreferenceToDB === 'function') {
+      savePreferenceToDB('research_settings', s).catch(() => {});
+    }
+  } catch (e) { /* offline */ }
+}
+
+function mgResearchStateKey() {
+  try {
+    const uid = (typeof state !== 'undefined' && state.user && state.user.id) ? state.user.id : 'anon';
+    return 'melategenius_research_state_' + uid;
+  } catch (e) { return 'melategenius_research_state_anon'; }
+}
+
+function mgLoadResearchState() {
+  try {
+    const raw = localStorage.getItem(mgResearchStateKey());
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    MG_STATE.memory = Array.isArray(d.memory) ? d.memory : [];
+    MG_STATE.championState = d.championState || {};
+    MG_STATE.metaLearner = d.metaLearner || {};
+    MG_STATE.liveAudits = Array.isArray(d.liveAudits) ? d.liveAudits.slice(-300) : [];
+    MG_STATE.lastDelta = d.lastDelta || {};
+  } catch (e) { console.warn('MG: estado de investigación ilegible', e); }
+}
+
+function mgSaveResearchState() {
+  try {
+    localStorage.setItem(mgResearchStateKey(), JSON.stringify({
+      memory: MG_STATE.memory.slice(-mgSettings().memory.maxRecords),
+      championState: MG_STATE.championState,
+      metaLearner: MG_STATE.metaLearner,
+      liveAudits: MG_STATE.liveAudits.slice(-300),
+      lastDelta: MG_STATE.lastDelta
+    }));
+  } catch (e) { /* cuota llena */ }
+}
+
+// Cambia un ajuste desde cualquier parte de la app
+function mgSetSetting(path, value, opts) {
+  const o = opts || {};
+  mgSetPath(mgSettings(), path, value);
+  mgSaveSettings();
+  mgInvalidateResearch();
+  if (o.recompute !== false && typeof runEvolution === 'function' && typeof state !== 'undefined' && state.draws && state.draws.length) {
+    try { runEvolution(true); } catch (e) { console.warn('MG: recompute falló', e); }
+  }
+  if (o.render !== false) {
+    try { if (typeof renderAll === 'function') renderAll(); } catch (e) {}
+    try { if (typeof mgRenderSettingsView === 'function') mgRenderSettingsView(); } catch (e) {}
+    try { if (typeof mgRenderResearchPanel === 'function') mgRenderResearchPanel(); } catch (e) {}
+  }
+  return mgGetPath(mgSettings(), path);
+}
+
+function mgResetSettings() {
+  MG_STATE.settings = mgClone(MG_DEFAULT_SETTINGS);
+  mgSaveSettings();
+  mgInvalidateResearch();
+}
+
+function mgInvalidateResearch() {
+  MG_STATE.runtime = {};
+  MG_STATE.research = {};
+}
+
+function mgSettingsFingerprint() {
+  const s = mgSettings();
+  return mgHash(JSON.stringify([s.enabled, s.gates, s.ensemble, s.live.z, s.seed, s.drift, s.champion]));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  2. UTILIDADES NUMÉRICAS Y DE AZAR DETERMINISTA
+// ═══════════════════════════════════════════════════════════
+
+function mgLcg(seed) {
+  let s = (Number(seed) >>> 0) || 42;
+  return function () { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+function mgHash(str) {
+  let h1 = 2166136261 >>> 0, h2 = 5381 >>> 0;
+  const t = String(str);
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+    h2 = (Math.imul(h2, 33) + c) >>> 0;
+  }
+  return ('00000000' + h1.toString(16)).slice(-8) + ('00000000' + h2.toString(16)).slice(-8);
+}
+
+function mgSnapshotId(draws) {
+  if (!draws || !draws.length) return 'empty';
+  const tail = draws.slice(-16).map(d => d.join('-')).join('|');
+  return mgHash(draws.length + '|' + tail);
+}
+
+function mgRunId(seedStr) {
+  return mgHash(seedStr + '|' + Date.now()) ;
+}
+
+function mgMean(a) { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0; }
+
+function mgSampleVar(a) {
+  const n = a.length; if (n < 2) return 0;
+  const m = mgMean(a);
+  return a.reduce((s, x) => s + (x - m) * (x - m), 0) / (n - 1);
+}
+
+function mgQuantile(sorted, q) {
+  if (!sorted.length) return 0;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+function mgOverlap(a, b) {
+  const B = new Set(b); let c = 0;
+  for (const x of a) if (B.has(x)) c++;
+  return c;
+}
+
+function mgLogGamma(x) {
+  const g = [676.5203681218851, -1259.1392167224028, 771.32342877765313,
+    -176.61502916214059, 12.507343278686905, -0.13857109526572012,
+    9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - mgLogGamma(1 - x);
+  x -= 1;
+  let a = 0.99999999999980993;
+  const t = x + 7.5;
+  for (let i = 0; i < 8; i++) a += g[i] / (x + i + 1);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+function mgGammaLowerReg(s, x) {
+  if (x <= 0) return 0;
+  if (x >= s + 1) return 1 - mgGammaUpperReg(s, x);
+  let sum = 1 / s, term = 1 / s;
+  for (let n = 1; n < 400; n++) {
+    term *= x / (s + n);
+    sum += term;
+    if (Math.abs(term) < Math.abs(sum) * 1e-14) break;
+  }
+  return sum * Math.exp(-x + s * Math.log(x) - mgLogGamma(s));
+}
+
+function mgGammaUpperReg(s, x) {
+  if (x <= 0) return 1;
+  if (x < s + 1) return 1 - mgGammaLowerReg(s, x);
+  let b = x + 1 - s, c = 1e300, d = 1 / b, h = d;
+  for (let i = 1; i < 400; i++) {
+    const an = -i * (i - s);
+    b += 2;
+    d = an * d + b; if (Math.abs(d) < 1e-300) d = 1e-300;
+    c = b + an / c; if (Math.abs(c) < 1e-300) c = 1e-300;
+    d = 1 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1) < 1e-14) break;
+  }
+  return Math.exp(-x + s * Math.log(x) - mgLogGamma(s)) * h;
+}
+
+function mgChi2SF(x, k) {
+  if (!(x > 0) || !(k > 0)) return 1;
+  return Math.max(0, Math.min(1, mgGammaUpperReg(k / 2, x / 2)));
+}
+
+function mgErfc(x) {
+  const z = Math.abs(x);
+  const t = 1 / (1 + z / 2);
+  const r = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +
+    t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 +
+    t * (-0.82215223 + t * 0.17087277)))))))));
+  return x >= 0 ? r : 2 - r;
+}
+
+function mgNormTwoSided(z) { return Math.max(0, Math.min(1, mgErfc(Math.abs(z) / Math.SQRT2))); }
+
+// Benjamini–Hochberg (FDR) — equivalente a multipletests(method='fdr_bh')
+function mgBenjaminiHochberg(pvals) {
+  const n = pvals.length;
+  if (!n) return [];
+  const idx = pvals.map((p, i) => ({ p: Math.min(1, Math.max(0, Number(p) || 0)), i }))
+    .sort((a, b) => a.p - b.p);
+  const q = new Array(n);
+  let prev = 1;
+  for (let k = n - 1; k >= 0; k--) {
+    const v = Math.min(prev, idx[k].p * n / (k + 1));
+    prev = v;
+    q[idx[k].i] = Math.min(1, v);
+  }
+  return q;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  3. ANÁLISIS SECUENCIAL (v9) — sequential_analysis.py
+// ═══════════════════════════════════════════════════════════
+
+function mgSequentialAnalyze(hitCounts, baseline, z) {
+  const zz = (z == null) ? mgSettings().live.z : z;
+  const vals = (hitCounts || []).map(Number).filter(x => isFinite(x));
+  const n = vals.length;
+  if (!n) {
+    return { n: 0, mean_hits: 0, baseline, delta: 0, se_delta: 0, z_score: 0,
+      ci_low: 0, ci_high: 0, status: 'INSUFFICIENT_DATA' };
+  }
+  const mean = mgMean(vals);
+  const varr = mgSampleVar(vals);
+  const se = n > 1 ? Math.sqrt(varr / n) : Infinity;
+  const delta = mean - baseline;
+  const finite = isFinite(se) && se > 0;
+  const lo = finite ? delta - zz * se : -Infinity;
+  const hi = finite ? delta + zz * se : Infinity;
+  const zScore = finite ? delta / se : 0;
+  return {
+    n, mean_hits: mean, baseline, delta, se_delta: finite ? se : Infinity,
+    z_score: zScore, ci_low: lo, ci_high: hi,
+    status: lo > 0 ? 'SIGNAL_CANDIDATE' : 'COMPATIBLE_WITH_BASELINE'
+  };
+}
+
+function mgRollingWindows(hitCounts, sizes) {
+  const s = sizes || mgSettings().live.windows;
+  const vals = (hitCounts || []).slice();
+  const out = {};
+  s.forEach(k => { if (vals.length >= k) out[k] = vals.slice(-k); });
+  return out;
+}
+
+// live_evaluation.summarize
+function mgSummarizeLive(model, hitCounts, baseline) {
+  const full = mgSequentialAnalyze(hitCounts, baseline);
+  const windows = {};
+  const rw = mgRollingWindows(hitCounts);
+  Object.keys(rw).forEach(k => { windows[k] = mgSequentialAnalyze(rw[k], baseline).delta; });
+  const W = mgSettings().live.windows;
+  return {
+    model, n: full.n, mean_hits: full.mean_hits, baseline, delta: full.delta,
+    ci_low: full.ci_low, ci_high: full.ci_high,
+    window_deltas: windows,
+    window20_delta: windows[W[0]] != null ? windows[W[0]] : null,
+    window40_delta: windows[W[1]] != null ? windows[W[1]] : null,
+    window60_delta: windows[W[2]] != null ? windows[W[2]] : null,
+    status: full.status
+  };
+}
+
+// regression_guard.detect_regression
+function mgDetectRegression(currentDelta, previousDelta, tolerance) {
+  const tol = (tolerance == null) ? mgSettings().live.regressionTolerance : tolerance;
+  const change = (Number(currentDelta) || 0) - (Number(previousDelta) || 0);
+  const regressed = change < -Math.abs(tol);
+  return { change, regressed, status: regressed ? 'REGRESSION' : 'STABLE_OR_IMPROVED' };
+}
+
+// model_ranking.rank_models — nunca sólo por delta bruto (regla 38)
+function mgRankModels(records) {
+  const fin = (v, fallback) => (typeof v === 'number' && isFinite(v)) ? v : fallback;
+  const key = r => [
+    r.replicated ? 1 : 0,
+    (r.q_value != null ? r.q_value : 1) < mgSettings().gates.alpha ? 1 : 0,
+    fin(r.live_delta, -1e9),
+    -fin(r.live_ci_low, 1e9)
+  ];
+  return records.slice().sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    for (let i = 0; i < ka.length; i++) {
+      if (ka[i] !== kb[i]) return kb[i] - ka[i];
+    }
+    return 0;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  4. COMPUERTAS Y DECISIONES (v7/v8)
+// ═══════════════════════════════════════════════════════════
+
+// replication.replication_gate
+function mgReplicationGate(nullP, qValue, holdoutScore, baseline, replicated) {
+  const alpha = mgSettings().gates.alpha;
+  const requireRep = mgSettings().gates.requireReplication;
+  const gates = {
+    q_corrected_lt_alpha: (qValue != null ? qValue : 1) < alpha,
+    permutation_p_lt_alpha: (nullP != null ? nullP : 1) < alpha,
+    golden_holdout_beats_baseline: (holdoutScore || 0) > (baseline || 0),
+    independent_replication: requireRep ? !!replicated : true
+  };
+  const passed = Object.values(gates).every(Boolean);
+  return { passed, gates, decision: passed ? 'CHAMPION' : 'CHALLENGER' };
+}
+
+// no_edge.evaluate_edge
+function mgEvaluateEdge(evidence, minModels) {
+  const S = mgSettings();
+  const min = (minModels == null) ? S.gates.minQualifiedModels : minModels;
+  const qualified = evidence.filter(e =>
+    (e.q_value != null ? e.q_value : 1) < S.gates.alpha &&
+    (e.permutation_p != null ? e.permutation_p : 1) < S.gates.alpha &&
+    (e.golden_holdout_delta || 0) > 0 &&
+    (S.gates.requireReplication ? !!e.replicated : true) &&
+    !e.base_rate_warning
+  );
+  const ranked = mgRankModels(qualified);
+  if (ranked.length < min) {
+    return {
+      mode: 'NO_EDGE', champion: null, confidence: 'LOW', qualified_models: 0,
+      qualified: [],
+      message: 'No se detectó ventaja predictiva reproducible. Las combinaciones siguen siendo candidatos, no garantías.'
+    };
+  }
+  return {
+    mode: 'EDGE_CANDIDATE', champion: ranked[0].name, confidence: 'RESEARCH_ONLY',
+    qualified_models: ranked.length, qualified: ranked.map(r => r.name),
+    message: 'Evidencia compatible con una ventaja candidata. Requiere confirmación en live.'
+  };
+}
+
+// early_stopping.should_stop
+function mgShouldStop(metrics) {
+  if (!mgSettings().earlyStopping.enabled) return false;
+  if (metrics.base_rate_warning) return true;
+  if ((metrics.q_value != null ? metrics.q_value : 1) > 0.5 && (metrics.experiments || 0) >= 3) return true;
+  if ((metrics.permutation_p != null ? metrics.permutation_p : 1) > 0.8 && (metrics.experiments || 0) >= 5) return true;
+  return false;
+}
+
+// drift_trigger.DriftTrigger
+function mgDriftDecision(score, threshold) {
+  const th = (threshold == null) ? mgSettings().drift.threshold : threshold;
+  const s = Number(score) || 0;
+  return { detected: s >= th, score: s, threshold: th,
+    reason: s >= th ? 'DRIFT_DETECTED' : 'NO_MATERIAL_DRIFT' };
+}
+
+// champion_decay.ChampionDecay
+function mgChampionDecay(championState, currentDelta, minDelta, maxBadCycles) {
+  const S = mgSettings().champion;
+  const min = (minDelta == null) ? S.minDelta : minDelta;
+  const max = (maxBadCycles == null) ? S.maxBadCycles : maxBadCycles;
+  const c = championState || { model: null, active: true, degradation_count: 0 };
+  if ((currentDelta == null ? 0 : currentDelta) <= min) c.degradation_count = (c.degradation_count || 0) + 1;
+  else c.degradation_count = 0;
+  if (S.autoRetire && c.degradation_count >= max) c.active = false;
+  return c;
+}
+
+// ensemble.DynamicEnsemble — sólo pondera modelos que pasan las compuertas
+function mgDynamicEnsembleWeights(evidence) {
+  const S = mgSettings();
+  const valid = evidence.filter(e =>
+    (e.q_value != null ? e.q_value : 1) < S.gates.alpha &&
+    !e.base_rate_warning &&
+    (e.stability || 0) > S.gates.minStability);
+  const w = {};
+  evidence.forEach(e => { w[e.name] = 0; });
+  if (!valid.length) return { weights: w, qualified: [], total: 0 };
+  const raw = {};
+  let total = 0;
+  valid.forEach(e => {
+    const v = Math.max(0, e.score || 0) * Math.max(0, e.stability || 0);
+    raw[e.name] = v; total += v;
+  });
+  if (total <= 0) return { weights: w, qualified: valid.map(v => v.name), total: 0 };
+  evidence.forEach(e => { w[e.name] = (raw[e.name] || 0) / total; });
+  return { weights: w, qualified: valid.map(v => v.name), total: 1 };
+}
+
+function mgEnsembleConfidence(ens) {
+  const total = Object.values(ens.weights || {}).reduce((a, b) => a + b, 0);
+  return total > 0.8 ? 'HIGH' : 'LOW';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  5. PRESUPUESTO Y META-APRENDIZAJE (v8/v9)
+// ═══════════════════════════════════════════════════════════
+
+// meta_learning.ResearchMetaLearner — sólo prioriza presupuesto (regla 24)
+function mgMetaLearnerUpdate(outcomes) {
+  (outcomes || []).forEach(o => {
+    const f = o.family || 'statistical';
+    if (!MG_STATE.metaLearner[f]) MG_STATE.metaLearner[f] = { n: 0, wins: 0, replications: 0 };
+    const s = MG_STATE.metaLearner[f];
+    s.n += 1;
+    s.wins += o.useful ? 1 : 0;
+    s.replications += o.replicated ? 1 : 0;
+  });
+  return MG_STATE.metaLearner;
+}
+
+function mgMetaLearnerPriority(family) {
+  const s = MG_STATE.metaLearner[family];
+  if (!s || !s.n) return 1.0;
+  return (s.wins + 0.5 * s.replications) / s.n;
+}
+
+function mgFamilyPriorities() {
+  const p = {};
+  MG_FAMILIES.forEach(f => { p[f] = mgMetaLearnerPriority(f); });
+  return p;
+}
+
+// adaptive_budget.AdaptiveBudget / experiment_budget.ExperimentBudget
+function mgAllocateBudget(priorities) {
+  const S = mgSettings().budget;
+  const caps = {};
+  MG_FAMILIES.forEach(f => { caps[f] = S[f] != null ? S[f] : 20; });
+  if (!S.adaptive) return mgClone(caps);
+  const total = Object.values(priorities).reduce((a, b) => a + Math.max(0, Number(b) || 0), 0);
+  if (total <= 0) { const flat = {}; MG_FAMILIES.forEach(f => flat[f] = 1); return flat; }
+  const out = {};
+  MG_FAMILIES.forEach(f => {
+    out[f] = Math.min(caps[f], Math.max(1, Math.round(caps[f] * Math.max(0, Number(priorities[f]) || 0) / total)));
+  });
+  return out;
+}
+
+function mgValidateBudget(allocation) {
+  const S = mgSettings().budget;
+  return MG_FAMILIES.every(f => (allocation[f] || 0) <= (S[f] != null ? S[f] : 20));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  6. RESEARCH MEMORY (v7 regla 22)
+// ═══════════════════════════════════════════════════════════
+
+function mgMemoryKey(game, hypothesis, params) {
+  return mgHash(JSON.stringify([game, hypothesis, params]));
+}
+
+function mgMemorySeen(game, hypothesis, params) {
+  const k = mgMemoryKey(game, hypothesis, params);
+  return MG_STATE.memory.some(r => r.key === k);
+}
+
+function mgMemoryAdd(game, hypothesis, params, result) {
+  if (!mgSettings().memory.enabled) return null;
+  const key = mgMemoryKey(game, hypothesis, params);
+  const existing = MG_STATE.memory.findIndex(r => r.key === key);
+  const rec = { key, game, hypothesis, params, result, ts: Date.now() };
+  if (existing >= 0) MG_STATE.memory[existing] = rec;
+  else MG_STATE.memory.push(rec);
+  const max = mgSettings().memory.maxRecords;
+  if (MG_STATE.memory.length > max) MG_STATE.memory = MG_STATE.memory.slice(-max);
+  return key;
+}
+
+function mgMemorySummary() {
+  return { experiments: MG_STATE.memory.length };
+}
+
+// hypothesis_generator.generate
+function mgGenerateHypotheses(game) {
+  const existing = new Set(MG_STATE.memory.filter(r => r.game === game).map(r => r.hypothesis));
+  return MG_HYPOTHESIS_CATALOG.filter(h => !existing.has(h));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  7. DIAGNÓSTICOS ESTADÍSTICOS (engine/app/analysis)
+// ═══════════════════════════════════════════════════════════
+
+function mgChiUniform(draws, maxN) {
+  const c = new Array(maxN).fill(0);
+  draws.forEach(d => d.forEach(n => { if (n >= 1 && n <= maxN) c[n - 1]++; }));
+  const total = c.reduce((a, b) => a + b, 0);
+  const exp = total / maxN;
+  if (exp <= 0) return { stat: 0, p: 1 };
+  const stat = c.reduce((s, o) => s + (o - exp) * (o - exp) / exp, 0);
+  return { stat, p: mgChi2SF(stat, maxN - 1) };
+}
+
+function mgAutocorrelation(draws) {
+  const x = draws.map(d => d.reduce((a, b) => a + b, 0));
+  if (x.length < 3) return { r: 0, p: 1 };
+  const a = x.slice(0, -1), b = x.slice(1);
+  const ma = mgMean(a), mb = mgMean(b);
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < a.length; i++) {
+    num += (a[i] - ma) * (b[i] - mb);
+    da += (a[i] - ma) * (a[i] - ma);
+    db += (b[i] - mb) * (b[i] - mb);
+  }
+  const r = (da > 0 && db > 0) ? num / Math.sqrt(da * db) : 0;
+  const n = a.length;
+  const z = (n > 3 && Math.abs(r) < 1) ? r * Math.sqrt(n - 2) / Math.sqrt(1 - r * r) : 0;
+  return { r, p: mgNormTwoSided(z) };
+}
+
+function mgPairLift(draws, maxN, pick) {
+  const counts = new Map();
+  draws.forEach(d => {
+    for (let i = 0; i < d.length; i++) {
+      for (let j = i + 1; j < d.length; j++) {
+        const a = Math.min(d[i], d[j]), b = Math.max(d[i], d[j]);
+        const k = a + '-' + b;
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+    }
+  });
+  const N = draws.length;
+  const e = N * Math.pow(pick / maxN, 2);
+  const out = [];
+  counts.forEach((v, k) => out.push({ pair: k, lift: v / Math.max(e, 1), count: v }));
+  return out.sort((a, b) => b.lift - a.lift);
+}
+
+// Información mutua por pares (forma cerrada sobre tabla 2×2)
+function mgMutualInformationTop(draws, maxN, topK) {
+  const N = draws.length;
+  if (!N) return [];
+  const f = new Array(maxN + 1).fill(0);
+  const co = {};
+  draws.forEach(d => {
+    d.forEach(n => { if (n >= 1 && n <= maxN) f[n]++; });
+    for (let i = 0; i < d.length; i++) {
+      for (let j = i + 1; j < d.length; j++) {
+        const a = Math.min(d[i], d[j]), b = Math.max(d[i], d[j]);
+        const k = a * 100 + b;
+        co[k] = (co[k] || 0) + 1;
+      }
+    }
+  });
+  const out = [];
+  const term = (c, pa, pb) => (c > 0 && pa > 0 && pb > 0) ? (c / N) * Math.log((c / N) / (pa * pb)) : 0;
+  for (let a = 1; a <= maxN; a++) {
+    for (let b = a + 1; b <= maxN; b++) {
+      const n11 = co[a * 100 + b] || 0;
+      const n10 = f[a] - n11, n01 = f[b] - n11, n00 = N - n11 - n10 - n01;
+      const pa1 = f[a] / N, pb1 = f[b] / N, pa0 = 1 - pa1, pb0 = 1 - pb1;
+      const mi = term(n11, pa1, pb1) + term(n10, pa1, pb0) + term(n01, pa0, pb1) + term(n00, pa0, pb0);
+      out.push({ pair: a + '-' + b, mi });
+    }
+  }
+  return out.sort((x, y) => y.mi - x.mi).slice(0, topK || 10);
+}
+
+// advanced.drift — distancia L1 entre dos ventanas consecutivas
+function mgDriftL1(draws, maxN, window, pick) {
+  const w = window || mgSettings().drift.window;
+  if (draws.length < 2 * w) return { available: false, l1: 0, score: 0, sampling_reference: 0 };
+  const freq = ds => {
+    const v = new Array(maxN).fill(0);
+    ds.forEach(d => d.forEach(n => { if (n >= 1 && n <= maxN) v[n - 1]++; }));
+    return v.map(x => x / (pick * ds.length));
+  };
+  const a = freq(draws.slice(-2 * w, -w)), b = freq(draws.slice(-w));
+  let l1 = 0;
+  for (let i = 0; i < maxN; i++) l1 += Math.abs(a[i] - b[i]);
+  const ref = Math.sqrt(2 * maxN / (pick * w));
+  return { available: true, l1, sampling_reference: ref, score: ref > 0 ? Math.max(0, (l1 - ref) / ref) : 0 };
+}
+
+// advanced.change_point
+function mgChangePoint(draws) {
+  if (draws.length < 100) return { available: false };
+  const x = draws.map(d => d.reduce((a, b) => a + b, 0));
+  const m = mgMean(x);
+  const sd = Math.sqrt(x.reduce((s, v) => s + (v - m) * (v - m), 0) / x.length) || 1e-9;
+  let best = { cut_index: null, standardized_shift: 0 };
+  for (let c = 50; c < x.length - 50; c += 10) {
+    const left = x.slice(0, c), right = x.slice(c);
+    const z = Math.abs(mgMean(left) - mgMean(right)) / sd;
+    if (z > best.standardized_shift) best = { cut_index: c, standardized_shift: z };
+  }
+  return Object.assign({ available: true }, best);
+}
+
+// permutation.block_bootstrap — sobre la serie de aciertos
+function mgBlockBootstrap(series, blockSize, reps, seed) {
+  const S = mgSettings().gates;
+  const block = blockSize || S.blockSize;
+  const R = reps || S.blockBootstrapReps;
+  if (!series.length) return { reps: 0, mean: 0, ci95: [0, 0], block_size: block };
+  const blocks = [];
+  for (let i = 0; i < series.length; i += block) blocks.push(series.slice(i, i + block));
+  const rng = mgLcg(seed || mgSettings().seed);
+  const means = [];
+  for (let r = 0; r < R; r++) {
+    let sum = 0, n = 0;
+    for (let j = 0; j < blocks.length; j++) {
+      const blk = blocks[Math.floor(rng() * blocks.length)];
+      for (const v of blk) { sum += v; n++; }
+    }
+    means.push(n ? sum / n : 0);
+  }
+  means.sort((a, b) => a - b);
+  return { reps: R, mean: mgMean(means), ci95: [mgQuantile(means, 0.025), mgQuantile(means, 0.975)], block_size: block };
+}
+
+// permutation.permutation_test — nulo por permutación de etiquetas:
+// se conserva la predicción de cada paso y se permuta a qué sorteo real
+// se enfrenta. Mide si el ranking del modelo se alinea con SU sorteo.
+function mgPermutationTest(topSets, actuals, reps, seed) {
+  const n = actuals.length;
+  const R = reps || mgSettings().gates.permutationReps;
+  if (!n) return { observed: 0, null_mean: 0, p: 1, reps: 0 };
+  let obs = 0;
+  for (let i = 0; i < n; i++) obs += mgOverlap(topSets[i], actuals[i]);
+  obs /= n;
+  const rng = mgLcg(seed || mgSettings().seed);
+  const idx = Array.from({ length: n }, (_, i) => i);
+  let ge = 0, sum = 0;
+  for (let r = 0; r < R; r++) {
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const t = idx[i]; idx[i] = idx[j]; idx[j] = t;
+    }
+    let s = 0;
+    for (let i = 0; i < n; i++) s += mgOverlap(topSets[i], actuals[idx[i]]);
+    s /= n;
+    sum += s;
+    if (s >= obs) ge++;
+  }
+  return { observed: obs, null_mean: sum / R, p: (1 + ge) / (R + 1), reps: R };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  8. BACKTESTING WALK-FORWARD COMPARTIDO
+// ═══════════════════════════════════════════════════════════
+
+function mgTheoreticalMean(maxN, pick) { return (pick * pick) / maxN; }
+
+// Una sola pasada walk-forward que alimenta TODO el protocolo:
+// backtest, permutación, bootstrap, estabilidad y pesos del ensemble.
+function mgWalkForward(draws, maxN, from, to, pick) {
+  const per = {};
+  MG_MODEL_KEYS.forEach(k => { per[k] = { hits: [], topSets: [], top15: 0, logLike: 0, obs: 0 }; });
+  const actuals = [];
+  // Ventana de entrenamiento acotada: mantiene el ciclo utilizable en el
+  // navegador con históricos largos (Chispazo supera los 10 mil sorteos) y
+  // es un parámetro explícito del barrido de lookback del protocolo.
+  const maxTrain = Math.max(100, mgSettings().gates.maxTrainDraws || 1500);
+  for (let t = from; t < to; t++) {
+    const train = draws.slice(Math.max(0, t - maxTrain), t);
+    const actual = draws[t];
+    if (!actual || !actual.length) continue;
+    const aset = new Set(actual);
+    actuals.push(actual);
+    const all = computeAllModels(train, maxN);
+    for (const k of MG_MODEL_KEYS) {
+      const probs = all[k] || [];
+      const order = [];
+      for (let n = 1; n <= maxN; n++) order.push({ n, p: probs[n] || 0 });
+      order.sort((a, b) => b.p - a.p);
+      const top = order.slice(0, pick).map(x => x.n);
+      const top15 = new Set(order.slice(0, 15).map(x => x.n));
+      let h15 = 0, ll = 0;
+      actual.forEach(n => {
+        if (top15.has(n)) h15++;
+        ll += Math.log(Math.max(probs[n] || 1e-10, 1e-10));
+      });
+      const o = per[k];
+      o.hits.push(mgOverlap(top, actual));
+      o.topSets.push(top);
+      o.top15 += h15;
+      o.logLike += ll;
+      o.obs += actual.length;
+    }
+  }
+  return { from, to, pick, actuals, perModel: per, steps: actuals.length };
+}
+
+// backtesting.core.summarize
+function mgSummarizeBacktest(hits, maxN, pick) {
+  const n = hits.length;
+  const m = n ? mgMean(hits) : 0;
+  const base = mgTheoreticalMean(maxN, pick);
+  return {
+    n, mean_hits: m, theoretical_random: base,
+    delta_vs_random: n ? m - base : 0,
+    hit_rate_3plus: n ? hits.filter(h => h >= 3).length / n : 0,
+    max_hits: n ? Math.max.apply(null, hits) : 0
+  };
+}
+
+// Estabilidad: fracción de bloques contiguos donde el modelo supera al azar
+function mgStability(hits, baseline, blocks) {
+  const b = blocks || mgSettings().gates.stabilityBlocks;
+  if (hits.length < b * 3) {
+    return hits.length ? (mgMean(hits) > baseline ? 1 : 0) : 0;
+  }
+  const size = Math.floor(hits.length / b);
+  let good = 0;
+  for (let i = 0; i < b; i++) {
+    const seg = hits.slice(i * size, (i + 1) * size);
+    if (mgMean(seg) > baseline) good++;
+  }
+  return good / b;
+}
+
+// Replicación independiente: re-muestreo por bloques con semillas fijas
+function mgReplicationCheck(hits, baseline, seeds) {
+  const S = mgSettings().gates;
+  const sds = seeds || S.replicationSeeds;
+  if (!hits.length) return { replicated: false, passed: 0, total: sds.length, fraction: 0 };
+  let passed = 0;
+  sds.forEach(sd => {
+    const bb = mgBlockBootstrap(hits, S.blockSize, 60, sd);
+    // Replica si el remuestreo por bloques con ESA semilla queda por encima
+    // del azar tanto en media como en el extremo inferior del IC.
+    if (bb.mean > baseline && bb.ci95[0] >= baseline) passed++;
+  });
+  const fraction = passed / sds.length;
+  return { replicated: fraction >= S.replicationMinFraction, passed, total: sds.length, fraction };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  9. PORTAFOLIO, EVOLUCIÓN Y MONTE CARLO (v7)
+// ═══════════════════════════════════════════════════════════
+
+// portfolio_engine.PortfolioEngine.validate
+function mgPortfolioValidate(combo, maxN, pick) {
+  const c = Array.from(new Set(combo.map(x => parseInt(x, 10)))).sort((a, b) => a - b);
+  return c.length === pick && c.every(x => x >= 1 && x <= maxN);
+}
+
+// portfolio_engine.PortfolioEngine.diversify
+function mgPortfolioDiversify(candidates, size, overlapLimit, maxN, pick) {
+  const S = mgSettings().portfolio;
+  const lim = (overlapLimit == null) ? S.overlapLimit : overlapLimit;
+  const out = [];
+  const sorted = candidates.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+  for (const c of sorted) {
+    if (out.length >= size) break;
+    if (!mgPortfolioValidate(c.numbers, maxN, pick)) continue;
+    if (S.enforceDiversity && !out.every(s => mgOverlap(c.numbers, s.numbers) <= lim)) continue;
+    out.push(c);
+  }
+  // Relleno: si la restricción de solape deja huecos, completa por score
+  if (out.length < size) {
+    for (const c of sorted) {
+      if (out.length >= size) break;
+      if (!mgPortfolioValidate(c.numbers, maxN, pick)) continue;
+      if (out.some(s => s.numbers.join(',') === c.numbers.join(','))) continue;
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+// evolution.EvolutionarySearch — nunca accede al Golden Holdout (regla 17)
+function mgEvolutionarySearch(maxN, pick, seed) {
+  const rng = mgLcg(seed || mgSettings().seed);
+  const pickRandom = arr => arr[Math.floor(rng() * arr.length)];
+  const mutate = combo => {
+    const c = new Set(combo);
+    const pool = [];
+    for (let n = 1; n <= maxN; n++) if (!c.has(n)) pool.push(n);
+    if (!pool.length) return combo.slice();
+    c.delete(pickRandom(Array.from(c)));
+    c.add(pickRandom(pool));
+    return Array.from(c).sort((a, b) => a - b);
+  };
+  const crossover = (a, b) => {
+    const pool = Array.from(new Set(a.concat(b)));
+    if (pool.length < pick) return a.slice();
+    const chosen = [];
+    const copy = pool.slice();
+    while (chosen.length < pick && copy.length) {
+      chosen.push(copy.splice(Math.floor(rng() * copy.length), 1)[0]);
+    }
+    return chosen.sort((a2, b2) => a2 - b2);
+  };
+  const evolve = (population, fitness, generations, elite) => {
+    const S = mgSettings().evolution;
+    const gens = generations == null ? S.generations : generations;
+    const el = elite == null ? S.elite : elite;
+    let pop = population.map(p => p.slice().sort((a, b) => a - b));
+    for (let g = 0; g < gens; g++) {
+      const ranked = pop.slice().sort((a, b) => fitness(b) - fitness(a));
+      const keep = ranked.slice(0, Math.min(el, ranked.length));
+      const children = [];
+      let guard = 0;
+      while (children.length + keep.length < pop.length && guard++ < pop.length * 5) {
+        const a = keep.length > 1 ? pickRandom(keep) : keep[0];
+        let b = keep.length > 1 ? pickRandom(keep) : keep[0];
+        let child = crossover(a, b);
+        if (rng() < S.mutationRate) child = mutate(child);
+        if (child.length === pick) children.push(child);
+      }
+      pop = keep.concat(children);
+    }
+    return pop.slice().sort((a, b) => fitness(b) - fitness(a));
+  };
+  return { mutate, crossover, evolve };
+}
+
+// monte_carlo — estima distribuciones, no causalidad (regla 18)
+//
+// Construye el nulo simulando U boletos uniformes y midiendo, para cada uno,
+// su media de coincidencias contra la ventana reciente de sorteos reales.
+// Esa media es continua, así que el percentil de un candidato sí discrimina
+// (a diferencia de comparar contra aciertos enteros de un solo sorteo).
+function mgMonteCarloAudit(candidates, draws, maxN, pick, universes, seed) {
+  const S = mgSettings().monteCarlo;
+  const U = universes || S.universes;
+  const usedSeed = seed || S.seed;
+  const rng = mgLcg(usedSeed);
+  const recent = draws.slice(-Math.min(120, draws.length));
+  const R = recent.length;
+  if (!R) return { available: false };
+
+  // freq[n] = en cuántos sorteos recientes aparece n → media de coincidencias
+  // de un boleto = suma(freq)/R, en forma cerrada.
+  const freq = new Array(maxN + 1).fill(0);
+  recent.forEach(d => d.forEach(n => { if (n >= 1 && n <= maxN) freq[n]++; }));
+  const meanHitsOf = nums => {
+    let sum = 0;
+    for (const n of nums) sum += (freq[n] || 0);
+    return sum / R;
+  };
+
+  const nullMeans = new Array(U);
+  const intDist = {};
+  const bag = new Array(maxN);
+  for (let n = 0; n < maxN; n++) bag[n] = n + 1;
+  for (let u = 0; u < U; u++) {
+    // muestreo sin reemplazo (Fisher–Yates parcial sobre la bolsa reutilizada)
+    for (let k = 0; k < pick; k++) {
+      const j = k + Math.floor(rng() * (maxN - k));
+      const t = bag[k]; bag[k] = bag[j]; bag[j] = t;
+    }
+    const ticket = bag.slice(0, pick);
+    nullMeans[u] = meanHitsOf(ticket);
+    const h = mgOverlap(ticket, recent[Math.floor(rng() * R)]);
+    intDist[h] = (intDist[h] || 0) + 1;
+  }
+  nullMeans.sort((a, b) => a - b);
+  const percentile = v => {
+    let lo = 0, hi = nullMeans.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (nullMeans[mid] < v) lo = mid + 1; else hi = mid; }
+    return lo / nullMeans.length;
+  };
+  const meanRef = mgMean(nullMeans);
+
+  const result = {
+    available: true, universes: U, seed: usedSeed, window: R,
+    mean_hits_reference: meanRef,
+    theoretical: mgTheoreticalMean(maxN, pick),
+    reference_ci95: [mgQuantile(nullMeans, 0.025), mgQuantile(nullMeans, 0.975)],
+    distribution: intDist
+  };
+
+  if (candidates && candidates.length) {
+    const cmeans = candidates.map(c => meanHitsOf(c.numbers || c.ticket || []));
+    const observed = mgMean(cmeans);
+    result.per_candidate = cmeans.map(m => ({
+      mean_hits: m, percentile_vs_random: percentile(m), delta_vs_reference: m - meanRef
+    }));
+    result.candidates_mean_hits = observed;
+    result.percentile_vs_random = percentile(observed);
+    result.delta_vs_reference = observed - meanRef;
+  }
+  return result;
+}
+
+// monte_carlo.compare_strategies
+function mgCompareStrategies(results) {
+  return results.slice().sort((a, b) => (b.mean_hits || 0) - (a.mean_hits || 0));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  10. AUDITORÍA LIVE Y LINAJE DE DATOS (v8/v9)
+// ═══════════════════════════════════════════════════════════
+
+// live_audit.create_audit
+function mgCreateAudit(runId, game, model, version, seed, snapshot, numbers) {
+  return {
+    run_id: runId, game, model, model_version: version, seed,
+    generated_at: new Date().toISOString(),
+    data_snapshot: snapshot, numbers: numbers.slice(), hits: null
+  };
+}
+
+function mgRegisterAudits(audits) {
+  if (!mgSettings().live.auditEnabled) return;
+  MG_STATE.liveAudits = MG_STATE.liveAudits.concat(audits).slice(-300);
+  mgSaveResearchState();
+}
+
+// data_lineage.DataLineage
+function mgDataLineage(o) {
+  const l = {
+    model_version: o.model_version, train_snapshot: o.train_snapshot,
+    validation_snapshot: o.validation_snapshot, holdout_snapshot: o.holdout_snapshot,
+    live_start_snapshot: o.live_start_snapshot, live_end_snapshot: o.live_end_snapshot || null,
+    live_predictions_count: o.live_predictions_count || 0,
+    training_includes_live: !!o.training_includes_live
+  };
+  // Regla 39: entrenar con live abre una frontera temporal nueva
+  l.valid = !(l.training_includes_live && l.live_end_snapshot == null);
+  if (!l.valid) l.error = 'Training con live requiere nueva frontera temporal.';
+  return l;
+}
+
+// research/model_card.ModelCard
+function mgModelCard(e, ctx) {
+  return {
+    model: e.name, version: MG_VERSION, game: ctx.game, role: e.role || 'CHALLENGER',
+    data_snapshot: ctx.snapshot, train_samples: ctx.train_samples,
+    validation_samples: ctx.validation_samples,
+    walk_forward_mean_hits: e.backtest ? e.backtest.mean_hits : null,
+    random_baseline: ctx.baseline,
+    observed_delta: e.backtest ? e.backtest.delta_vs_random : null,
+    permutation_p: e.permutation_p,
+    bootstrap_low: e.bootstrap ? e.bootstrap.ci95[0] : null,
+    bootstrap_high: e.bootstrap ? e.bootstrap.ci95[1] : null,
+    bh_q: e.q_value,
+    golden_holdout_score: e.golden_holdout_score,
+    replication_passed: !!e.replicated,
+    looks_like_base_rate: !!e.base_rate_warning,
+    decision: e.decision || 'CHALLENGER'
+  };
+}
+
+// track_record.ModelTrackRecord
+function mgTrackRecord(model, hitCounts) {
+  const dist = {};
+  let total = 0;
+  hitCounts.forEach(h => { const k = Math.round(h); dist[k] = (dist[k] || 0) + 1; total += k; });
+  return {
+    model, games: hitCounts.length,
+    mean_hits: hitCounts.length ? total / hitCounts.length : 0,
+    distribution: dist
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  11. PLANIFICADORES DE CICLO (v7/v8/v9)
+// ═══════════════════════════════════════════════════════════
+
+function mgPlanV7(newDraw, promisingModels) {
+  if (!newDraw) return ['WAIT'];
+  let a = ['AUDIT', 'REGISTER_HYPOTHESES', 'RUN_STATISTICAL_LAB', 'RUN_MODEL_ZOO',
+    'RUN_ABLATIONS', 'RUN_STABILITY', 'RUN_PERMUTATION', 'RUN_BLOCK_BOOTSTRAP',
+    'APPLY_BH', 'RUN_GOLDEN_HOLDOUT', 'RUN_REPLICATION'];
+  if (promisingModels && promisingModels.length) {
+    a = a.concat(['RUN_PORTFOLIO_SEARCH', 'RUN_EVOLUTIONARY_SEARCH', 'RUN_MONTE_CARLO']);
+  }
+  return a.concat(['EVALUATE_NO_EDGE', 'REPORT']);
+}
+
+// continuous_cycle.ContinuousLearningCycle.plan
+function mgPlanContinuousCycle(newDraw, driftScore) {
+  if (!newDraw) return { status: 'WAIT', actions: [], reason: 'No hay sorteo nuevo.' };
+  const actions = ['AUDIT_LIVE_RESULT', 'UPDATE_TRACK_RECORD', 'CHECK_DRIFT',
+    'QUERY_RESEARCH_MEMORY', 'ALLOCATE_EXPERIMENT_BUDGET',
+    'RUN_STATISTICAL_LAB', 'RUN_MODEL_ZOO', 'RUN_ABLATIONS',
+    'RUN_STABILITY', 'RUN_PERMUTATION', 'RUN_BLOCK_BOOTSTRAP',
+    'APPLY_BH', 'RUN_GOLDEN_HOLDOUT', 'RUN_REPLICATION',
+    'UPDATE_META_LEARNER', 'EVALUATE_CHAMPION_DECAY',
+    'BUILD_CANDIDATE_PORTFOLIO', 'MONTE_CARLO_AUDIT', 'REPORT'];
+  if (mgDriftDecision(driftScore).detected && mgSettings().drift.expandResearchOnDrift) {
+    actions.splice(3, 0, 'EXPAND_RESEARCH', 'RUN_CHANGE_POINT');
+  }
+  return { status: 'RUN', actions, reason: 'Nuevo sorteo detectado.' };
+}
+
+// next_cycle.LiveIntelligence.plan
+function mgPlanNextCycle(newDraw, liveHits, baseline) {
+  if (!newDraw) return { status: 'WAIT', priority: 'NONE', actions: [], rationale: 'No hay nuevo sorteo.' };
+  const r = mgSequentialAnalyze(liveHits, baseline);
+  let priority, actions;
+  if (r.status === 'SIGNAL_CANDIDATE') {
+    priority = 'CONFIRMATION';
+    actions = ['REPLICATE', 'RECHECK_PERMUTATION', 'RECHECK_GOLDEN_HOLDOUT'];
+  } else {
+    priority = 'EXPLORATION';
+    actions = ['UPDATE_TRACK_RECORD', 'QUERY_MEMORY', 'RUN_ADAPTIVE_RESEARCH'];
+  }
+  actions = actions.concat(['UPDATE_SEQUENTIAL_METRICS', 'CHECK_DRIFT',
+    'CHECK_CHAMPION_DECAY', 'BUILD_PORTFOLIO', 'REPORT']);
+  return { status: 'RUN', priority, actions,
+    rationale: 'Prioridad basada en evidencia live, no en rendimiento bruto.' };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  12. MÉTRICAS LIVE — derivadas del historial real del usuario
+//      (separadas del backtest y del Golden Holdout, regla 33)
+// ═══════════════════════════════════════════════════════════
+
+function mgLiveEntries(game) {
+  if (typeof state === 'undefined' || !state.history) return [];
+  return state.history
+    .filter(h => h.game === game && h.status === 'checked' && typeof h.hits === 'number')
+    .slice()
+    .sort((a, b) => (a.checkedAt || a.timestamp || 0) - (b.checkedAt || b.timestamp || 0));
+}
+
+function mgComputeLive(game, maxN, pick) {
+  const baseline = mgTheoreticalMean(maxN, pick);
+  const entries = mgLiveEntries(game);
+  const hits = entries.map(e => e.hits);
+  const byModel = {};
+  entries.forEach(e => {
+    const m = (e.research && e.research.champion) || e.researchModel || 'ensemble';
+    if (!byModel[m]) byModel[m] = [];
+    byModel[m].push(e.hits);
+  });
+  const models = Object.keys(byModel).map(m => mgSummarizeLive(m, byModel[m], baseline));
+  const overall = mgSummarizeLive('ensemble_live', hits, baseline);
+  const prev = MG_STATE.lastDelta[game];
+  const regression = (prev == null)
+    ? { change: 0, regressed: false, status: 'STABLE_OR_IMPROVED' }
+    : mgDetectRegression(overall.delta, prev);
+  return {
+    baseline, n: hits.length, hits, overall, models,
+    trackRecord: mgTrackRecord('ensemble_live', hits),
+    regression,
+    plan: mgPlanNextCycle(hits.length > 0, hits, baseline)
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  13. CICLO DE INVESTIGACIÓN COMPLETO
+// ═══════════════════════════════════════════════════════════
+
+function mgResearchCacheKey(game, draws) {
+  return game + '|' + draws.length + '|' + mgSettingsFingerprint();
+}
+
+function mgNow() {
+  try { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+  catch (e) { return Date.now(); }
+}
+
+function mgRunResearchCycle(game, draws, maxN, pick) {
+  const S = mgSettings();
+  const t0 = mgNow();
+  const n = draws.length;
+  const baseline = mgTheoreticalMean(maxN, pick);
+
+  // ── Frontera Golden Holdout: intocable por pesos y búsqueda ──
+  let hold = Math.round(n * S.gates.goldenHoldoutFraction);
+  hold = Math.max(S.gates.goldenHoldoutMinDraws, Math.min(S.gates.goldenHoldoutMaxDraws, hold));
+  hold = Math.min(hold, Math.max(0, n - 60));
+  const cut = n - hold;
+  const evalWindow = Math.max(20, Math.min(S.gates.evalWindow, cut - 30));
+  const from = Math.max(30, cut - evalWindow);
+
+  if (cut <= from) {
+    return { available: false, reason: 'Histórico insuficiente para el protocolo.', game, n };
+  }
+
+  // Validación (train) — jamás toca el holdout
+  const train = mgWalkForward(draws, maxN, from, cut, pick);
+  // Golden Holdout — evaluado aparte, sólo para la compuerta
+  const holdFrom = Math.max(cut, n - Math.min(hold, S.gates.goldenHoldoutMaxEval));
+  const holdout = hold > 0 ? mgWalkForward(draws, maxN, holdFrom, n, pick) : null;
+
+  // ── Evidencia por modelo ──
+  const evidence = [];
+  const pvals = [];
+  MG_MODEL_KEYS.forEach(k => {
+    const tr = train.perModel[k];
+    const backtest = mgSummarizeBacktest(tr.hits, maxN, pick);
+    const perm = mgPermutationTest(tr.topSets, train.actuals, S.gates.permutationReps, S.seed);
+    const boot = mgBlockBootstrap(tr.hits, S.gates.blockSize, S.gates.blockBootstrapReps, S.seed);
+    const seq = mgSequentialAnalyze(tr.hits, baseline);
+    const stability = mgStability(tr.hits, baseline);
+    const rep = S.gates.requireReplication
+      ? mgReplicationCheck(tr.hits, baseline, S.gates.replicationSeeds)
+      : { replicated: true, passed: 0, total: 0, fraction: 1 };
+    const ho = holdout ? mgSummarizeBacktest(holdout.perModel[k].hits, maxN, pick) : null;
+
+    pvals.push(perm.p);
+    evidence.push({
+      name: k,
+      family: MG_MODEL_FAMILY[k] || 'statistical',
+      score: backtest.delta_vs_random,
+      backtest, permutation: perm, permutation_p: perm.p,
+      bootstrap: boot, sequential: seq, stability,
+      replication: rep, replicated: rep.replicated,
+      golden_holdout_score: ho ? ho.mean_hits : null,
+      golden_holdout_delta: ho ? ho.delta_vs_random : 0,
+      // El IC cruza el baseline → indistinguible de la tasa base (regla 35)
+      base_rate_warning: seq.ci_low <= 0,
+      top15_hit_rate: tr.obs ? tr.top15 / tr.obs : 0,
+      log_like: train.steps ? tr.logLike / train.steps : 0
+    });
+  });
+
+  // ── Corrección por comparaciones múltiples (BH) ──
+  const qs = S.gates.bhCorrection ? mgBenjaminiHochberg(pvals) : pvals.slice();
+  evidence.forEach((e, i) => { e.q_value = qs[i]; });
+
+  // ── Early stopping (v8): marca familias que no vale la pena expandir ──
+  evidence.forEach(e => {
+    e.early_stop = mgShouldStop({
+      base_rate_warning: e.base_rate_warning, q_value: e.q_value,
+      permutation_p: e.permutation_p,
+      experiments: MG_STATE.memory.filter(r => r.game === game && r.params && r.params.model === e.name).length
+    });
+  });
+
+  // ── Champion Gate ──
+  evidence.forEach(e => {
+    const gate = mgReplicationGate(e.permutation_p, e.q_value, e.golden_holdout_score, baseline, e.replicated);
+    e.gate = gate;
+    e.decision = gate.decision;
+  });
+
+  // ── Ensemble dinámico + veredicto NO_EDGE ──
+  const ens = S.ensemble.dynamic
+    ? mgDynamicEnsembleWeights(evidence)
+    : { weights: {}, qualified: [], total: 0 };
+  ens.confidence = mgEnsembleConfidence(ens);
+  const edge = mgEvaluateEdge(evidence);
+
+  // ── Pesos "legacy" (softmax sobre top-15) para mezcla y compatibilidad ──
+  const perfSummary = {};
+  MG_MODEL_KEYS.forEach(k => {
+    const tr = train.perModel[k];
+    perfSummary[k] = {
+      hitRate: tr.obs ? tr.top15 / tr.obs : 0,
+      logLike: train.steps ? tr.logLike / train.steps : 0,
+      score: tr.obs ? tr.top15 / tr.obs : 0
+    };
+  });
+  const legacyWeights = evolveWeights(perfSummary, S.ensemble.temperature);
+
+  // Mezcla evidencia validada + softmax histórico
+  let weights, weightSource;
+  if (ens.total > 0) {
+    const blend = Math.max(0, Math.min(1, S.ensemble.blendWithLegacy));
+    weights = {};
+    let sum = 0;
+    MG_MODEL_KEYS.forEach(k => {
+      const w = (1 - blend) * (ens.weights[k] || 0) + blend * (legacyWeights[k] || 0);
+      weights[k] = Math.max(w, S.ensemble.floor);
+      sum += weights[k];
+    });
+    MG_MODEL_KEYS.forEach(k => { weights[k] = weights[k] / (sum || 1); });
+    weightSource = 'dynamic_ensemble';
+  } else {
+    weights = legacyWeights;
+    weightSource = 'legacy_softmax_no_edge';
+  }
+
+  // ── Deriva y punto de cambio ──
+  const driftL1 = mgDriftL1(draws, maxN, S.drift.window, pick);
+  const drift = mgDriftDecision(driftL1.score);
+  const changePoint = drift.detected ? mgChangePoint(draws) : { available: false };
+
+  // ── Live (separado del backtest) ──
+  const live = mgComputeLive(game, maxN, pick);
+
+  // ── Champion decay con evidencia live ──
+  let champState = MG_STATE.championState[game] || { model: null, active: true, degradation_count: 0 };
+  if (edge.champion && champState.model !== edge.champion) {
+    // Regla 40: live nunca promueve automáticamente
+    if (!champState.model || !champState.active || S.champion.autoPromoteFromLive) {
+      champState = { model: edge.champion, active: true, degradation_count: 0 };
+    }
+  }
+  // Sin evidencia live no hay nada que degradar: el decaimiento sólo corre
+  // cuando existen predicciones evaluadas (regla 28: se reevalúa cada ciclo
+  // *disponible*).
+  if (champState.model && live.overall && live.n > 0) {
+    champState = mgChampionDecay(champState, live.overall.delta);
+  }
+  MG_STATE.championState[game] = champState;
+
+  // ── Meta-learner y presupuesto adaptativo ──
+  mgMetaLearnerUpdate(evidence.map(e => ({
+    family: e.family, hypothesis: 'model:' + e.name, q_value: e.q_value,
+    replicated: e.replicated, stable: e.stability > S.gates.minStability,
+    useful: e.gate.passed
+  })));
+  const priorities = mgFamilyPriorities();
+  const budget = mgAllocateBudget(priorities);
+  const budgetValid = mgValidateBudget(budget);
+
+  // ── Research memory ──
+  const snapshot = mgSnapshotId(draws);
+  evidence.forEach(e => {
+    mgMemoryAdd(game, 'model:' + e.name,
+      { model: e.name, window: evalWindow, lookback: S.gates.maxTrainDraws, holdout: hold, alpha: S.gates.alpha },
+      { q: e.q_value, p: e.permutation_p, delta: e.score, replicated: e.replicated });
+  });
+
+  // ── Lineaje de datos ──
+  const lineage = mgDataLineage({
+    model_version: MG_VERSION,
+    train_snapshot: mgSnapshotId(draws.slice(0, from)),
+    validation_snapshot: mgSnapshotId(draws.slice(from, cut)),
+    holdout_snapshot: mgSnapshotId(draws.slice(cut)),
+    live_start_snapshot: snapshot,
+    live_end_snapshot: snapshot,
+    live_predictions_count: live.n,
+    training_includes_live: S.live.trainingIncludesLive
+  });
+
+  // ── Diagnósticos del laboratorio estadístico ──
+  const trainSlice = draws.slice(0, cut);
+  const diagnostics = {
+    chi_uniform: mgChiUniform(trainSlice, maxN),
+    autocorrelation: mgAutocorrelation(trainSlice),
+    drift: driftL1,
+    change_point: changePoint,
+    top_pairs: mgPairLift(trainSlice, maxN, pick).slice(0, 8),
+    top_mutual_information: mgMutualInformationTop(trainSlice, maxN, 8)
+  };
+
+  const ranked = mgRankModels(evidence.map(e => ({
+    name: e.name, replicated: e.replicated, q_value: e.q_value,
+    live_delta: live.overall ? live.overall.delta : 0,
+    live_ci_low: live.overall ? live.overall.ci_low : 0,
+    delta: e.score
+  })));
+
+  // Auditoría Monte Carlo del ciclo: distribución de referencia aleatoria
+  const monteCarlo = S.monteCarlo.enabled
+    ? mgMonteCarloAudit(null, draws, maxN, pick, S.monteCarlo.universes, S.monteCarlo.seed)
+    : { available: false };
+
+  const runId = mgRunId(game + snapshot);
+  const t1 = mgNow();
+
+  const result = {
+    available: true,
+    version: MG_VERSION,
+    run_id: runId,
+    game, n, snapshot,
+    baseline, pick, maxN,
+    split: { train_from: from, train_to: cut, holdout_from: cut, holdout_size: hold,
+      holdout_eval_from: holdFrom, eval_window: evalWindow, lookback: S.gates.maxTrainDraws },
+    evidence, performance: perfSummary, weights, weightSource,
+    ensemble: ens,
+    legacyWeights,
+    edge, champion: champState,
+    drift, changePoint, diagnostics,
+    live, lineage, ranked, monte_carlo: monteCarlo,
+    budget, budgetValid, priorities,
+    memory: mgMemorySummary(),
+    hypotheses: mgGenerateHypotheses(game),
+    challengers: MG_CHALLENGERS.map(c => ({ name: c.name, family: c.family,
+      status: 'optional_dependency_missing', requires: c.requires })),
+    plan_v7: mgPlanV7(true, edge.qualified),
+    plan_v8: mgPlanContinuousCycle(true, driftL1.score),
+    plan_v9: live.plan,
+    elapsed_ms: Math.round(t1 - t0),
+    generated_at: new Date().toISOString()
+  };
+
+  // El delta live de referencia lo actualiza mgOnNewDraw (evento de sorteo),
+  // no el ciclo: así la guardia de regresión compara ciclo contra ciclo.
+  MG_STATE.research[game] = result;
+  mgSaveResearchState();
+  return result;
+}
+
+function mgGetResearch(game) {
+  const g = game || (typeof state !== 'undefined' ? state.currentGame : 'melate');
+  return MG_STATE.research[g] || null;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  14. APLICACIÓN A LA GENERACIÓN DE PREDICCIONES
+// ═══════════════════════════════════════════════════════════
+
+// Ajuste NO_EDGE: en modo estricto aplana hacia uniforme (regla 20/42)
+function mgApplyEdgeAdjustment(probs, maxN) {
+  const S = mgSettings();
+  const r = mgGetResearch();
+  if (!S.enabled || !S.applyToPredictions || !S.strictNoEdge) return probs;
+  if (!r || !r.available || !r.edge || r.edge.mode !== 'NO_EDGE') return probs;
+  const blend = Math.max(0, Math.min(1, S.noEdgeUniformBlend));
+  const u = 1 / maxN;
+  const out = probs.slice();
+  for (let n = 1; n <= maxN; n++) out[n] = (1 - blend) * (probs[n] || 0) + blend * u;
+  const s = out.reduce((a, b) => a + b, 0);
+  return out.map(x => x / (s || 1));
+}
+
+// Pipeline v7 completo: pool → búsqueda evolutiva → portafolio diversificado
+// → auditoría Monte Carlo → registro live auditable.
+function mgBuildCandidates(probs, draws, maxN, pick, count, mode, seedBase) {
+  const S = mgSettings();
+  const seed = S.deterministic ? (S.seed + count * 7919 + mgHashNum(mode)) : (seedBase || Date.now());
+
+  // 1. Pool inicial sobremuestreado
+  const poolSize = Math.max(count, Math.min(120, count * (S.portfolio.poolFactor || 6)));
+  const pool = generateTickets(probs, draws, maxN, poolSize, mode, seed, pick);
+
+  let candidates = pool.map(t => ({
+    numbers: t.ticket, score: t.score.totalScore, source: 'sampler', scoreObj: t.score
+  }));
+
+  // 2. Búsqueda evolutiva (v7) — fitness = score del boleto, sin holdout
+  if (S.enabled && S.evolution.enabled && candidates.length > 2) {
+    try {
+      const es = mgEvolutionarySearch(maxN, pick, seed);
+      const fitnessCache = new Map();
+      const fitness = combo => {
+        const k = combo.join(',');
+        if (fitnessCache.has(k)) return fitnessCache.get(k);
+        const v = scoreTicket(combo, probs, draws, maxN).totalScore;
+        fitnessCache.set(k, v);
+        return v;
+      };
+      const population = candidates.slice(0, Math.min(S.evolution.population, candidates.length))
+        .map(c => c.numbers);
+      const evolved = es.evolve(population, fitness, S.evolution.generations, S.evolution.elite);
+      const seen = new Set(candidates.map(c => c.numbers.join(',')));
+      evolved.forEach(numbers => {
+        const k = numbers.join(',');
+        if (seen.has(k)) return;
+        seen.add(k);
+        const sc = scoreTicket(numbers, probs, draws, maxN);
+        candidates.push({ numbers, score: sc.totalScore, source: 'evolutionary', scoreObj: sc });
+      });
+    } catch (e) { console.warn('MG: búsqueda evolutiva falló', e); }
+  }
+
+  // 3. Portafolio diversificado (v7) con límite de solape
+  let selected = (S.enabled && S.portfolio.enabled)
+    ? mgPortfolioDiversify(candidates, count, S.portfolio.overlapLimit, maxN, pick)
+    : candidates.slice().sort((a, b) => b.score - a.score).slice(0, count);
+
+  if (!selected.length) selected = candidates.slice(0, count);
+  return { selected, pool: candidates, seed };
+}
+
+function mgHashNum(s) {
+  let h = 0;
+  const t = String(s || '');
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+  return h % 100000;
+}
+
+// Punto único de entrada usado por generatePredictions()
+function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
+  const S = mgSettings();
+  const _r = mgGetResearch();
+  const r = (_r && _r.available) ? _r : null;   // un ciclo incompleto no aporta veredicto
+  const adjusted = mgApplyEdgeAdjustment(probs, maxN);
+
+  if (!S.enabled || !S.applyToPredictions) {
+    return generateTickets(adjusted, draws, maxN, count, mode, Date.now(), pick)
+      .map(t => Object.assign(t, { research: null }));
+  }
+
+  const built = mgBuildCandidates(adjusted, draws, maxN, pick, count, mode, Date.now());
+  const snapshot = mgSnapshotId(draws);
+  const runId = mgRunId((r ? r.run_id : 'no-cycle') + mode);
+  const championName = (r && r.champion && r.champion.active) ? r.champion.model : null;
+
+  // 4. Auditoría Monte Carlo (v7 regla 18)
+  const mc = (S.monteCarlo.enabled)
+    ? mgMonteCarloAudit(built.selected, draws, maxN, pick, S.monteCarlo.universes, S.monteCarlo.seed)
+    : { available: false };
+
+  const researchMeta = {
+    run_id: runId,
+    version: MG_VERSION,
+    mode: r ? r.edge.mode : 'NOT_EVALUATED',
+    confidence: r ? r.edge.confidence : 'LOW',
+    champion: championName,
+    qualified_models: r ? r.edge.qualified_models : 0,
+    weight_source: r ? r.weightSource : 'legacy',
+    snapshot, seed: built.seed,
+    monte_carlo: mc.available ? {
+      universes: mc.universes, seed: mc.seed,
+      mean_hits_reference: mc.mean_hits_reference,
+      candidates_mean_hits: mc.candidates_mean_hits,
+      percentile_vs_random: mc.percentile_vs_random
+    } : { available: false },
+    live_status: (r && r.live && r.live.overall) ? r.live.overall.status : 'INSUFFICIENT_DATA',
+    drift: r ? { detected: r.drift.detected, score: r.drift.score } : null
+  };
+
+  // 5. Registro auditable de cada predicción live (v8 regla 30 / v9 regla 41)
+  const audits = built.selected.map(c => mgCreateAudit(
+    runId, (typeof state !== 'undefined' ? state.currentGame : 'melate'),
+    championName || 'ensemble', MG_VERSION, built.seed, snapshot, c.numbers
+  ));
+  mgRegisterAudits(audits);
+
+  return built.selected.map((c, i) => ({
+    ticket: c.numbers,
+    score: c.scoreObj || scoreTicket(c.numbers, adjusted, draws, maxN),
+    source: c.source,
+    research: Object.assign({}, researchMeta, {
+      audit_index: i,
+      candidate_mc: (mc.per_candidate && mc.per_candidate[i]) || null
+    })
+  }));
+}
+
+// Aplica diversificación de portafolio a una lista ya construida
+// (usada por el modo Portafolio y el modo Sistémico)
+function mgDiversifyTickets(tickets, maxN, pick, limit) {
+  const S = mgSettings();
+  if (!S.enabled || !S.applyToPredictions || !S.portfolio.enabled) return tickets;
+  const cands = tickets.map(t => ({ numbers: t.ticket, score: t.score ? t.score.totalScore : 0, ref: t }));
+  const sel = mgPortfolioDiversify(cands, tickets.length, limit, maxN, pick);
+  return sel.map(s => s.ref);
+}
+
+function mgAttachResearchMeta(tickets, draws) {
+  const S = mgSettings();
+  if (!S.enabled) return tickets;
+  const _r = mgGetResearch();
+  const r = (_r && _r.available) ? _r : null;
+  const snapshot = mgSnapshotId(draws || []);
+  const championName = (r && r.champion && r.champion.active) ? r.champion.model : null;
+  const runId = mgRunId((r ? r.run_id : 'no-cycle') + 'batch');
+  const meta = {
+    run_id: runId, version: MG_VERSION,
+    mode: r ? r.edge.mode : 'NOT_EVALUATED',
+    confidence: r ? r.edge.confidence : 'LOW',
+    champion: championName,
+    qualified_models: r ? r.edge.qualified_models : 0,
+    weight_source: r ? r.weightSource : 'legacy',
+    snapshot, seed: mgSettings().seed
+  };
+  const audits = [];
+  tickets.forEach(t => {
+    t.research = Object.assign({}, meta);
+    audits.push(mgCreateAudit(runId, (typeof state !== 'undefined' ? state.currentGame : 'melate'),
+      championName || 'ensemble', MG_VERSION, meta.seed, snapshot, t.ticket));
+  });
+  mgRegisterAudits(audits);
+  return tickets;
+}
+
+// Cierra el ciclo cuando entra un resultado real
+function mgOnNewDraw(game, maxN, pick, draws) {
+  const S = mgSettings();
+  if (!S.enabled) return null;
+  const live = mgComputeLive(game, maxN, pick);
+  const driftL1 = mgDriftL1(draws, maxN, S.drift.window, pick);
+  const plan = mgPlanContinuousCycle(true, driftL1.score);
+
+  // Marca los aciertos en los registros auditables
+  try {
+    const checked = mgLiveEntries(game).slice(-30);
+    MG_STATE.liveAudits.forEach(a => {
+      if (a.hits != null || a.game !== game) return;
+      const key = a.numbers.join(',');
+      const m = checked.find(h => h.ticket && h.ticket.join(',') === key);
+      if (m) a.hits = m.hits;
+    });
+  } catch (e) { /* no crítico */ }
+
+  const prev = MG_STATE.lastDelta[game];
+  const regression = (prev == null) ? { change: 0, regressed: false, status: 'STABLE_OR_IMPROVED' }
+    : mgDetectRegression(live.overall.delta, prev);
+
+  let champ = MG_STATE.championState[game];
+  if (champ && champ.model && live.n > 0) {
+    champ = mgChampionDecay(champ, live.overall.delta);
+    MG_STATE.championState[game] = champ;
+  }
+
+  MG_STATE.lastDelta[game] = live.overall.delta;
+  mgSaveResearchState();
+
+  return { live, drift: mgDriftDecision(driftL1.score), plan, regression, champion: champ };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  15. RESUMEN LEGIBLE (para el agente y la UI)
+// ═══════════════════════════════════════════════════════════
+
+function mgResearchSummaryText(game) {
+  const r = mgGetResearch(game);
+  const S = mgSettings();
+  if (!S.enabled) return 'Protocolo de investigación v9: DESACTIVADO en Ajustes.';
+  if (!r || !r.available) return 'Protocolo de investigación v9: sin ciclo ejecutado todavía.';
+  const lines = [];
+  lines.push(`Protocolo v${r.version} · run ${r.run_id.slice(0, 8)} · ${r.n} sorteos`);
+  lines.push(`Veredicto: ${r.edge.mode} (confianza ${r.edge.confidence}, ${r.edge.qualified_models} modelo(s) calificado(s))`);
+  lines.push(`Champion: ${r.champion && r.champion.model ? r.champion.model + (r.champion.active ? ' (activo)' : ' (retirado)') : 'ninguno'}`);
+  lines.push(`Pesos: ${r.weightSource} · alfa=${S.gates.alpha} · BH=${S.gates.bhCorrection ? 'sí' : 'no'}`);
+  lines.push(`Golden Holdout: ${r.split.holdout_size} sorteos reservados (intocables)`);
+  lines.push(`Deriva: ${r.drift.reason} (score ${r.drift.score.toFixed(3)})`);
+  if (r.live && r.live.overall) {
+    const o = r.live.overall;
+    lines.push(`Live: n=${o.n}, media ${o.mean_hits.toFixed(2)} vs baseline ${r.baseline.toFixed(2)}, delta ${o.delta.toFixed(3)}, IC95 [${isFinite(o.ci_low) ? o.ci_low.toFixed(3) : '-∞'}, ${isFinite(o.ci_high) ? o.ci_high.toFixed(3) : '∞'}] → ${o.status}`);
+  }
+  const top = r.evidence.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 3);
+  lines.push('Top evidencia: ' + top.map(e =>
+    `${e.name} (Δ${e.score.toFixed(3)}, q=${e.q_value.toFixed(3)}, estab ${(e.stability * 100).toFixed(0)}%${e.base_rate_warning ? ', tasa base' : ''})`).join(' · '));
+  return lines.join('\n');
+}
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  MELATE GENIUS · AJUSTES DEL MOTOR + PANEL DE INVESTIGACIÓN
+//  Los ajustes viven en MG_STATE.settings y se aplican en toda la app:
+//  dashboard, predicciones, portafolio, sistémico, backtest, historial
+//  y el agente IA.
+// ═══════════════════════════════════════════════════════════════════
+
+const MG_SETTINGS_SCHEMA = [
+  {
+    group: 'Protocolo de investigación',
+    icon: '🔬',
+    desc: 'Interruptor maestro del protocolo autónomo v7/v8/v9. Al apagarlo, la app vuelve al motor clásico.',
+    items: [
+      { path: 'enabled', type: 'bool', label: 'Protocolo v9 activo',
+        help: 'Ejecuta el ciclo completo: laboratorio estadístico, permutación, BH, Golden Holdout, replicación y Champion Gate.' },
+      { path: 'applyToPredictions', type: 'bool', label: 'Aplicar a las predicciones',
+        help: 'Los pesos validados, el portafolio diversificado y la auditoría live se aplican al generar boletos.' },
+      { path: 'strictNoEdge', type: 'bool', label: 'Modo NO_EDGE estricto',
+        help: 'Si ningún modelo pasa las compuertas, aplana la distribución hacia uniforme en vez de confiar en señales no validadas.' },
+      { path: 'noEdgeUniformBlend', type: 'range', label: 'Aplanado en NO_EDGE', min: 0, max: 1, step: 0.05,
+        fmt: v => (v * 100).toFixed(0) + '%',
+        help: 'Cuánto se mezcla hacia uniforme cuando NO_EDGE estricto está activo.' },
+      { path: 'seed', type: 'int', label: 'Semilla determinista', min: 1, max: 999999,
+        help: 'Toda búsqueda, permutación y bootstrap usa esta semilla: los resultados son reproducibles y auditables.' },
+      { path: 'deterministic', type: 'bool', label: 'Generación reproducible',
+        help: 'Con la misma semilla, mismos datos y mismos ajustes, los boletos generados son idénticos.' }
+    ]
+  },
+  {
+    group: 'Compuertas estadísticas',
+    icon: '🚦',
+    desc: 'Inmutables para el agente IA y el meta-learner (constitución reglas 21, 24, 37). Sólo tú las mueves aquí.',
+    items: [
+      { path: 'gates.alpha', type: 'range', label: 'Alfa (significancia)', min: 0.005, max: 0.2, step: 0.005,
+        fmt: v => v.toFixed(3), help: 'Umbral para q corregida y p de permutación.' },
+      { path: 'gates.bhCorrection', type: 'bool', label: 'Corrección Benjamini–Hochberg',
+        help: 'Controla la tasa de falsos descubrimientos al probar 13 modelos a la vez.' },
+      { path: 'gates.permutationReps', type: 'int', label: 'Repeticiones de permutación', min: 50, max: 1000, step: 50,
+        help: 'Más repeticiones = p más precisa, ciclo más lento.' },
+      { path: 'gates.blockBootstrapReps', type: 'int', label: 'Repeticiones block bootstrap', min: 50, max: 1000, step: 50,
+        help: 'Intervalo de confianza que respeta la estructura temporal local.' },
+      { path: 'gates.blockSize', type: 'int', label: 'Tamaño de bloque', min: 2, max: 40,
+        help: 'Longitud del bloque en el bootstrap por bloques.' },
+      { path: 'gates.evalWindow', type: 'int', label: 'Ventana de validación', min: 30, max: 200, step: 10,
+        help: 'Sorteos usados para evaluar modelos (siempre ANTES del Golden Holdout).' },
+      { path: 'gates.maxTrainDraws', type: 'int', label: 'Historia por paso (lookback)', min: 200, max: 6000, step: 100,
+        help: 'Cuántos sorteos ve cada modelo en cada paso del walk-forward. Más historia = ciclo más lento; con históricos muy largos (Chispazo) conviene acotarlo.' },
+      { path: 'gates.goldenHoldoutFraction', type: 'range', label: 'Golden Holdout (fracción)', min: 0.02, max: 0.3, step: 0.01,
+        fmt: v => (v * 100).toFixed(0) + '%', help: 'Porción final del histórico reservada e intocable para búsqueda y pesos.' },
+      { path: 'gates.goldenHoldoutMaxDraws', type: 'int', label: 'Golden Holdout máx. sorteos', min: 20, max: 300, step: 10,
+        help: 'Tope duro al tamaño del holdout para conservar recencia en producción.' },
+      { path: 'gates.goldenHoldoutMaxEval', type: 'int', label: 'Pasos evaluados en holdout', min: 10, max: 120, step: 5,
+        help: 'Cuántos sorteos del holdout se evalúan (coste de cómputo).' },
+      { path: 'gates.requireReplication', type: 'bool', label: 'Exigir replicación independiente',
+        help: 'Un modelo sólo llega a Champion si replica con varias semillas.' },
+      { path: 'gates.replicationMinFraction', type: 'range', label: 'Fracción mínima de réplicas', min: 0.2, max: 1, step: 0.1,
+        fmt: v => (v * 100).toFixed(0) + '%', help: 'Proporción de semillas que deben superar el baseline.' },
+      { path: 'gates.minStability', type: 'range', label: 'Estabilidad mínima', min: 0, max: 1, step: 0.05,
+        fmt: v => (v * 100).toFixed(0) + '%', help: 'Fracción de bloques temporales donde el modelo debe superar al azar.' },
+      { path: 'gates.stabilityBlocks', type: 'int', label: 'Bloques de estabilidad', min: 2, max: 10,
+        help: 'En cuántos tramos se parte la ventana para medir estabilidad.' },
+      { path: 'gates.minQualifiedModels', type: 'int', label: 'Modelos mínimos para EDGE', min: 1, max: 5,
+        help: 'Cuántos modelos deben pasar TODAS las compuertas para salir de NO_EDGE.' },
+      { path: 'gates.replicationSeeds', type: 'list', label: 'Semillas de replicación',
+        help: 'Lista separada por comas. Fija la reproducibilidad de la replicación.' }
+    ]
+  },
+  {
+    group: 'Ensemble dinámico (v7)',
+    icon: '⚖️',
+    desc: 'Sólo pondera modelos que pasan las compuertas (regla 19). Si ninguno pasa → NO_EDGE (regla 20).',
+    items: [
+      { path: 'ensemble.dynamic', type: 'bool', label: 'Ensemble por evidencia',
+        help: 'Los pesos salen de score × estabilidad de los modelos validados.' },
+      { path: 'ensemble.blendWithLegacy', type: 'range', label: 'Mezcla con softmax histórico', min: 0, max: 1, step: 0.05,
+        fmt: v => (v * 100).toFixed(0) + '%',
+        help: '0% = sólo evidencia validada. 100% = sólo el softmax clásico de la app.' },
+      { path: 'ensemble.temperature', type: 'int', label: 'Temperatura del softmax', min: 5, max: 150, step: 5,
+        help: 'Qué tan agresivamente se concentran los pesos en los mejores modelos.' },
+      { path: 'ensemble.floor', type: 'range', label: 'Piso por modelo', min: 0, max: 0.05, step: 0.005,
+        fmt: v => (v * 100).toFixed(1) + '%', help: 'Peso mínimo garantizado para conservar diversidad.' }
+    ]
+  },
+  {
+    group: 'Portafolio y búsqueda (v7)',
+    icon: '📦',
+    desc: 'Las combinaciones son candidatos, nunca garantías (regla 23). La búsqueda evolutiva no accede al Golden Holdout (regla 17).',
+    items: [
+      { path: 'portfolio.enabled', type: 'bool', label: 'Portafolio diversificado',
+        help: 'Selecciona boletos maximizando cobertura con solape controlado.' },
+      { path: 'portfolio.overlapLimit', type: 'int', label: 'Solape máximo entre boletos', min: 1, max: 5,
+        help: 'Números que dos boletos pueden compartir como máximo.' },
+      { path: 'portfolio.poolFactor', type: 'int', label: 'Factor de sobre-muestreo', min: 2, max: 20,
+        help: 'Candidatos generados por cada boleto pedido antes de diversificar.' },
+      { path: 'portfolio.enforceDiversity', type: 'bool', label: 'Forzar diversidad',
+        help: 'Descarta candidatos que violen el límite de solape.' },
+      { path: 'evolution.enabled', type: 'bool', label: 'Búsqueda evolutiva',
+        help: 'Mutación + cruce sobre el pool de candidatos usando el score del boleto como fitness.' },
+      { path: 'evolution.generations', type: 'int', label: 'Generaciones', min: 2, max: 60,
+        help: 'Más generaciones = más refinamiento, más cómputo.' },
+      { path: 'evolution.population', type: 'int', label: 'Población', min: 10, max: 200, step: 10 },
+      { path: 'evolution.elite', type: 'int', label: 'Élite conservada', min: 2, max: 40 },
+      { path: 'evolution.mutationRate', type: 'range', label: 'Tasa de mutación', min: 0, max: 1, step: 0.05,
+        fmt: v => (v * 100).toFixed(0) + '%' },
+      { path: 'monteCarlo.enabled', type: 'bool', label: 'Auditoría Monte Carlo',
+        help: 'Compara los candidatos contra una referencia aleatoria. Estima distribuciones, no causalidad (regla 18).' },
+      { path: 'monteCarlo.universes', type: 'int', label: 'Universos simulados', min: 500, max: 20000, step: 500 },
+      { path: 'monteCarlo.seed', type: 'int', label: 'Semilla Monte Carlo', min: 1, max: 999999 }
+    ]
+  },
+  {
+    group: 'Aprendizaje continuo (v8)',
+    icon: '🔁',
+    desc: 'Deriva, presupuesto experimental, early stopping y decaimiento de Champion. El meta-learner sólo prioriza presupuesto, jamás mueve umbrales (regla 24).',
+    items: [
+      { path: 'drift.threshold', type: 'range', label: 'Umbral de deriva', min: 0.01, max: 0.5, step: 0.01,
+        fmt: v => v.toFixed(2), help: 'Sobre este score se activa investigación adicional (regla 27).' },
+      { path: 'drift.window', type: 'int', label: 'Ventana de deriva', min: 50, max: 400, step: 25,
+        help: 'Sorteos por ventana al comparar dos periodos consecutivos.' },
+      { path: 'drift.expandResearchOnDrift', type: 'bool', label: 'Expandir investigación con deriva',
+        help: 'Agrega EXPAND_RESEARCH y RUN_CHANGE_POINT al plan del ciclo.' },
+      { path: 'champion.maxBadCycles', type: 'int', label: 'Ciclos malos para retirar Champion', min: 1, max: 10,
+        help: 'Degradación persistente puede retirar un Champion (regla 29).' },
+      { path: 'champion.minDelta', type: 'range', label: 'Delta mínimo del Champion', min: -0.5, max: 0.5, step: 0.05,
+        fmt: v => v.toFixed(2), help: 'Por debajo de este delta live, el ciclo cuenta como degradación.' },
+      { path: 'champion.autoRetire', type: 'bool', label: 'Retiro automático',
+        help: 'Desactiva al Champion tras la racha de ciclos malos.' },
+      { path: 'champion.autoPromoteFromLive', type: 'bool', label: 'Promoción automática desde live',
+        help: 'Desactivado por constitución (regla 40): live nunca promueve solo. Actívalo bajo tu criterio.' },
+      { path: 'earlyStopping.enabled', type: 'bool', label: 'Early stopping',
+        help: 'Corta líneas sin señal. Nunca toca el Golden Holdout (regla 26).' },
+      { path: 'budget.adaptive', type: 'bool', label: 'Presupuesto adaptativo',
+        help: 'Reparte experimentos según la prioridad aprendida por familia (v9).' },
+      { path: 'budget.statistical', type: 'int', label: 'Tope: estadísticos', min: 1, max: 100, step: 5 },
+      { path: 'budget.classical_ml', type: 'int', label: 'Tope: ML clásico', min: 1, max: 100, step: 5 },
+      { path: 'budget.deep_learning', type: 'int', label: 'Tope: deep learning', min: 1, max: 100, step: 5 },
+      { path: 'budget.qnn', type: 'int', label: 'Tope: QNN', min: 1, max: 100, step: 5 },
+      { path: 'budget.portfolio', type: 'int', label: 'Tope: portafolio', min: 1, max: 100, step: 5 }
+    ]
+  },
+  {
+    group: 'Inteligencia live (v9)',
+    icon: '📡',
+    desc: 'Live queda separado de backtest y Golden Holdout (regla 33). Un IC que cruza el baseline no demuestra edge (regla 35).',
+    items: [
+      { path: 'live.z', type: 'range', label: 'z del intervalo de confianza', min: 1, max: 3, step: 0.01,
+        fmt: v => v.toFixed(2), help: '1.96 ≈ 95%. Sube para exigir más evidencia.' },
+      { path: 'live.windows', type: 'list', label: 'Ventanas móviles',
+        help: 'Tamaños de ventana para el seguimiento live (por defecto 20, 40, 60).' },
+      { path: 'live.regressionTolerance', type: 'range', label: 'Tolerancia de regresión', min: 0.01, max: 0.5, step: 0.01,
+        fmt: v => v.toFixed(2), help: 'Caída de delta que se marca como REGRESSION.' },
+      { path: 'live.auditEnabled', type: 'bool', label: 'Auditoría de predicción live',
+        help: 'Cada boleto generado guarda run_id, semilla, snapshot y versión (reglas 30 y 41).' },
+      { path: 'live.separateFromBacktest', type: 'bool', label: 'Live separado del backtest',
+        help: 'El track record live nunca se mezcla con las métricas de backtest.' },
+      { path: 'live.trainingIncludesLive', type: 'bool', label: 'Entrenar con datos live',
+        help: 'Al incorporar live al entrenamiento se abre una frontera temporal nueva y queda registrada en el linaje (regla 39).' },
+      { path: 'memory.enabled', type: 'bool', label: 'Research Memory',
+        help: 'Evita repetir hipótesis equivalentes (regla 22).' },
+      { path: 'memory.maxRecords', type: 'int', label: 'Registros de memoria', min: 50, max: 2000, step: 50 }
+    ]
+  }
+];
+
+function mgFmtValue(item, v) {
+  if (item.fmt) { try { return item.fmt(v); } catch (e) { return String(v); } }
+  if (Array.isArray(v)) return v.join(', ');
+  return String(v);
+}
+
+function mgRenderSettingItem(item) {
+  const S = mgSettings();
+  const v = mgGetPath(S, item.path);
+  const id = 'mg-set-' + item.path.replace(/\./g, '-');
+  const help = item.help ? `<div class="mg-help">${item.help}</div>` : '';
+
+  if (item.type === 'bool') {
+    return `<div class="mg-row">
+      <div class="mg-row-main">
+        <div class="mg-row-label">${item.label}</div>
+        ${help}
+      </div>
+      <button class="mg-switch ${v ? 'on' : ''}" id="${id}" onclick="mgUiToggle('${item.path}')" aria-pressed="${!!v}">
+        <span class="mg-knob"></span>
+      </button>
+    </div>`;
+  }
+
+  if (item.type === 'list') {
+    const txt = Array.isArray(v) ? v.join(', ') : String(v || '');
+    return `<div class="mg-row col">
+      <div class="mg-row-label">${item.label}</div>
+      ${help}
+      <input class="mg-input" id="${id}" value="${txt}" onchange="mgUiSetList('${item.path}', this.value)">
+    </div>`;
+  }
+
+  const min = item.min != null ? item.min : 0;
+  const max = item.max != null ? item.max : 100;
+  const step = item.step != null ? item.step : (item.type === 'int' ? 1 : 0.01);
+  return `<div class="mg-row col">
+    <div class="mg-row-head">
+      <span class="mg-row-label">${item.label}</span>
+      <span class="mg-row-value" id="${id}-val">${mgFmtValue(item, v)}</span>
+    </div>
+    ${help}
+    <input type="range" class="slider" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"
+      oninput="mgUiPreview('${item.path}', this.value)" onchange="mgUiSetNumber('${item.path}', this.value)">
+  </div>`;
+}
+
+function mgFindSchemaItem(path) {
+  for (const g of MG_SETTINGS_SCHEMA) {
+    for (const it of g.items) if (it.path === path) return it;
+  }
+  return null;
+}
+
+function mgUiPreview(path, raw) {
+  const item = mgFindSchemaItem(path);
+  const el = document.getElementById('mg-set-' + path.replace(/\./g, '-') + '-val');
+  if (el && item) el.textContent = mgFmtValue(item, parseFloat(raw));
+}
+
+function mgUiSetNumber(path, raw) {
+  const item = mgFindSchemaItem(path);
+  let v = parseFloat(raw);
+  if (!isFinite(v)) return;
+  if (item && item.type === 'int') v = Math.round(v);
+  mgSetSetting(path, v, { render: false });
+  mgUiPreview(path, v);
+  mgAfterSettingChange();
+}
+
+function mgUiToggle(path) {
+  const v = !mgGetPath(mgSettings(), path);
+  mgSetSetting(path, v, { render: false });
+  const el = document.getElementById('mg-set-' + path.replace(/\./g, '-'));
+  if (el) { el.classList.toggle('on', v); el.setAttribute('aria-pressed', String(v)); }
+  mgAfterSettingChange();
+}
+
+function mgUiSetList(path, raw) {
+  const arr = String(raw).split(',').map(x => parseFloat(x.trim())).filter(x => isFinite(x));
+  if (!arr.length) { showToast('Lista inválida', 'error'); return; }
+  mgSetSetting(path, arr, { render: false });
+  mgAfterSettingChange();
+}
+
+let _mgSettingTimer = null;
+function mgAfterSettingChange() {
+  if (_mgSettingTimer) clearTimeout(_mgSettingTimer);
+  _mgSettingTimer = setTimeout(() => {
+    _mgSettingTimer = null;
+    try {
+      if (typeof state !== 'undefined' && state.draws && state.draws.length) {
+        mgInvalidateResearch();
+        runEvolution(true);
+        renderAll();
+      }
+    } catch (e) { console.warn('MG: recomputo tras ajuste falló', e); }
+    mgRenderResearchStatus();
+    mgRenderResearchPanel();
+    showToast('Ajustes aplicados a toda la app ⚙️', 'info');
+  }, 350);
+}
+
+function mgUiReset() {
+  if (!confirm('¿Restaurar todos los ajustes del motor a sus valores por defecto?')) return;
+  mgResetSettings();
+  mgRenderSettingsView();
+  mgAfterSettingChange();
+}
+
+function mgUiToggleGroup(idx) {
+  const el = document.getElementById('mg-group-body-' + idx);
+  const head = document.getElementById('mg-group-head-' + idx);
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (head) head.classList.toggle('collapsed', open);
+}
+
+function mgRenderSettingsView() {
+  const c = document.getElementById('mg-settings-body');
+  if (!c) return;
+  c.innerHTML = MG_SETTINGS_SCHEMA.map((g, i) => `
+    <div class="glass card mg-group">
+      <div class="card-head mg-group-head" id="mg-group-head-${i}" onclick="mgUiToggleGroup(${i})" style="cursor:pointer;">
+        <div class="card-title"><span class="card-title-icon">${g.icon}</span> ${g.group}</div>
+        <button class="card-action" type="button">▾</button>
+      </div>
+      <div id="mg-group-body-${i}" style="display:${i === 0 ? 'block' : 'none'};">
+        <div class="mg-group-desc">${g.desc}</div>
+        ${g.items.map(mgRenderSettingItem).join('')}
+      </div>
+    </div>`).join('');
+  mgRenderResearchStatus();
+}
+
+// ── Estado del protocolo (tarjeta superior de Ajustes) ──
+function mgRenderResearchStatus() {
+  const c = document.getElementById('mg-research-status');
+  if (!c) return;
+  const S = mgSettings();
+  const r = mgGetResearch();
+
+  if (!S.enabled) {
+    c.innerHTML = `<div class="glass card"><div class="mg-verdict off">PROTOCOLO DESACTIVADO</div>
+      <div class="mg-help">La app usa el motor clásico: 13 modelos + softmax evolutivo, sin compuertas estadísticas.</div></div>`;
+    return;
+  }
+  if (!r || !r.available) {
+    c.innerHTML = `<div class="glass card"><div class="mg-verdict pending">SIN CICLO EJECUTADO</div>
+      <div class="mg-help">${r && r.reason ? r.reason : 'Genera una predicción o re-evoluciona para correr el primer ciclo.'}</div>
+      <button class="btn btn-ghost" style="margin-top:10px;" onclick="runEvolution();renderAll();mgRenderResearchStatus();">↻ Ejecutar ciclo ahora</button></div>`;
+    return;
+  }
+
+  const edgeCls = r.edge.mode === 'EDGE_CANDIDATE' ? 'edge' : 'noedge';
+  const live = r.live && r.live.overall ? r.live.overall : null;
+  const ev = r.evidence.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  c.innerHTML = `
+  <div class="glass card">
+    <div class="mg-verdict ${edgeCls}">${r.edge.mode === 'EDGE_CANDIDATE' ? 'CANDIDATO CON VENTAJA' : 'NO_EDGE'}</div>
+    <div class="mg-help">${r.edge.message}</div>
+    <div class="mg-kv-grid">
+      <div class="mg-kv"><span>Run</span><b>${r.run_id.slice(0, 8)}</b></div>
+      <div class="mg-kv"><span>Sorteos</span><b>${r.n.toLocaleString()}</b></div>
+      <div class="mg-kv"><span>Confianza</span><b>${r.edge.confidence}</b></div>
+      <div class="mg-kv"><span>Champion</span><b>${r.champion && r.champion.model ? modelDisplayName(r.champion.model) + (r.champion.active ? '' : ' ⚠︎') : '—'}</b></div>
+      <div class="mg-kv"><span>Pesos</span><b>${r.weightSource === 'dynamic_ensemble' ? 'evidencia' : 'softmax'}</b></div>
+      <div class="mg-kv"><span>Holdout</span><b>${r.split.holdout_size} sorteos</b></div>
+      <div class="mg-kv"><span>Deriva</span><b>${r.drift.detected ? 'DETECTADA' : 'estable'}</b></div>
+      <div class="mg-kv"><span>Ciclo</span><b>${r.elapsed_ms} ms</b></div>
+    </div>
+  </div>
+
+  <div class="glass card">
+    <div class="card-head"><div class="card-title"><span class="card-title-icon">📡</span> Track record live</div></div>
+    ${live && live.n > 0 ? `
+      <div class="mg-kv-grid">
+        <div class="mg-kv"><span>Predicciones</span><b>${live.n}</b></div>
+        <div class="mg-kv"><span>Media aciertos</span><b>${live.mean_hits.toFixed(2)}</b></div>
+        <div class="mg-kv"><span>Baseline azar</span><b>${r.baseline.toFixed(2)}</b></div>
+        <div class="mg-kv"><span>Delta</span><b style="color:${live.delta > 0 ? '#30d158' : '#ff375f'}">${live.delta >= 0 ? '+' : ''}${live.delta.toFixed(3)}</b></div>
+        <div class="mg-kv"><span>IC 95%</span><b>[${isFinite(live.ci_low) ? live.ci_low.toFixed(2) : '−∞'}, ${isFinite(live.ci_high) ? live.ci_high.toFixed(2) : '∞'}]</b></div>
+        <div class="mg-kv"><span>Estado</span><b>${live.status === 'SIGNAL_CANDIDATE' ? 'SEÑAL' : 'compatible con azar'}</b></div>
+      </div>
+      <div class="mg-help" style="margin-top:8px;">Ventanas móviles: ${Object.keys(r.live.overall.window_deltas || {}).length
+        ? Object.entries(r.live.overall.window_deltas).map(([k, v]) => `${k}→${v >= 0 ? '+' : ''}${v.toFixed(2)}`).join(' · ')
+        : 'aún sin suficientes datos'} · Regresión: ${r.live.regression.status}</div>
+    ` : `<div class="mg-help">Aún no hay predicciones evaluadas para este juego. Guarda boletos y agrega el resultado real para alimentar el ciclo live.</div>`}
+  </div>
+
+  <div class="glass card">
+    <div class="card-head"><div class="card-title"><span class="card-title-icon">🧪</span> Evidencia por modelo</div></div>
+    <div class="mg-table-scroll">
+      <table class="mg-table">
+        <thead><tr><th>Modelo</th><th>Δ</th><th>p</th><th>q</th><th>Estab.</th><th>Holdout</th><th>Rep.</th><th></th></tr></thead>
+        <tbody>
+        ${ev.map(e => `<tr class="${e.gate.passed ? 'pass' : ''}">
+          <td>${modelDisplayName(e.name)}</td>
+          <td>${e.score >= 0 ? '+' : ''}${e.score.toFixed(3)}</td>
+          <td>${e.permutation_p.toFixed(3)}</td>
+          <td>${e.q_value.toFixed(3)}</td>
+          <td>${(e.stability * 100).toFixed(0)}%</td>
+          <td>${e.golden_holdout_delta >= 0 ? '+' : ''}${(e.golden_holdout_delta || 0).toFixed(2)}</td>
+          <td>${e.replicated ? '✓' : '—'}</td>
+          <td>${e.gate.passed ? '🏆' : (e.base_rate_warning ? '≈azar' : '')}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="mg-help" style="margin-top:8px;">Δ = aciertos por sorteo sobre el azar (${r.baseline.toFixed(2)}). q = p corregida por BH. "≈azar" marca un IC que cruza el baseline (regla 35).</div>
+  </div>
+
+  <div class="glass card">
+    <div class="card-head"><div class="card-title"><span class="card-title-icon">🔍</span> Diagnósticos y presupuesto</div></div>
+    <div class="mg-kv-grid">
+      <div class="mg-kv"><span>χ² uniformidad</span><b>p=${r.diagnostics.chi_uniform.p.toFixed(3)}</b></div>
+      <div class="mg-kv"><span>Autocorrelación</span><b>r=${r.diagnostics.autocorrelation.r.toFixed(3)}</b></div>
+      <div class="mg-kv"><span>Deriva L1</span><b>${r.diagnostics.drift.available ? r.diagnostics.drift.l1.toFixed(3) : 'n/d'}</b></div>
+      <div class="mg-kv"><span>Punto de cambio</span><b>${r.changePoint.available ? '#' + r.changePoint.cut_index : 'n/d'}</b></div>
+      <div class="mg-kv"><span>Experimentos</span><b>${r.memory.experiments}</b></div>
+      <div class="mg-kv"><span>Hipótesis abiertas</span><b>${r.hypotheses.length}</b></div>
+      <div class="mg-kv"><span>Referencia MC</span><b>${r.monte_carlo && r.monte_carlo.available ? r.monte_carlo.mean_hits_reference.toFixed(3) : 'n/d'}</b></div>
+      <div class="mg-kv"><span>Universos MC</span><b>${r.monte_carlo && r.monte_carlo.available ? r.monte_carlo.universes.toLocaleString() : '—'}</b></div>
+    </div>
+    <div class="mg-help" style="margin-top:8px;">Presupuesto adaptativo: ${Object.entries(r.budget).map(([k, v]) => `${k}=${v}`).join(' · ')} ${r.budgetValid ? '✓' : '⚠︎ excede topes'}</div>
+    <div class="mg-help">Retadores de backend (no disponibles en navegador): ${r.challengers.map(c => c.name).join(', ')}.</div>
+    <div class="mg-help">Plan del próximo ciclo: ${r.plan_v9.actions.length
+      ? `(${r.plan_v9.priority}) ` + r.plan_v9.actions.slice(0, 5).join(' → ') + '…'
+      : 'a la espera de resultados live para priorizar (exploración vs. confirmación).'}</div>
+  </div>
+
+  <div class="glass card">
+    <div class="card-head"><div class="card-title"><span class="card-title-icon">🧾</span> Auditoría y linaje</div></div>
+    <div class="mg-kv-grid">
+      <div class="mg-kv"><span>Snapshot</span><b>${r.snapshot.slice(0, 10)}</b></div>
+      <div class="mg-kv"><span>Semilla</span><b>${mgSettings().seed}</b></div>
+      <div class="mg-kv"><span>Registros live</span><b>${MG_STATE.liveAudits.length}</b></div>
+      <div class="mg-kv"><span>Linaje</span><b>${r.lineage.valid ? 'válido' : 'inválido'}</b></div>
+    </div>
+    <div class="mg-help" style="margin-top:8px;">${r.lineage.training_includes_live
+      ? 'El entrenamiento incorpora datos live: se abrió una frontera temporal nueva (regla 39) y las predicciones posteriores son el nuevo live.'
+      : 'El entrenamiento no incorpora datos live.'}</div>
+    <button class="btn btn-ghost" style="margin-top:10px;" onclick="mgExportAudit()">⬇︎ Exportar auditoría (JSON)</button>
+  </div>`;
+}
+
+function mgExportAudit() {
+  const r = mgGetResearch();
+  const payload = {
+    exported_at: new Date().toISOString(),
+    version: MG_VERSION,
+    settings: mgSettings(),
+    research: r,
+    live_audits: MG_STATE.liveAudits,
+    champion_state: MG_STATE.championState,
+    meta_learner: MG_STATE.metaLearner,
+    research_memory: MG_STATE.memory,
+    model_cards: r && r.available ? r.evidence.map(e => mgModelCard(e, {
+      game: r.game, snapshot: r.snapshot,
+      train_samples: r.split.train_to - r.split.train_from,
+      validation_samples: r.split.holdout_size, baseline: r.baseline
+    })) : []
+  };
+  try {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `melate-genius-auditoria-${(r && r.game) || 'app'}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast('Auditoría exportada', 'success');
+  } catch (e) {
+    console.warn('MG: export falló', e);
+    showToast('No se pudo exportar', 'error');
+  }
+}
+
+// ── Panel compacto dentro de Predicciones ──
+function mgRenderResearchPanel() {
+  const c = document.getElementById('pred-research-panel');
+  if (!c) return;
+  const S = mgSettings();
+  if (!S.enabled) {
+    c.innerHTML = `<div class="mg-strip off">
+      <div class="mg-strip-main"><b>Protocolo v9 apagado</b><span>Motor clásico sin compuertas estadísticas</span></div>
+      <button class="card-action" onclick="showSection('ajustes')">Ajustes</button>
+    </div>`;
+    return;
+  }
+  const r = mgGetResearch();
+  if (!r || !r.available) {
+    c.innerHTML = `<div class="mg-strip pending">
+      <div class="mg-strip-main"><b>Protocolo v9 listo</b><span>${r && r.reason ? r.reason : 'Ejecutando el primer ciclo…'}</span></div>
+      <button class="card-action" onclick="showSection('ajustes')">Ajustes</button>
+    </div>`;
+    return;
+  }
+  const isEdge = r.edge.mode === 'EDGE_CANDIDATE';
+  const live = r.live && r.live.overall;
+  c.innerHTML = `<div class="mg-strip ${isEdge ? 'edge' : 'noedge'}">
+    <div class="mg-strip-main">
+      <b>${isEdge ? 'EDGE_CANDIDATE' : 'NO_EDGE'} · ${r.edge.confidence}</b>
+      <span>${r.edge.qualified_models} modelo(s) pasan las compuertas · pesos por ${r.weightSource === 'dynamic_ensemble' ? 'evidencia validada' : 'softmax histórico'}</span>
+    </div>
+    <button class="card-action" onclick="showSection('ajustes')">⚙︎</button>
+  </div>
+  <div class="mg-strip-meta">
+    <span class="tag">Holdout ${r.split.holdout_size}</span>
+    <span class="tag">α ${S.gates.alpha}</span>
+    <span class="tag">${r.drift.detected ? '⚠︎ deriva' : 'sin deriva'}</span>
+    <span class="tag">${r.champion && r.champion.model ? '🏆 ' + modelDisplayName(r.champion.model) : 'sin champion'}</span>
+    ${live && live.n ? `<span class="tag ${live.delta > 0 ? 'warm' : 'cool'}">live Δ${live.delta >= 0 ? '+' : ''}${live.delta.toFixed(2)} (n=${live.n})</span>` : ''}
+    <span class="tag">semilla ${S.seed}</span>
+  </div>`;
+}
+
+function mgRenderAjustesView() {
+  mgRenderSettingsView();
+  mgRenderResearchStatus();
+}
+</script>
 <script>// ═══════════════════════════════════════════════════════════
 //  SUPABASE CLIENT & STORAGE (reemplaza el sistema local)
 // ═══════════════════════════════════════════════════════════
@@ -5752,6 +8084,8 @@ async function loadUserDataFromDB() {
     hits: p.hits,
     actual: p.actual,
     matchedNumbers: p.matched_numbers,
+    // La metadata del protocolo v9 viaja dentro del jsonb `score` (_research)
+    research: (p.score && p.score._research) ? p.score._research : null,
     checkedAt: p.checked_at ? new Date(p.checked_at).getTime() : null
   }));
   
@@ -5813,7 +8147,7 @@ async function savePredictionToDB(pred) {
     game: pred.game,
     mode: pred.mode,
     ticket: pred.ticket,
-    score: pred.score,
+    score: pred.research ? Object.assign({}, pred.score, { _research: pred.research }) : pred.score,
     weights: pred.weights,
     status: pred.status,
     hits: pred.hits,
@@ -6210,6 +8544,8 @@ async function enterApp() {
 const _gameComputeCache = {};
 
 function initApp() {
+  // Ajustes del motor (protocolo v7/v8/v9) — se cargan antes de cualquier cómputo
+  try { mgLoadSettings(); } catch (e) { console.warn('MG: settings no cargados', e); }
   loadGame(state.currentGame);
   updateClock();
   setInterval(updateClock, 30000);
@@ -6266,12 +8602,41 @@ function runEvolution(silent = false) {
   }
   // Precompute models
   state.models = computeAllModels(state.draws, state.maxNumber);
-  
-  // Run evolutionary evaluation
-  const evo = evolveEnsemble(state.draws, state.maxNumber);
+
+  // ── Protocolo de investigación v9 ──────────────────────────────
+  // Cuando está activo, los pesos NO salen del softmax crudo: salen del
+  // ciclo completo (walk-forward sobre la ventana de validación, permutación,
+  // BH, Golden Holdout, replicación y ensemble dinámico). El Golden Holdout
+  // nunca alimenta los pesos ni la búsqueda (constitución regla 17).
+  let evo = null;
+  const _mgPick = (GAME_CONFIG[state.currentGame] || {}).pick || 6;
+  try {
+    const _S = mgSettings();
+    if (_S.enabled) {
+      const cached = MG_STATE.research[state.currentGame];
+      const key = mgResearchCacheKey(state.currentGame, state.draws);
+      const research = (cached && cached.cacheKey === key)
+        ? cached
+        : mgRunResearchCycle(state.currentGame, state.draws, state.maxNumber, _mgPick);
+      research.cacheKey = key;
+      MG_STATE.research[state.currentGame] = research;
+      state.research = research;
+      if (research.available) {
+        evo = { weights: research.weights, performance: research.performance };
+      }
+    } else {
+      state.research = null;
+    }
+  } catch (e) {
+    console.warn('MG: ciclo de investigación falló, se usa el motor clásico', e);
+    state.research = null;
+  }
+
+  // Run evolutionary evaluation (fallback clásico si el protocolo no aplica)
+  if (!evo) evo = evolveEnsemble(state.draws, state.maxNumber);
   state.weights = evo.weights;
   state.performance = evo.performance;
-  
+
   // Log evolution step
   const logEntry = {
     timestamp: Date.now(),
@@ -6350,6 +8715,13 @@ function runEvolution(silent = false) {
     state.metaProbs = null;
   }
 
+  // ── NO_EDGE estricto: si ningún modelo pasa las compuertas, aplana
+  //    la distribución hacia uniforme antes de que la use cualquier vista.
+  try {
+    state.fusedProbs = mgApplyEdgeAdjustment(state.fusedProbs, state.maxNumber);
+    if (state.metaProbs) state.metaProbs = mgApplyEdgeAdjustment(state.metaProbs, state.maxNumber);
+  } catch (e) { console.warn('MG: ajuste NO_EDGE falló', e); }
+
   if (!silent) showToast('Modelos re-evolucionados ✨', 'info');
 
   // Cache results for instant game-switch re-use
@@ -6359,8 +8731,12 @@ function runEvolution(silent = false) {
     performance: state.performance, fusedProbs: state.fusedProbs,
     metaProbs: state.metaProbs || null,
     plattParams: state.plattParams, trisPrediction: state.trisPrediction,
-    stackingParams: state.stackingParams || null
+    stackingParams: state.stackingParams || null,
+    research: state.research || null
   };
+
+  // Refresca los paneles del protocolo (predicciones + ajustes)
+  try { mgRenderResearchPanel(); mgRenderResearchStatus(); } catch (e) {}
 
   // Update agent reasoning after evolution
   setTimeout(() => {
@@ -6924,6 +9300,7 @@ function showSection(name) {
   if (name === 'agente') renderAgenteView();
   if (name === 'backtest') renderBacktestView();
   if (name === 'stats') renderUserStats();
+  if (name === 'ajustes') { try { mgRenderAjustesView(); } catch (e) { console.warn('MG: ajustes', e); } }
   document.getElementById('content').scrollTop = 0;
 }
 
@@ -7176,7 +9553,9 @@ async function selectGame(game) {
     state.metaProbs = c.metaProbs || null;
     state.plattParams = c.plattParams; state.trisPrediction = c.trisPrediction;
     state.stackingParams = c.stackingParams || null;
+    state.research = c.research || MG_STATE.research[game] || null;
     renderAll();
+    try { mgRenderResearchPanel(); mgRenderResearchStatus(); } catch (e) {}
     return;
   }
 
@@ -7261,11 +9640,25 @@ function generatePredictions() {
   // Use metaProbs (error-aware) if available, otherwise fall back to fusedProbs
   const baseProbs = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
   const probs = applyModeBias(baseProbs, state.mode, state.maxNumber);
-  const tickets = generateTickets(probs, state.draws, state.maxNumber, state.count, state.mode, Date.now());
+  const _pick = (GAME_CONFIG[state.currentGame] || {}).pick || 6;
+
+  // Pipeline del protocolo v7/v8/v9:
+  //   NO_EDGE → pool sobre-muestreado → búsqueda evolutiva → portafolio
+  //   diversificado → auditoría Monte Carlo → registro live auditable.
+  let tickets;
+  try {
+    tickets = mgGeneratePredictions(probs, state.draws, state.maxNumber, _pick, state.count, state.mode);
+  } catch (e) {
+    console.warn('MG: pipeline de predicción falló, se usa el generador clásico', e);
+    tickets = generateTickets(probs, state.draws, state.maxNumber, state.count, state.mode, Date.now(), _pick);
+  }
   state.lastPredictions = tickets;
   renderPredictionsView();
-  showToast(`${tickets.length} predicciones generadas`, 'success');
-  
+  const _r = tickets[0] && tickets[0].research;
+  showToast(_r
+    ? `${tickets.length} candidatos · ${_r.mode === 'EDGE_CANDIDATE' ? 'evidencia validada' : 'NO_EDGE'}`
+    : `${tickets.length} predicciones generadas`, 'success');
+
   setTimeout(() => {
     const el = document.getElementById('pred-results');
     if (el) {
@@ -7281,7 +9674,8 @@ function renderPredictionsView() {
   const cs = document.getElementById('count-slider');
   if (cs) cs.value = state.count;
   _renderPredAIPanel(); // AI model leaderboard + top numbers
-  
+  try { mgRenderResearchPanel(); } catch (e) {}
+
   const c = document.getElementById('pred-results');
   if (!c) return;
   
@@ -7335,6 +9729,11 @@ function renderPredictionsView() {
       </div>
     ` : '';
 
+    const rmeta = p.research ? `
+      <div class="mg-audit-note">
+        ${p.research.mode === 'EDGE_CANDIDATE' ? '🏆' : '◦'} ${p.research.mode} · ${p.source === 'evolutionary' ? 'búsqueda evolutiva' : 'muestreo'}${p.research.candidate_mc ? ` · MC p${(p.research.candidate_mc.percentile_vs_random * 100).toFixed(0)}` : ''} · run ${String(p.research.run_id).slice(0, 8)} · semilla ${p.research.seed}
+      </div>` : '';
+
     return `<div class="glass pred-item" id="pred-${i}">
       ${stratTag}
       ${wheelInfo}
@@ -7349,6 +9748,7 @@ function renderPredictionsView() {
         <span class="tag">μ ${p.score.mean.toFixed(1)}</span>
         <span class="tag ${p.score.gap > 1.2 ? 'warm' : 'cool'}">gap ${(p.score.gap * 100).toFixed(0)}%</span>
       </div>
+      ${rmeta}
       <div class="pred-actions">
         <button class="pred-action-btn ${isSaved ? 'saved' : ''}" onclick="savePrediction(${i}, this)">
           ${isSaved ? '✓ Guardado' : '💾 Guardar'}
@@ -7384,6 +9784,7 @@ function savePrediction(idx, btn) {
     ticket: pred.ticket,
     score: pred.score,
     weights: { ...state.weights },
+    research: pred.research || null,   // trazabilidad del protocolo v9
     status: 'pending', // pending | checked
     hits: null,
     actual: null,
@@ -7422,6 +9823,7 @@ function saveAllPredictions() {
       ticket: pred.ticket,
       score: pred.score,
       weights: { ...state.weights },
+      research: pred.research || null,   // trazabilidad del protocolo v9
       status: 'pending',
       hits: null,
       actual: null,
@@ -7670,9 +10072,10 @@ function submitRealResult() {
     // Actualizar en Supabase
     updatePredictionInDB(p).catch(e => console.warn('Error actualizando predicción:', e));
     
+    const _w = p.weights || {};
     for (const m of Object.keys(modelHits)) {
-      modelHits[m] += (p.weights[m] || 0) * matched.length;
-      modelTotals[m] += (p.weights[m] || 0) * 6;
+      modelHits[m] += (_w[m] || 0) * (matchedNumbers ? matchedNumbers.length : hits);
+      modelTotals[m] += (_w[m] || 0) * pick;
     }
   });
   
@@ -7685,6 +10088,13 @@ function submitRealResult() {
 
   // Evolve based on new data — this naturally adjusts based on what worked
   runEvolution(true);
+
+  // ── Ciclo continuo v8/v9: auditoría live, track record, deriva,
+  //    decaimiento del Champion, guardia de regresión y plan del ciclo.
+  let _mgCycle = null;
+  try {
+    _mgCycle = mgOnNewDraw(state.currentGame, state.maxNumber, pick, state.draws);
+  } catch (e) { console.warn('MG: ciclo live falló', e); }
 
   // Close modal
   closeModal('modal-add-result');
@@ -7699,6 +10109,23 @@ function submitRealResult() {
     toastMsg = `${pending.length} predicciones evaluadas · promedio ${avg.toFixed(1)} aciertos${bigWins > 0 ? ` · ${bigWins} GRANDES 🏆` : ''}`;
   }
   showToast(toastMsg, bigWins > 0 ? 'success' : 'info');
+
+  // Aviso del ciclo continuo (deriva / regresión / Champion retirado)
+  if (_mgCycle) {
+    setTimeout(() => {
+      try {
+        if (_mgCycle.champion && _mgCycle.champion.model && !_mgCycle.champion.active) {
+          showToast(`Champion "${modelDisplayName(_mgCycle.champion.model)}" retirado por degradación live`, 'error');
+        } else if (_mgCycle.regression.regressed) {
+          showToast(`Regresión live detectada (Δ ${_mgCycle.regression.change.toFixed(2)})`, 'info');
+        } else if (_mgCycle.drift.detected) {
+          showToast('Deriva detectada · investigación ampliada', 'info');
+        } else if (_mgCycle.live.overall.status === 'SIGNAL_CANDIDATE') {
+          showToast('Señal live candidata · el ciclo pasa a confirmación', 'success');
+        }
+      } catch (e) {}
+    }, 1600);
+  }
 
   // Show evolution feedback (replaces what-if for primary feedback)
   setTimeout(() => {
@@ -8569,7 +10996,7 @@ function generatePortfolioMode() {
   const portfolio = generatePortfolio(state.models, state.weights, state.draws, state.maxNumber, count);
   
   // Map to standard prediction format
-  state.lastPredictions = portfolio.map((p, i) => ({
+  let mapped = portfolio.map((p, i) => ({
     ticket: p.ticket,
     score: p.score,
     strategy: p.strategy,
@@ -8578,6 +11005,15 @@ function generatePortfolioMode() {
     strategyDesc: p.strategyDesc,
     isPortfolio: true
   }));
+
+  // Protocolo v7: límite de solape + registro auditable live (v8/v9)
+  try {
+    const _pick = (GAME_CONFIG[state.currentGame] || {}).pick || 6;
+    mapped = mgDiversifyTickets(mapped, state.maxNumber, _pick);
+    mapped = mgAttachResearchMeta(mapped, state.draws);
+  } catch (e) { console.warn('MG: portafolio sin diversificar', e); }
+
+  state.lastPredictions = mapped;
   
   renderPredictionsView();
   showToast(`Portafolio diversificado: ${count} estrategias distintas`, 'success');
@@ -8651,13 +11087,18 @@ function generateWheelTickets() {
   try {
     const wheelBase = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
     const tickets = generateWheel(wheelFixed, count, wheelBase, state.draws, state.maxNumber);
-    state.lastPredictions = tickets.map(t => ({
+    let mapped = tickets.map(t => ({
       ticket: t.ticket,
       score: t.score,
       isWheel: true,
       wheelFixed: t.fixed,
       wheelExtras: t.extras
     }));
+    // Sistémico: los números fijos hacen que el solape sea intencional, así que
+    // aquí sólo se adjunta la auditoría del protocolo (no se diversifica).
+    try { mapped = mgAttachResearchMeta(mapped, state.draws); }
+    catch (e) { console.warn('MG: auditoría sistémica falló', e); }
+    state.lastPredictions = mapped;
     
     closeModal('modal-wheel');
     showSection('predicciones');
@@ -9489,7 +11930,15 @@ async function executeAgentTool(toolName, toolInput) {
         } else {
           const agentBase = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
           const probs = applyModeBias(agentBase, modo, state.maxNumber);
-          const tickets = generateTickets(probs, state.draws, state.maxNumber, cantidad, modo, Date.now());
+          const agentPick = (GAME_CONFIG[state.currentGame] || {}).pick || 6;
+          let tickets;
+          try {
+            // Mismo pipeline del protocolo v9 que usa el botón GENERAR PRO
+            tickets = mgGeneratePredictions(probs, state.draws, state.maxNumber, agentPick, cantidad, modo);
+          } catch (e) {
+            console.warn('MG: pipeline del agente falló', e);
+            tickets = generateTickets(probs, state.draws, state.maxNumber, cantidad, modo, Date.now(), agentPick);
+          }
           state.lastPredictions = tickets;
         }
         
@@ -9507,6 +11956,7 @@ async function executeAgentTool(toolName, toolInput) {
               ticket: pred.ticket,
               score: pred.score,
               weights: { ...state.weights },
+              research: pred.research || null,
               status: 'pending',
               hits: null, actual: null, matchedNumbers: null
             };
@@ -9882,7 +12332,12 @@ function buildAgentContext() {
       avgHits: checked.length > 0 ? (checked.reduce((s,h)=>s+(h.hits||0),0)/checked.length).toFixed(2) : 'N/A'
     },
     preferences: prefsLine,
-    weightsTop3: Object.entries(state.weights).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${modelDisplayName(k)} ${(v*100).toFixed(0)}%`).join(', ')
+    weightsTop3: Object.entries(state.weights).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${modelDisplayName(k)} ${(v*100).toFixed(0)}%`).join(', '),
+    // Protocolo v9 — el agente PUEDE leerlo pero NUNCA moverlo (reglas 21/24/37)
+    research: (function () {
+      try { return mgResearchSummaryText(state.currentGame); }
+      catch (e) { return 'Protocolo v9: no disponible.'; }
+    })()
   };
 }
 
@@ -9929,10 +12384,19 @@ async function callAgentWithTools(userMessage, conversationHistory = []) {
   const isTop       = /top.*n[uú]mero|n[uú]mero.*caliente|caliente|fr[ií]o|qu[eé].*n[uú]mero|recomienda/i.test(userMessage);
   const isBankroll  = /kelly|cu[aá]nto.*apostar|bankroll|apuesta|dinero/i.test(userMessage);
   const isBacktest  = /backtest|roi|rendimiento|performance|retorno/i.test(userMessage);
+  const isResearch  = /protocolo|investigaci[oó]n|edge|ventaja|no_edge|champion|holdout|permutaci[oó]n|significan|p-?value|q-?value|compuerta|ajuste|configuraci[oó]n|deriva|drift/i.test(userMessage);
 
   let finalText = '';
 
-  if (isGenerate) {
+  if (isResearch) {
+    // El agente LEE el protocolo pero jamás mueve alfa, BH, permutación,
+    // Golden Holdout ni el Champion Gate (constitución reglas 21, 24 y 37).
+    let resumen = '';
+    try { resumen = mgResearchSummaryText(state.currentGame); }
+    catch (e) { resumen = 'No pude leer el estado del protocolo.'; }
+    finalText = `**Protocolo de investigación — ${gameName}:**\n\n${resumen.split('\n').map(l => '• ' + l).join('\n')}\n\nPuedo leer estas compuertas, pero no puedo moverlas: alfa, BH, permutación, Golden Holdout y Champion Gate sólo se cambian desde **Ajustes del Motor** (⚙︎ arriba a la derecha).`;
+
+  } else if (isGenerate) {
     const numMatch = userMessage.match(/\b([1-9]|1\d)\b/);
     const cantidad = numMatch ? parseInt(numMatch[1]) : 5;
     const modo = /agresiv/i.test(userMessage) ? 'aggressive'
