@@ -2750,6 +2750,24 @@ body.light-mode .theme-toggle {
   margin-top: 6px; opacity: 0.75;
 }
 
+/* Tema claro: los blancos translúcidos desaparecen sobre fondo claro */
+body.light-mode .mg-gear { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); }
+body.light-mode .mg-gear:active { background: rgba(0,0,0,0.1); }
+body.light-mode .mg-group-desc { border-bottom-color: rgba(0,0,0,0.07); }
+body.light-mode .mg-row { border-bottom-color: rgba(0,0,0,0.06); }
+body.light-mode .mg-kv { background: rgba(0,0,0,0.04); }
+body.light-mode .mg-input,
+body.light-mode .mg-switch { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.12); }
+body.light-mode .mg-switch.on { background: linear-gradient(135deg, #0a84ff, #bf5af2); border-color: transparent; }
+body.light-mode .mg-table th { border-bottom-color: rgba(0,0,0,0.12); }
+body.light-mode .mg-table td { border-bottom-color: rgba(0,0,0,0.06); }
+body.light-mode .mg-verdict.off { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); }
+body.light-mode .mg-strip { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.09); }
+body.light-mode .mg-strip.edge { background: rgba(48,209,88,0.12); border-color: rgba(48,209,88,0.3); }
+body.light-mode .mg-strip.noedge { background: rgba(255,159,10,0.14); border-color: rgba(255,159,10,0.32); }
+body.light-mode .mg-strip.pending { background: rgba(10,132,255,0.1); border-color: rgba(10,132,255,0.26); }
+body.light-mode .mg-strip-meta .tag { background: rgba(0,0,0,0.06); }
+
 </style>
 </head>
 <body>
@@ -2999,7 +3017,7 @@ body.light-mode .theme-toggle {
         </div>
         
         <div style="font-size:11.5px;color:var(--text-3);line-height:1.5;margin-bottom:14px;">
-          Fusiona los 9 modelos según pesos evolucionados. Cada resultado real que agregues re-entrena el sistema.
+          Fusiona los 13 modelos según pesos evolucionados y validados por el protocolo v9. Cada resultado real que agregues re-entrena el sistema.
         </div>
         
         <div style="font-size:10.5px;font-weight:600;letter-spacing:0.5px;color:var(--text-3);text-transform:uppercase;margin-bottom:6px;">Estrategia</div>
@@ -7750,6 +7768,11 @@ function mgRenderResearchStatus() {
       <div class="mg-help">La app usa el motor clásico: 13 modelos + softmax evolutivo, sin compuertas estadísticas.</div></div>`;
     return;
   }
+  if ((typeof state !== 'undefined') && state.currentGame === 'tris') {
+    c.innerHTML = `<div class="glass card"><div class="mg-verdict off">TRIS FUERA DEL PROTOCOLO</div>
+      <div class="mg-help">Tris usa el motor posicional (bayesiano, gap, Markov y Fourier por posición), no el ensemble de 13 modelos. Los ajustes de abajo siguen aplicando al resto de los juegos.</div></div>`;
+    return;
+  }
   if (!r || !r.available) {
     c.innerHTML = `<div class="glass card"><div class="mg-verdict pending">SIN CICLO EJECUTADO</div>
       <div class="mg-help">${r && r.reason ? r.reason : 'Genera una predicción o re-evoluciona para correr el primer ciclo.'}</div>
@@ -7798,22 +7821,21 @@ function mgRenderResearchStatus() {
     <div class="card-head"><div class="card-title"><span class="card-title-icon">🧪</span> Evidencia por modelo</div></div>
     <div class="mg-table-scroll">
       <table class="mg-table">
-        <thead><tr><th>Modelo</th><th>Δ</th><th>p</th><th>q</th><th>Estab.</th><th>Holdout</th><th>Rep.</th><th></th></tr></thead>
+        <thead><tr><th>Modelo</th><th>Δ</th><th>p</th><th>q</th><th>Estab.</th><th>Holdout</th><th>Rep.</th></tr></thead>
         <tbody>
         ${ev.map(e => `<tr class="${e.gate.passed ? 'pass' : ''}">
-          <td>${modelDisplayName(e.name)}</td>
+          <td>${e.gate.passed ? '🏆 ' : (e.base_rate_warning ? '≈ ' : '')}${modelDisplayName(e.name)}</td>
           <td>${e.score >= 0 ? '+' : ''}${e.score.toFixed(3)}</td>
           <td>${e.permutation_p.toFixed(3)}</td>
           <td>${e.q_value.toFixed(3)}</td>
           <td>${(e.stability * 100).toFixed(0)}%</td>
           <td>${e.golden_holdout_delta >= 0 ? '+' : ''}${(e.golden_holdout_delta || 0).toFixed(2)}</td>
           <td>${e.replicated ? '✓' : '—'}</td>
-          <td>${e.gate.passed ? '🏆' : (e.base_rate_warning ? '≈azar' : '')}</td>
         </tr>`).join('')}
         </tbody>
       </table>
     </div>
-    <div class="mg-help" style="margin-top:8px;">Δ = aciertos por sorteo sobre el azar (${r.baseline.toFixed(2)}). q = p corregida por BH. "≈azar" marca un IC que cruza el baseline (regla 35).</div>
+    <div class="mg-help" style="margin-top:8px;">Δ = aciertos por sorteo sobre el azar (${r.baseline.toFixed(2)}). q = p corregida por BH. 🏆 pasa todas las compuertas; ≈ marca un IC que cruza el baseline (regla 35). Desliza la tabla para ver el resto de columnas.</div>
   </div>
 
   <div class="glass card">
@@ -7893,6 +7915,12 @@ function mgRenderResearchPanel() {
     c.innerHTML = `<div class="mg-strip off">
       <div class="mg-strip-main"><b>Protocolo v9 apagado</b><span>Motor clásico sin compuertas estadísticas</span></div>
       <button class="card-action" onclick="showSection('ajustes')">Ajustes</button>
+    </div>`;
+    return;
+  }
+  if ((typeof state !== 'undefined') && state.currentGame === 'tris') {
+    c.innerHTML = `<div class="mg-strip off">
+      <div class="mg-strip-main"><b>Tris · motor posicional</b><span>Predice dígito por posición con 4 modelos propios; queda fuera del protocolo v9.</span></div>
     </div>`;
     return;
   }
@@ -8597,7 +8625,11 @@ function runEvolution(silent = false) {
   if (state.currentGame === 'tris') {
     evolveTrisWeights(state.draws);
     state.trisPrediction = computeTrisModels(state.draws);
+    // Tris usa el motor posicional de 4 modelos, no el ensemble de 13: queda
+    // fuera del protocolo v9 y no arrastra el ciclo del juego anterior.
+    state.research = null;
     renderAll();
+    try { mgRenderResearchPanel(); mgRenderResearchStatus(); } catch (e) {}
     return;
   }
   // Precompute models
