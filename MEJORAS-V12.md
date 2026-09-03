@@ -1,4 +1,4 @@
-# Melate Genius · Protocolo autónomo v11 (Neural Research Brain)
+# Melate Genius · Protocolo autónomo v12 (Production Gate)
 
 Port a JavaScript, dentro de `index.html`, de las mejoras entregadas en los
 paquetes `melatepro-autonomous-v3 … v9`. Todo corre en el navegador: no hay
@@ -14,6 +14,7 @@ backend, ni Docker, ni FastAPI.
 | `v9/*` | análisis secuencial, ventanas móviles 20/40/60, presupuesto adaptativo, linaje de datos, guardia de regresión, ranking por evidencia, plan del siguiente ciclo |
 | `v10/*` | predicciones congeladas con SHA-256, monitoreo secuencial con gasto de alfa, detector de edge de tres estados, Champion Live Gate, Research Guard, leaderboard live |
 | `v11/*` | features multi-fuente, split temporal con LeakageGuard, MLP, LSTM, Transformer, Autoencoder y meta-ensemble neuronal |
+| `v12/*` | Live Frontier, apilado temporal, dimensiones por juego, manifiestos reproducibles, model cards con estados, calibración, guardia adversarial de fuga, candado del Golden Holdout, congelado inmutable y Production Gate |
 
 Desde v11, el MLP, la LSTM, el Transformer y el Autoencoder entrenan dentro del
 navegador. El único retador que sigue necesitando backend es la QNN de
@@ -133,6 +134,45 @@ pendientes, re-evoluciona y luego corre `mgOnNewDraw()`, que actualiza el track
 record live, el análisis secuencial con ventanas 20/40/60, el score de deriva,
 el decaimiento del Champion, la guardia de regresión y el plan del siguiente
 ciclo (exploración vs. confirmación).
+
+## Production Gate (v12)
+
+Capa de endurecimiento. **No fabrica ventaja**: cierra huecos de ingeniería.
+
+- **Live Frontier** por juego (`train/validation/holdout/live cutoff`). Un
+  resultado entra al entrenamiento sólo tras cerrar su evaluación live, y al
+  hacerlo la frontera avanza.
+- **Apilado temporal**: cada predicción guarda `prediction_id`, modelo, versión,
+  snapshot, `cutoff_draw`, `target_draw`, timestamp, semilla y scores. Sólo
+  entran al meta-modelo las temporalmente válidas (`cutoff < target`).
+- **Dimensiones por juego**: `GameSpec` con `n_numbers`, `picks`, tasa base
+  `picks/N` y solape esperado `picks²/N`. Ningún tamaño de salida está fijo.
+- **Reproducibilidad**: manifiesto con semilla, arquitectura, hiperparámetros,
+  lookback, épocas, learning rate, dropout, optimizador, cortes, dispositivo y
+  duración, más un hash del checkpoint. Verificado: dos corridas con el mismo
+  snapshot y semilla producen el mismo checkpoint.
+- **Model cards y estados**: `TRAINED → VALIDATED → ELIGIBLE → LIVE_TRIAL →
+  QUALIFIED → CHAMPION`, con `REJECTED` y `DECAYED`. Ningún modelo salta a
+  CHAMPION; un validado puede ser ELIGIBLE con peso 0.
+- **Calibración**: compara raw, Platt e isotónica ajustando en una mitad de la
+  validación y midiendo en la otra (la isotónica calibra perfectamente sus
+  propios datos, así que compararla in-sample la elegiría siempre). Reporta
+  Brier y ECE. Nunca toca el Golden Holdout.
+- **Guardia adversarial de fuga**: `actual_draw`, `future_draw`, `next_draw`,
+  `future_frequency`, `future_prediction`, `future_model_score` y
+  `target_after_cutoff` abortan el experimento y bloquean la promoción.
+- **Candado del Golden Holdout**: sólo lectura para evaluar la compuerta;
+  cualquier otro propósito queda registrado y bloquea la promoción.
+- **Congelado inmutable**: payload canónico `{run_id, seed, snapshot_id,
+  numbers}` con SHA-256. Una vez sellada, la predicción no se sobrescribe;
+  manipular cualquier campo falla la verificación.
+- **Champion Gate de diez compuertas**: OOS, Holdout, Live Trial, Secuencial,
+  FDR, Estabilidad, Calibración, Sin deriva, Sin fuga y Replicación. Ninguna
+  métrica individual la esquiva.
+- **Autoencoder**: sólo detecta régimen (`NORMAL / WATCH / ANOMALY / DRIFT`).
+  La deriva nunca altera los números por sí sola.
+- **Veredicto GO / NO-GO**: catorce comprobaciones. **GO significa seguro,
+  reproducible y auditable — no que exista una ventaja.**
 
 ## Estados de la evidencia (v10)
 

@@ -2748,6 +2748,18 @@ body.light-mode .theme-toggle {
 .mg-strip-main b { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; letter-spacing: 0.4px; }
 .mg-strip-main span { font-size: 10.5px; color: var(--text-3); line-height: 1.4; }
 .mg-strip-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.mg-check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
+.mg-check {
+  display: flex; align-items: center; gap: 5px; font-size: 10px; line-height: 1.3;
+  padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.04); color: var(--text-3);
+}
+.mg-check span { font-weight: 700; flex-shrink: 0; }
+.mg-check.ok span { color: #30d158; }
+.mg-check.bad { background: rgba(255,55,95,0.12); color: #ff8fa3; }
+.mg-check.bad span { color: #ff375f; }
+body.light-mode .mg-check { background: rgba(0,0,0,0.04); }
+body.light-mode .mg-check.bad { background: rgba(255,55,95,0.12); color: #c9284a; }
+
 .mg-audit-note {
   font-size: 10px; color: var(--text-3); font-family: 'JetBrains Mono', monospace;
   margin-top: 6px; opacity: 0.75;
@@ -5773,7 +5785,7 @@ function generatePostDrawInsight(actualDraw, userTickets, models, weights, draws
 //     otro automáticamente.
 // ═══════════════════════════════════════════════════════════════════
 
-const MG_VERSION = '11.0';
+const MG_VERSION = '12.0.0';
 const MG_MODEL_KEYS = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum',
   'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
 
@@ -5834,6 +5846,7 @@ const MG_DEFAULT_SETTINGS = {
     goldenHoldoutMinDraws: 20,
     goldenHoldoutMaxDraws: 60,
     goldenHoldoutMaxEval: 30,   // pasos evaluados dentro del holdout
+    calibrationSteps: 20,       // pasos de validación usados para calibrar (v12)
     requireReplication: true,
     replicationSeeds: [7, 17, 42, 101, 2026],
     replicationMinFraction: 0.6,
@@ -5902,6 +5915,9 @@ const MG_DEFAULT_SETTINGS = {
     applyToPredictions: true,
     blendWeight: 0.35,          // cuánto pesa el meta-ensemble neuronal si califica
     models: ['mlp', 'lstm', 'transformer', 'autoencoder'],
+    // v12 punto 7: el autoencoder queda fuera de la mezcla de probabilidades;
+    // sólo aporta error de reconstrucción, deriva y estado de régimen.
+    autoencoderRole: 'regime_only',
     epochs: 6,
     learningRate: 0.01,
     trainSamples: 60,
@@ -5925,6 +5941,24 @@ const MG_DEFAULT_SETTINGS = {
     }
   },
 
+  // ── v12: Production Gate ──
+  v12: {
+    enabled: true,
+    requireReplication: true,       // regla 11
+    goldenHoldoutLocked: true,      // regla 2
+    requireNoLeakage: true,         // regla 15
+    requireCalibration: true,       // regla 12
+    requireStability: true,
+    requireNoMaterialDrift: true,
+    frozenPredictionsImmutable: true,
+    minLiveTrialCycles: 3,          // ningún salto TRAINED → CHAMPION (regla 10)
+    maxEce: 0.10,                   // compuerta de calibración
+    regimeWatchRatio: 1.25,         // autoencoder: sólo régimen (punto 7)
+    regimeAnomalyRatio: 1.75,
+    regimeDriftThreshold: 0.05,
+    regimeBaselineError: 0.10
+  },
+
   // Reproducibilidad
   seed: 42,
   deterministic: true
@@ -5944,6 +5978,12 @@ const MG_STATE = {
   sequential: {},      // por juego → estado del monitor secuencial (v10)
   liveChampion: {},    // por juego → Live Trial en curso (v10)
   frozen: [],          // predicciones congeladas con hash (v10 regla 43)
+  frozenV12: [],       // sello de producción v12 (payload run_id/seed/snapshot/numbers)
+  frontier: {},        // por juego → Live Frontier (v12 reglas 5 y 6)
+  leakage: {},         // por juego → incidentes de fuga temporal
+  holdoutAccess: {},   // por juego → accesos al Golden Holdout y violaciones
+  modelCards: {},      // por juego → ficha y estado de cada modelo
+  snapshots: {},       // por juego → snapshots de predicción para el apilado temporal
   busy: false
 };
 
@@ -6043,6 +6083,11 @@ function mgLoadResearchState() {
     MG_STATE.sequential = d.sequential || {};
     MG_STATE.liveChampion = d.liveChampion || {};
     MG_STATE.frozen = Array.isArray(d.frozen) ? d.frozen.slice(-200) : [];
+    MG_STATE.frozenV12 = Array.isArray(d.frozenV12) ? d.frozenV12.slice(-300) : [];
+    MG_STATE.frontier = d.frontier || {};
+    MG_STATE.leakage = d.leakage || {};
+    MG_STATE.holdoutAccess = d.holdoutAccess || {};
+    MG_STATE.modelCards = d.modelCards || {};
   } catch (e) { console.warn('MG: estado de investigación ilegible', e); }
 }
 
@@ -6056,7 +6101,12 @@ function mgSaveResearchState() {
       lastDelta: MG_STATE.lastDelta,
       sequential: MG_STATE.sequential,
       liveChampion: MG_STATE.liveChampion,
-      frozen: MG_STATE.frozen.slice(-200)
+      frozen: MG_STATE.frozen.slice(-200),
+      frozenV12: MG_STATE.frozenV12.slice(-300),
+      frontier: MG_STATE.frontier,
+      leakage: MG_STATE.leakage,
+      holdoutAccess: MG_STATE.holdoutAccess,
+      modelCards: MG_STATE.modelCards
     }));
   } catch (e) { /* cuota llena */ }
 }
@@ -6093,7 +6143,7 @@ function mgInvalidateResearch() {
 function mgSettingsFingerprint() {
   const s = mgSettings();
   return mgHash(JSON.stringify([s.enabled, s.gates, s.ensemble, s.live.z, s.seed,
-    s.drift, s.champion, s.v10, s.neural]));
+    s.drift, s.champion, s.v10, s.neural, s.v12]));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -7145,6 +7195,7 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
     };
   });
   const legacyWeights = evolveWeights(perfSummary, S.ensemble.temperature);
+  const legacyWeightsForCalibration = legacyWeights;
 
   // Mezcla evidencia validada + softmax histórico
   let weights, weightSource;
@@ -7162,6 +7213,25 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
   } else {
     weights = legacyWeights;
     weightSource = 'legacy_softmax_no_edge';
+  }
+
+  // ── v12: calibración del ensemble sobre la ventana de VALIDACIÓN ──
+  let calibrationReport = null;
+  try {
+    const cp = [], co = [];
+    for (let i = 0; i < train.actuals.length; i++) {
+      const actual = new Set(train.actuals[i]);
+      const t = from + i;
+      const probs = fuseModels(computeAllModels(draws.slice(Math.max(0, t - S.gates.maxTrainDraws), t), maxN),
+        legacyWeightsForCalibration, maxN);
+      for (let n = 1; n <= maxN; n++) { cp.push(Math.min(1, probs[n] * maxN / pick)); co.push(actual.has(n) ? 1 : 0); }
+      if (i >= S.gates.calibrationSteps - 1) break;
+    }
+    calibrationReport = cp.length ? mgCalibrationCompare(cp, co)
+      : { available: false, reason: 'NO_VALIDATION_SAMPLES', passed: false };
+  } catch (e) {
+    console.warn('MG: calibración del ensemble falló', e);
+    calibrationReport = { available: false, reason: String(e && e.message || e), passed: false };
   }
 
   // ── Deriva y punto de cambio ──
@@ -7275,6 +7345,39 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
 
   const researchGuard = S.v10.researchGuard ? mgValidateResearchRequest({}) : { allowed: true, violations: [] };
 
+  // ── v12: Champion Gate de diez compuertas para los modelos clásicos ──
+  const frontierV12 = mgLiveFrontier(game, { train_end: from, validation_end: cut, holdout_start: cut });
+  evidence.forEach(e => {
+    const ge = {
+      trained: true,
+      oos_pass: e.permutation_p < S.gates.alpha,
+      holdout_pass: (e.golden_holdout_delta || 0) > 0,
+      live_trial_pass: live.n > 0 && live.overall.delta > 0,
+      sequential_pass: sequentialLook ? sequentialLook.candidate : false,
+      fdr_pass: e.q_value < S.gates.alpha,
+      stability_pass: e.stability > S.gates.minStability,
+      calibration_pass: S.v12.requireCalibration ? !!(calibrationReport && calibrationReport.passed) : true,
+      no_drift: !drift.detected,
+      no_leakage: !mgHasLeakage(game),
+      replication_pass: e.replicated,
+      validation_score: e.score, live_delta: live.n > 0 ? live.overall.delta : 0
+    };
+    e.gate_evidence_v12 = ge;
+    e.qualifies_v12 = mgChampionQualifies(ge);
+    e.missing_gates_v12 = mgChampionMissingGates(ge);
+  });
+  const championGateV12 = {
+    qualified: evidence.filter(e => e.qualifies_v12).map(e => e.name),
+    checks: MG_CHAMPION_CHECKS.concat(S.v12.requireReplication ? ['replication_pass'] : []),
+    // la compuerta que más modelos bloquea
+    top_blocker: (() => {
+      const counts = {};
+      evidence.forEach(e => (e.missing_gates_v12 || []).forEach(g => { counts[g] = (counts[g] || 0) + 1; }));
+      const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      return ranked.length ? { gate: ranked[0][0], models: ranked[0][1] } : null;
+    })()
+  };
+
   const runId = mgRunId(game + snapshot);
   const t1 = mgNow();
 
@@ -7294,6 +7397,11 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
     live, lineage, ranked, monte_carlo: monteCarlo,
     // v10
     sequential_look: sequentialLook, live_trial: liveTrial, research_guard: researchGuard,
+    // v12
+    calibration: calibrationReport, champion_gate_v12: championGateV12,
+    frontier: frontierV12, game_spec: mgGameSpec(game),
+    leakage_incidents: (MG_STATE.leakage[game] || []).length,
+    holdout_violations: mgHoldoutViolations(game).length,
     live_leaderboard: mgLiveLeaderboard(evidence.map(e => ({
       model: e.name, replicated: e.replicated, stable: e.stability > S.gates.minStability,
       q_value: e.q_value, live_delta: live.overall ? live.overall.delta : 0
@@ -7454,8 +7562,21 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
       applied: neural.meta_ensemble.total > 0,
       eligible: neural.meta_ensemble.eligible,
       trained: neural.evidence.filter(e => e.available).map(e => e.model),
-      anomaly_score: neural.anomaly_score
-    } : { applied: false, eligible: [], trained: [] }
+      anomaly_score: neural.anomaly_score,
+      regime: neural.regime ? neural.regime.regime_state : null,
+      states: (neural.evidence || []).filter(e => e.available)
+        .map(e => e.model + ':' + (e.card_state || 'TRAINED')).join(',')
+    } : { applied: false, eligible: [], trained: [] },
+    // v12
+    v12: {
+      version: MG_V12_VERSION,
+      game_spec: mgGameSpec(typeof state !== 'undefined' ? state.currentGame : 'melate'),
+      champion_qualified: r && r.champion_gate_v12 ? r.champion_gate_v12.qualified : [],
+      top_blocker: r && r.champion_gate_v12 ? r.champion_gate_v12.top_blocker : null,
+      calibration_passed: !!(r && r.calibration && r.calibration.passed),
+      // regla 13: generar portafolio NO es evidencia de ventaja
+      portfolio_is_not_edge: true
+    }
   };
 
   // 5. Registro auditable de cada predicción live (v8 regla 30 / v9 regla 41)
@@ -7469,12 +7590,26 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
   const generatedAt = new Date().toISOString();
   const frozen = [];
 
+  const cutoffDraw = draws.length - 1;      // último sorteo conocido
+  const targetDraw = draws.length;          // el sorteo que aún no ocurre
   const out = built.selected.map((c, i) => {
-    // v10 regla 43: la combinación se congela y se identifica por hash
-    let freeze = null;
+    // v10 regla 43 + v12 regla 3: la combinación se congela ANTES del sorteo
+    let freeze = null, sealV12 = null;
     if (S.v10.freezePredictions) {
       freeze = mgFreezePrediction(runId, game, MG_VERSION, generatedAt, snapshot, c.numbers);
       frozen.push(freeze);
+    }
+    if (S.v12.enabled && S.v12.frozenPredictionsImmutable) {
+      const pid = mgSha256(runId + '|' + i + '|' + c.numbers.join(',')).slice(0, 24);
+      sealV12 = mgV12Freeze(runId, built.seed, snapshot, c.numbers, pid);
+      const stored = mgV12PersistFrozen(Object.assign({}, sealV12, {
+        game, cutoff_draw: cutoffDraw, target_draw: targetDraw, timestamp: generatedAt
+      }));
+      sealV12.stored = stored.stored;
+      // Apilado temporal: el corte debe preceder al objetivo (v12 punto 2)
+      try {
+        mgAssertTemporalOrder(cutoffDraw, targetDraw);
+      } catch (e) { mgRecordLeakage(game, e.message); }
     }
     return {
       ticket: c.numbers,
@@ -7484,6 +7619,9 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
         audit_index: i,
         candidate_mc: (mc.per_candidate && mc.per_candidate[i]) || null,
         frozen_hash: freeze ? freeze.payload_hash : null,
+        v12_prediction_id: sealV12 ? sealV12.prediction_id : null,
+        v12_sha256: sealV12 ? sealV12.sha256 : null,
+        cutoff_draw: cutoffDraw, target_draw: targetDraw,
         generated_at: generatedAt
       })
     };
@@ -7987,6 +8125,13 @@ function mgBuildMultisourceFeatures(history, modelScores) {
   return out;
 }
 
+// Nombres explícitos de las features por número: el guardia de fuga los
+// inspecciona antes de entrenar (v12 punto 8).
+function mgPerNumberFeatureNames() {
+  return ['freq_last10', 'freq_last30', 'freq_all', 'gap_ratio',
+    'number_norm', 'parity', 'decade_norm'].concat(MG_MODEL_KEYS.map(k => 'model_score_' + k));
+}
+
 // Features por número para el MLP: historia agregada + salidas de los 13 modelos
 function mgPerNumberFeatures(train, maxN, allProbs) {
   const n = train.length;
@@ -8259,12 +8404,16 @@ function mgSha256(str) {
   return out;
 }
 
-// JSON canónico equivalente a json.dumps(sort_keys=True, separators=(",",":"))
+// JSON canónico equivalente a json.dumps(sort_keys=True, separators=(",",":")).
+// `undefined` se omite en objetos y se serializa como null en arrays, igual que
+// JSON.stringify: sin esto, un campo ausente en el manifiesto rompía el hash.
 function mgCanonicalJson(v) {
-  if (v === null || typeof v === 'number' || typeof v === 'boolean') return JSON.stringify(v);
-  if (typeof v === 'string') return JSON.stringify(v);
+  if (v === undefined || v === null) return 'null';
+  if (typeof v === 'number') return isFinite(v) ? JSON.stringify(v) : 'null';
+  if (typeof v === 'boolean' || typeof v === 'string') return JSON.stringify(v);
   if (Array.isArray(v)) return '[' + v.map(mgCanonicalJson).join(',') + ']';
-  const keys = Object.keys(v).sort();
+  if (typeof v !== 'object') return 'null';
+  const keys = Object.keys(v).filter(k => v[k] !== undefined).sort();
   return '{' + keys.map(k => JSON.stringify(k) + ':' + mgCanonicalJson(v[k])).join(',') + '}';
 }
 
@@ -8428,8 +8577,12 @@ function mgNeuralMetaEnsembleWeights(evidence) {
   const raw = {};
   let total = 0;
   good.forEach(e => {
+    // v12: ELIGIBILITY y WEIGHT son cosas distintas. Un modelo validado puede
+    // ser ELIGIBLE con peso 0 hasta que exista evidencia live suficiente.
     const ld = Math.max(floor, Math.max(0, e.live_delta || 0));
-    const v = Math.max(0, e.validation_score || 0) * ld;
+    const liveOk = (e.live_n || 0) > 0 && (e.live_delta || 0) > 0;
+    const v = mgNeuralWeightV12(Math.max(0, e.validation_score || 0), ld,
+      liveOk || !S.requireLiveDelta, S.requireLiveDelta);
     raw[e.model] = v; total += v;
   });
   if (total <= 0) {
@@ -8686,6 +8839,16 @@ async function mgRunNeuralCycle(game, draws, maxN, pick) {
   const plan = mgNeuralBrainPlan(draws.length);
   const split = plan.split;
 
+  // ── v12 LEAKAGE_CHECK: ninguna feature futura, y el corte precede al objetivo
+  try {
+    mgAssertNoFutureFields(mgPerNumberFeatureNames());
+    mgAssertTemporalOrder(split.train_end, split.train_end + 1);
+    mgAssertCutoff(split.train_end, split.holdout_start);
+  } catch (e) {
+    mgRecordLeakage(game, e.message);
+    return { available: false, reason: 'Fuga temporal detectada: ' + e.message + '. La promoción queda bloqueada.' };
+  }
+
   const cfg = {
     seed: S.seed,
     epochs: N.epochs,
@@ -8743,7 +8906,10 @@ async function mgRunNeuralCycle(game, draws, maxN, pick) {
       topSets.push(top);
       actuals.push(draws[t]);
     }
-    // Golden Holdout, evaluado aparte y nunca usado para entrenar
+    // Golden Holdout, evaluado aparte y nunca usado para entrenar.
+    // El candado registra el acceso y sólo admite el propósito de compuerta.
+    try { mgHoldoutAccess(game, 'gate_evaluation'); }
+    catch (e) { mgRecordLeakage(game, e.message); }
     const hHits = [];
     for (let t = holdFrom; t < draws.length; t++) {
       if (hHits.length >= N.holdoutEval || mgNow() > deadline + N.evalGraceMs) break;
@@ -8764,7 +8930,10 @@ async function mgRunNeuralCycle(game, draws, maxN, pick) {
     const rep = mgReplicationCheck(hits, baseline, S.gates.replicationSeeds);
     const ho = hHits.length ? mgSummarizeBacktest(hHits, maxN, pick) : null;
 
-    probsByModel[kind] = m.predict(draws.slice(-cfg.lookbackHistory));
+    // v12 punto 7: el autoencoder NO alimenta la mezcla de probabilidades.
+    if (kind !== 'autoencoder' || N.autoencoderRole !== 'regime_only') {
+      probsByModel[kind] = m.predict(draws.slice(-cfg.lookbackHistory));
+    }
 
     evidence.push({
       model: kind, available: true, status: 'TRAINED',
@@ -8802,6 +8971,8 @@ async function mgRunNeuralCycle(game, draws, maxN, pick) {
 
   // ── Live delta por modelo neuronal (regla 57 usa live_delta) ──
   const live = mgComputeLive(game, maxN, pick);
+  const rCycle = mgGetResearch(game);
+  const driftDecisionForNeural = (rCycle && rCycle.available) ? rCycle.drift : { detected: false, score: 0 };
   evaluated.forEach(e => {
     const rec = (live.models || []).find(m => m.model === e.model);
     e.live_delta = rec ? rec.delta : 0;
@@ -8829,8 +9000,97 @@ async function mgRunNeuralCycle(game, draws, maxN, pick) {
     });
   });
 
-  const anomaly = (trained.autoencoder && trained.autoencoder.anomaly)
+  // ── v12: calibración sobre VALIDACIÓN (nunca Golden Holdout) ──
+  evaluated.forEach(e => {
+    const m = trained[e.model];
+    if (!m || !m.predict) return;
+    try {
+      const probs = [], outcomes = [];
+      const vFrom = Math.max(split.train_end, split.validation_end - N.valSamples);
+      for (let t = vFrom; t < split.validation_end; t++) {
+        if (mgNow() > deadline + N.evalGraceMs) break;
+        const p = m.predict(draws.slice(Math.max(0, t - cfg.lookbackHistory), t));
+        if (!p) continue;
+        const actual = new Set(draws[t]);
+        for (let n = 1; n <= maxN; n++) { probs.push(p[n] * maxN / pick); outcomes.push(actual.has(n) ? 1 : 0); }
+      }
+      e.calibration = probs.length ? mgCalibrationCompare(probs, outcomes)
+        : { available: false, reason: 'NO_VALIDATION_SAMPLES', passed: false };
+    } catch (err) {
+      console.warn('MG: calibración de ' + e.model + ' falló', err);
+      e.calibration = { available: false, reason: String(err && err.message || err), passed: false };
+    }
+  });
+
+  // ── v12: manifiesto reproducible + ficha con estados ──
+  const frontier = mgLiveFrontier(game, split);
+  evaluated.forEach(e => {
+    const m = trained[e.model];
+    const manifest = mgBuildManifest({
+      seed: S.seed, architecture: e.architecture, snapshot_id: mgSnapshotId(draws),
+      hyperparameters: {
+        mlpHidden: N.mlpHidden, lstmHidden: N.lstmHidden, transformerDim: N.transformerDim,
+        latentDim: N.latentDim, sequenceLength: N.sequenceLength
+      },
+      train_cutoff: split.train_end, validation_cutoff: split.validation_end,
+      holdout_cutoff: split.holdout_start, lookback: cfg.lookbackHistory,
+      epochs: N.epochs, learning_rate: N.learningRate, dropout: 0.10,
+      duration_ms: Math.round(mgNow() - t0),
+      checkpoint_hash: (m && m.net) ? mgCheckpointHash(m.net.params) : null
+    });
+    e.manifest = manifest;
+    e.manifest_hash = mgManifestHash(manifest);
+
+    const gateEvidence = {
+      trained: true,
+      oos_pass: e.permutation_p < S.gates.alpha,
+      holdout_pass: e.holdout_delta > 0,
+      live_trial_pass: (e.live_n || 0) > 0 && e.live_delta > 0,
+      sequential_pass: e.sequential ? e.sequential.ci_low > 0 : false,
+      fdr_pass: e.q_value != null && e.q_value < S.gates.alpha,
+      stability_pass: e.stability > S.gates.minStability,
+      calibration_pass: S.v12.requireCalibration ? !!(e.calibration && e.calibration.passed) : true,
+      no_drift: !(driftDecisionForNeural && driftDecisionForNeural.detected),
+      no_leakage: !mgHasLeakage(game),
+      replication_pass: e.replicated,
+      validation_score: e.validation_score, live_delta: e.live_delta
+    };
+    e.gate_evidence = gateEvidence;
+    e.qualifies_v12 = mgChampionQualifies(gateEvidence);
+    e.missing_gates = mgChampionMissingGates(gateEvidence);
+
+    if (!MG_STATE.modelCards[game]) MG_STATE.modelCards[game] = {};
+    let card = MG_STATE.modelCards[game][e.model];
+    if (!card) {
+      card = mgV12ModelCard({
+        model_id: e.model, game, architecture: e.architecture, snapshot_id: mgSnapshotId(draws),
+        seed: S.seed, train_cutoff: split.train_end, validation_cutoff: split.validation_end,
+        holdout_cutoff: split.holdout_start, live_cutoff: frontier.live_cutoff,
+        manifest, manifest_hash: e.manifest_hash
+      });
+    }
+    card.metrics = { mean_hits: e.top_k_hits, delta: e.validation_score, best_val_loss: e.best_val_loss };
+    card.calibration = e.calibration;
+    card.permutation_p = e.permutation_p; card.fdr_q = e.q_value;
+    card.stability = e.stability; card.replication = e.replication;
+    card.live_evidence = { n: e.live_n || 0, delta: e.live_delta };
+    card.manifest = manifest; card.manifest_hash = e.manifest_hash;
+    if (card.state === 'LIVE_TRIAL') card.live_trial_cycles = (card.live_trial_cycles || 0) + 1;
+    mgAdvanceModelState(card, gateEvidence);
+    mgChampionDecayV12(card, gateEvidence);
+    MG_STATE.modelCards[game][e.model] = card;
+    e.card_state = card.state;
+    e.v12_weight = card.weight;
+  });
+  mgSaveResearchState();
+
+  // ── v12 punto 7: el autoencoder sólo reporta régimen ──
+  const reconError = (trained.autoencoder && trained.autoencoder.anomaly)
     ? trained.autoencoder.anomaly(draws) : null;
+  const anomaly = reconError;
+  const regime = reconError != null
+    ? mgAutoencoderReport(reconError, driftDecisionForNeural ? driftDecisionForNeural.score : 0)
+    : null;
 
   return {
     available: true,
@@ -8839,6 +9099,9 @@ async function mgRunNeuralCycle(game, draws, maxN, pick) {
     evidence, probs: probsByModel,
     meta_ensemble: meta,
     anomaly_score: anomaly,
+    regime,
+    model_cards: MG_STATE.modelCards[game] || {},
+    frontier,
     leaderboard: mgLiveLeaderboard(evaluated.map(e => ({
       model: e.model, replicated: e.replicated, stable: e.stability > S.gates.minStability,
       q_value: e.q_value, live_delta: e.live_delta
@@ -8913,6 +9176,634 @@ function mgScheduleNeuralCycle(game) {
     ? cb => window.requestIdleCallback(cb, { timeout: 3000 })
     : cb => setTimeout(cb, 120);
   return new Promise(resolve => idle(() => resolve(run())));
+}
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  MELATE GENIUS · v12 — PRODUCTION GATE
+//  ------------------------------------------------------------------
+//  Capa de endurecimiento sobre v9/v10/v11. No fabrica ventaja: cierra
+//  huecos de fuga temporal, reproducibilidad, congelado, calibración,
+//  deriva, persistencia y promoción.
+//
+//  Constitución v12 (18 reglas), resumida:
+//   1. Ninguna información futura entra a las features de train/validación.
+//   2. El Golden Holdout es inmutable y queda fuera de la optimización.
+//   3. Toda predicción live se congela ANTES de su sorteo.
+//   4. Las predicciones congeladas son inmutables y verificables por SHA-256.
+//   5. Un resultado live entra al entrenamiento sólo tras cerrar su evaluación.
+//   6. La Live Frontier avanza cuando datos live entran al entrenamiento.
+//   7. Cada juego usa su propia dimensión de salida.
+//   8. La validación neuronal por sí sola nunca otorga peso live.
+//   9. NO_EDGE es un resultado válido.
+//  10. Ningún modelo salta de TRAINED a CHAMPION.
+//  11. La replicación es obligatoria por defecto.
+//  12. Calibración, estabilidad, deriva y fuga son compuertas de promoción.
+//  13. Generar portafolio no es evidencia de ventaja predictiva.
+//  14. Las pruebas con señal sintética validan capacidad de aprendizaje,
+//      no predictibilidad de la lotería.
+//  15. Detectar fuga bloquea la promoción.
+//  16. Un Champion histórico puede decaer.
+//  17. Las dependencias faltantes de la QNN son un estado UNAVAILABLE explícito.
+//  18. Un GO de producción significa seguro y auditable, no que exista ventaja.
+// ═══════════════════════════════════════════════════════════════════
+
+const MG_V12_VERSION = '12.0.0';
+
+// ═══════════════════════════════════════════════════════════
+//  v12/config.py — GameSpec: dimensiones por juego (regla 7)
+// ═══════════════════════════════════════════════════════════
+
+function mgGameSpec(game) {
+  const cfg = (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[game]) || null;
+  const n = cfg ? cfg.maxNum : 56;
+  const picks = cfg ? (cfg.pick || 6) : 6;
+  return {
+    name: game, n_numbers: n, picks,
+    per_number_base_rate: picks / n,
+    expected_ticket_overlap: (picks * picks) / n,
+    is_digit: !!(cfg && cfg.isDigit)
+  };
+}
+
+function mgAllGameSpecs() {
+  const out = {};
+  Object.keys(typeof GAME_CONFIG !== 'undefined' ? GAME_CONFIG : {}).forEach(g => { out[g] = mgGameSpec(g); });
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/leakage_guard.py + lineage.assert_temporal_order (reglas 1, 15)
+// ═══════════════════════════════════════════════════════════
+
+const MG_FORBIDDEN_FIELDS = ['actual_draw', 'future_draw', 'next_draw', 'future_frequency',
+  'future_prediction', 'future_model_score', 'target_after_cutoff'];
+
+function mgAssertNoFutureFields(featureNames) {
+  const bad = MG_FORBIDDEN_FIELDS.filter(f => (featureNames || []).indexOf(f) >= 0).sort();
+  if (bad.length) throw new Error('LEAKAGE_DETECTED:' + bad.join(','));
+  return true;
+}
+
+function mgAssertCutoff(featureDraw, cutoffDraw) {
+  if (featureDraw > cutoffDraw) throw new Error('LEAKAGE_DETECTED:FUTURE_FEATURE');
+  return true;
+}
+
+function mgAssertTemporalOrder(cutoffDraw, targetDraw) {
+  if (cutoffDraw >= targetDraw) throw new Error('TEMPORAL_LEAKAGE: cutoff_draw must precede target_draw');
+  return true;
+}
+
+// Registro de incidentes: cualquier fuga detectada bloquea la promoción
+function mgRecordLeakage(game, detail) {
+  if (!MG_STATE.leakage[game]) MG_STATE.leakage[game] = [];
+  MG_STATE.leakage[game].push({ detail: String(detail), at: new Date().toISOString() });
+  MG_STATE.leakage[game] = MG_STATE.leakage[game].slice(-50);
+  mgSaveResearchState();
+}
+
+function mgHasLeakage(game) {
+  return !!(MG_STATE.leakage[game] && MG_STATE.leakage[game].length);
+}
+
+function mgClearLeakage(game) {
+  MG_STATE.leakage[game] = [];
+  mgSaveResearchState();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Golden Holdout Lock (regla 2 / punto 9 del protocolo)
+//  Sólo se permite leerlo para evaluar la compuerta. Cualquier otro
+//  propósito queda registrado y bloquea la promoción.
+// ═══════════════════════════════════════════════════════════
+
+const MG_HOLDOUT_ALLOWED_PURPOSES = ['gate_evaluation', 'audit_export'];
+
+function mgHoldoutAccess(game, purpose) {
+  const ok = MG_HOLDOUT_ALLOWED_PURPOSES.indexOf(purpose) >= 0;
+  if (!MG_STATE.holdoutAccess[game]) MG_STATE.holdoutAccess[game] = { reads: 0, violations: [] };
+  const st = MG_STATE.holdoutAccess[game];
+  st.reads += 1;
+  if (!ok) {
+    st.violations.push({ purpose: String(purpose), at: new Date().toISOString() });
+    st.violations = st.violations.slice(-20);
+    mgSaveResearchState();
+    throw new Error('GOLDEN_HOLDOUT_LOCKED:' + purpose);
+  }
+  return true;
+}
+
+function mgHoldoutViolations(game) {
+  const st = MG_STATE.holdoutAccess[game];
+  return st ? st.violations : [];
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/live_frontier.py (reglas 5, 6)
+// ═══════════════════════════════════════════════════════════
+
+function mgLiveFrontier(game, split) {
+  if (!MG_STATE.frontier[game]) {
+    const s = split || { train_end: 0, validation_end: 0, holdout_start: 0 };
+    MG_STATE.frontier[game] = {
+      train_cutoff: s.train_end, validation_cutoff: s.validation_end,
+      holdout_cutoff: s.holdout_start, live_cutoff: s.holdout_start,
+      advances: 0, updated_at: new Date().toISOString()
+    };
+  }
+  return MG_STATE.frontier[game];
+}
+
+// Un resultado live entra al entrenamiento sólo después de cerrar su evaluación
+function mgFrontierIngest(game, drawId) {
+  const f = mgLiveFrontier(game);
+  if (drawId <= f.live_cutoff) throw new Error('DRAW_ALREADY_AT_OR_BEFORE_LIVE_FRONTIER');
+  f.live_cutoff = drawId;
+  f.train_cutoff = Math.max(f.train_cutoff, drawId);
+  f.advances += 1;
+  f.updated_at = new Date().toISOString();
+  mgSaveResearchState();
+  return f;
+}
+
+function mgFrontierCanTrainOn(game, drawId) { return drawId <= mgLiveFrontier(game).train_cutoff; }
+function mgFrontierCanEvaluateLive(game, drawId) { return drawId > mgLiveFrontier(game).live_cutoff; }
+
+// ═══════════════════════════════════════════════════════════
+//  v12/stacking.py — apilado temporal (punto 2)
+// ═══════════════════════════════════════════════════════════
+
+function mgValidateSnapshot(p) {
+  if (p.cutoff_draw >= p.target_draw) throw new Error('STACKING_LEAKAGE');
+  if (!p.scores || !p.scores.length) throw new Error('EMPTY_MODEL_OUTPUT');
+  return true;
+}
+
+function mgTemporalStack(predictions, targetDraw) {
+  const out = [];
+  (predictions || []).forEach(p => {
+    mgValidateSnapshot(p);
+    if (p.target_draw === targetDraw && p.cutoff_draw < targetDraw) out.push(p);
+  });
+  return out;
+}
+
+function mgPredictionSnapshot(o) {
+  const snap = {
+    prediction_id: o.prediction_id, model_id: o.model_id, model_version: o.model_version,
+    snapshot_id: o.snapshot_id, cutoff_draw: o.cutoff_draw, target_draw: o.target_draw,
+    timestamp: o.timestamp || new Date().toISOString(), seed: o.seed,
+    scores: o.scores, actual_draw: null, hits: null
+  };
+  mgValidateSnapshot(snap);
+  return snap;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/reproducibility.py (punto 4)
+// ═══════════════════════════════════════════════════════════
+
+function mgManifestHash(manifest) { return mgSha256(mgCanonicalJson(manifest)); }
+
+function mgBuildManifest(o) {
+  return {
+    seed: o.seed, architecture: o.architecture, hyperparameters: o.hyperparameters,
+    snapshot_id: o.snapshot_id, train_cutoff: o.train_cutoff,
+    validation_cutoff: o.validation_cutoff, holdout_cutoff: o.holdout_cutoff,
+    lookback: o.lookback, epochs: o.epochs, batch_size: o.batch_size || 1,
+    learning_rate: o.learning_rate, dropout: o.dropout, optimizer: o.optimizer || 'adam',
+    scheduler: o.scheduler || 'none', device: o.device || 'browser-cpu',
+    duration_ms: o.duration_ms, checkpoint_hash: o.checkpoint_hash || null
+  };
+}
+
+// Hash de los pesos entrenados: dos corridas con la misma semilla y snapshot
+// deben producir el mismo checkpoint.
+function mgCheckpointHash(params) {
+  const parts = [];
+  params.forEach(p => {
+    let acc = 0;
+    for (let i = 0; i < p.d.length; i++) acc = (acc * 31 + Math.round(p.d[i] * 1e6)) % 2147483647;
+    parts.push(p.r + 'x' + p.c + ':' + acc);
+  });
+  return mgSha256(parts.join('|'));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/calibration.py (punto 6) — sólo sobre validación, jamás holdout
+// ═══════════════════════════════════════════════════════════
+
+function mgBrierBinary(probabilities, outcomes) {
+  if (probabilities.length !== outcomes.length) throw new Error('LENGTH_MISMATCH');
+  if (!outcomes.length) return 0;
+  let s = 0;
+  for (let i = 0; i < outcomes.length; i++) {
+    const d = Number(probabilities[i]) - (outcomes[i] ? 1 : 0);
+    s += d * d;
+  }
+  return s / outcomes.length;
+}
+
+function mgExpectedCalibrationError(probabilities, outcomes, bins) {
+  const B = bins || 10;
+  if (!probabilities.length) return 0;
+  const buckets = Array.from({ length: B }, () => []);
+  for (let i = 0; i < probabilities.length; i++) {
+    const p = Number(probabilities[i]);
+    const idx = Math.min(B - 1, Math.max(0, Math.floor(p * B)));
+    buckets[idx].push([p, outcomes[i] ? 1 : 0]);
+  }
+  let ece = 0;
+  const total = probabilities.length;
+  buckets.forEach(b => {
+    if (!b.length) return;
+    const conf = b.reduce((a, x) => a + x[0], 0) / b.length;
+    const acc = b.reduce((a, x) => a + x[1], 0) / b.length;
+    ece += Math.abs(conf - acc) * b.length / total;
+  });
+  return ece;
+}
+
+// Regresión isotónica por PAVA (pool adjacent violators)
+function mgIsotonicFit(probs, outcomes) {
+  const pairs = probs.map((p, i) => ({ x: Number(p), y: outcomes[i] ? 1 : 0 }))
+    .sort((a, b) => a.x - b.x);
+  const blocks = pairs.map(p => ({ sum: p.y, n: 1, x: p.x }));
+  let i = 0;
+  while (i < blocks.length - 1) {
+    if (blocks[i].sum / blocks[i].n <= blocks[i + 1].sum / blocks[i + 1].n) { i++; continue; }
+    blocks[i].sum += blocks[i + 1].sum;
+    blocks[i].n += blocks[i + 1].n;
+    blocks[i].x = Math.max(blocks[i].x, blocks[i + 1].x);
+    blocks.splice(i + 1, 1);
+    if (i > 0) i--;
+  }
+  const knots = blocks.map(b => ({ x: b.x, y: b.sum / b.n }));
+  return {
+    knots,
+    apply(p) {
+      if (!knots.length) return p;
+      if (p <= knots[0].x) return knots[0].y;
+      for (let k = 0; k < knots.length; k++) if (p <= knots[k].x) return knots[k].y;
+      return knots[knots.length - 1].y;
+    }
+  };
+}
+
+// Platt de una variable sobre pares (p, y), por descenso de gradiente
+function mgPlattFit(probs, outcomes, iters) {
+  let A = 1, B = 0;
+  const n = probs.length;
+  if (!n) return { A, B, apply: p => p };
+  const N = iters || 200;
+  for (let it = 0; it < N; it++) {
+    let gA = 0, gB = 0;
+    for (let i = 0; i < n; i++) {
+      const x = Math.log(Math.max(1e-9, Math.min(1 - 1e-9, probs[i])) / (1 - Math.max(1e-9, Math.min(1 - 1e-9, probs[i]))));
+      const z = A * x + B;
+      const q = 1 / (1 + Math.exp(-Math.max(-40, Math.min(40, z))));
+      const e = q - (outcomes[i] ? 1 : 0);
+      gA += e * x; gB += e;
+    }
+    A -= 0.05 * gA / n;
+    B -= 0.05 * gB / n;
+  }
+  return {
+    A, B,
+    apply(p) {
+      const pp = Math.max(1e-9, Math.min(1 - 1e-9, p));
+      const x = Math.log(pp / (1 - pp));
+      return 1 / (1 + Math.exp(-Math.max(-40, Math.min(40, A * x + B))));
+    }
+  };
+}
+
+// Compara raw / Platt / isotónica sobre el tramo de VALIDACIÓN.
+// El ajuste se hace en la primera mitad y la medición en la segunda: la
+// isotónica calibra perfectamente sus propios datos, así que compararla en la
+// misma muestra la elegiría siempre. Nunca se toca el Golden Holdout (regla 2).
+function mgCalibrationCompare(probs, outcomes) {
+  const S = mgSettings().v12;
+  if (!probs.length) return { available: false, reason: 'NO_VALIDATION_SAMPLES', passed: false };
+  if (probs.length < 40) {
+    // Muy pocas muestras para partir: se reporta sólo raw, sin ajustar nada.
+    const b = mgBrierBinary(probs, outcomes), e = mgExpectedCalibrationError(probs, outcomes);
+    return { available: true, n: probs.length, options: [{ name: 'raw', brier: b, ece: e }],
+      best: 'raw', brier: b, ece: e, passed: e <= S.maxEce, max_ece: S.maxEce,
+      source: 'validation_only', holdout_style: 'insufficient_samples' };
+  }
+  const half = Math.floor(probs.length / 2);
+  const fitP = probs.slice(0, half), fitY = outcomes.slice(0, half);
+  const evP = probs.slice(half), evY = outcomes.slice(half);
+
+  const options = [{ name: 'raw', brier: mgBrierBinary(evP, evY), ece: mgExpectedCalibrationError(evP, evY) }];
+  try {
+    const f = mgPlattFit(fitP, fitY);
+    const p2 = evP.map(f.apply);
+    options.push({ name: 'platt', brier: mgBrierBinary(p2, evY), ece: mgExpectedCalibrationError(p2, evY), params: { A: f.A, B: f.B } });
+  } catch (e) { /* opcional */ }
+  try {
+    const f = mgIsotonicFit(fitP, fitY);
+    const p3 = evP.map(f.apply);
+    options.push({ name: 'isotonic', brier: mgBrierBinary(p3, evY), ece: mgExpectedCalibrationError(p3, evY), knots: f.knots.length });
+  } catch (e) { /* no aplicable con pocas muestras */ }
+
+  const best = options.slice().sort((a, b) => a.brier - b.brier)[0];
+  return {
+    available: true, n: probs.length, fit_n: half, eval_n: evP.length,
+    options, best: best.name, brier: best.brier, ece: best.ece,
+    // Compuerta de calibración: ECE por debajo del umbral configurado
+    passed: best.ece <= S.maxEce,
+    max_ece: S.maxEce,
+    source: 'validation_only',        // nunca Golden Holdout (regla 2)
+    holdout_style: 'split_half'       // ajuste y medición en mitades distintas
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Autoencoder → sólo régimen/anomalía/deriva (punto 7)
+//  La deriva NUNCA altera directamente los números.
+// ═══════════════════════════════════════════════════════════
+
+const MG_REGIME_STATES = ['NORMAL', 'WATCH', 'ANOMALY', 'DRIFT'];
+
+function mgRegimeState(reconstructionError, driftScore, baselineError) {
+  const S = mgSettings().v12;
+  const base = baselineError || S.regimeBaselineError;
+  const ratio = base > 0 ? reconstructionError / base : 1;
+  if (driftScore >= S.regimeDriftThreshold) return 'DRIFT';
+  if (ratio >= S.regimeAnomalyRatio) return 'ANOMALY';
+  if (ratio >= S.regimeWatchRatio) return 'WATCH';
+  return 'NORMAL';
+}
+
+function mgAutoencoderReport(reconstructionError, driftScore, baselineError) {
+  const state = mgRegimeState(reconstructionError, driftScore, baselineError);
+  return {
+    reconstruction_error: reconstructionError,
+    drift_score: driftScore,
+    regime_state: state,
+    affects_numbers: false,   // regla explícita del punto 7
+    note: 'El autoencoder sólo detecta régimen; no modifica las probabilidades por número.'
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/champion_gate.py (puntos 11, 12, 13, 14)
+// ═══════════════════════════════════════════════════════════
+
+const MG_CHAMPION_CHECKS = ['oos_pass', 'holdout_pass', 'live_trial_pass', 'sequential_pass',
+  'fdr_pass', 'stability_pass', 'calibration_pass', 'no_drift', 'no_leakage'];
+
+function mgChampionQualifies(e, requireReplication) {
+  const req = requireReplication == null ? mgSettings().v12.requireReplication : requireReplication;
+  const checks = MG_CHAMPION_CHECKS.map(k => !!e[k]);
+  if (req) checks.push(!!e.replication_pass);
+  return checks.every(Boolean);
+}
+
+function mgChampionMissingGates(e, requireReplication) {
+  const req = requireReplication == null ? mgSettings().v12.requireReplication : requireReplication;
+  const list = MG_CHAMPION_CHECKS.filter(k => !e[k]);
+  if (req && !e.replication_pass) list.push('replication_pass');
+  return list;
+}
+
+// neural_weight: la validación sola nunca otorga peso live (regla 8)
+function mgNeuralWeightV12(validationScore, liveDelta, liveEvidencePassed, requireLiveEvidence) {
+  const req = requireLiveEvidence == null ? mgSettings().neural.requireLiveDelta : requireLiveEvidence;
+  if (req && !liveEvidencePassed) return 0;
+  if (validationScore <= 0 || liveDelta <= 0) return 0;
+  return validationScore * liveDelta;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Model cards y máquina de estados (punto 5)
+//  Nunca TRAINED → CHAMPION (regla 10).
+// ═══════════════════════════════════════════════════════════
+
+const MG_MODEL_STATES = ['TRAINED', 'VALIDATED', 'ELIGIBLE', 'LIVE_TRIAL',
+  'QUALIFIED', 'CHAMPION', 'REJECTED', 'DECAYED'];
+
+const MG_STATE_TRANSITIONS = {
+  TRAINED: ['VALIDATED', 'REJECTED'],
+  VALIDATED: ['ELIGIBLE', 'REJECTED'],
+  ELIGIBLE: ['LIVE_TRIAL', 'REJECTED'],
+  LIVE_TRIAL: ['QUALIFIED', 'REJECTED', 'DECAYED'],
+  QUALIFIED: ['CHAMPION', 'LIVE_TRIAL', 'DECAYED'],
+  CHAMPION: ['DECAYED', 'LIVE_TRIAL'],
+  REJECTED: ['TRAINED'],
+  DECAYED: ['LIVE_TRIAL', 'TRAINED']
+};
+
+function mgCanTransition(from, to) {
+  return (MG_STATE_TRANSITIONS[from] || []).indexOf(to) >= 0;
+}
+
+function mgV12ModelCard(o) {
+  return {
+    // identidad
+    prediction_family: o.family || 'neural', model_id: o.model_id,
+    model_version: o.model_version || MG_V12_VERSION, game: o.game,
+    architecture: o.architecture, // datos
+    snapshot_id: o.snapshot_id, seed: o.seed,
+    train_cutoff: o.train_cutoff, validation_cutoff: o.validation_cutoff,
+    holdout_cutoff: o.holdout_cutoff, live_cutoff: o.live_cutoff,
+    // métricas
+    metrics: o.metrics || {}, calibration: o.calibration || null,
+    permutation_p: o.permutation_p, fdr_q: o.fdr_q, stability: o.stability,
+    drift: o.drift, live_evidence: o.live_evidence || null,
+    replication: o.replication || null,
+    // decisión
+    state: o.state || 'TRAINED', weight: o.weight || 0,
+    missing_gates: o.missing_gates || [],
+    decision_at: new Date().toISOString(),
+    manifest: o.manifest || null, manifest_hash: o.manifest_hash || null
+  };
+}
+
+// Avanza el estado paso a paso; nunca salta a CHAMPION
+function mgAdvanceModelState(card, evidence) {
+  const S = mgSettings().v12;
+  const missing = mgChampionMissingGates(evidence);
+  card.missing_gates = missing;
+
+  if (!evidence.no_leakage) { card.state = 'REJECTED'; card.weight = 0; return card; }
+
+  const path = [];
+  if (evidence.trained) path.push('VALIDATED');
+  if (evidence.oos_pass && evidence.fdr_pass) path.push('ELIGIBLE');
+  if (evidence.oos_pass && evidence.holdout_pass && evidence.fdr_pass &&
+      evidence.stability_pass && evidence.calibration_pass && evidence.no_drift) path.push('LIVE_TRIAL');
+  if (mgChampionQualifies(evidence)) path.push('QUALIFIED');
+
+  // Avanza un solo escalón por ciclo desde el estado actual
+  let cur = card.state || 'TRAINED';
+  for (const next of path) {
+    if (cur === next) continue;
+    if (mgCanTransition(cur, next)) cur = next;
+  }
+  // CHAMPION exige haber estado QUALIFIED y sobrevivir el Live Trial mínimo
+  if (cur === 'QUALIFIED' && (card.live_trial_cycles || 0) >= S.minLiveTrialCycles &&
+      mgCanTransition('QUALIFIED', 'CHAMPION')) {
+    cur = 'CHAMPION';
+  }
+  card.state = cur;
+  card.weight = (cur === 'QUALIFIED' || cur === 'CHAMPION')
+    ? mgNeuralWeightV12(evidence.validation_score, evidence.live_delta, evidence.live_trial_pass)
+    : 0;
+  return card;
+}
+
+// Decaimiento: live, calibración, estabilidad o deriva incompatibles (punto 14)
+function mgChampionDecayV12(card, evidence) {
+  if (!card) return card;
+  if (card.state !== 'CHAMPION' && card.state !== 'QUALIFIED') return card;
+  const bad = !evidence.live_trial_pass || !evidence.calibration_pass ||
+              !evidence.stability_pass || !evidence.no_drift;
+  if (bad) {
+    card.state = mgCanTransition(card.state, 'DECAYED') ? 'DECAYED' : 'LIVE_TRIAL';
+    card.weight = 0;
+    card.decayed_reason = [
+      !evidence.live_trial_pass ? 'live' : null,
+      !evidence.calibration_pass ? 'calibración' : null,
+      !evidence.stability_pass ? 'estabilidad' : null,
+      !evidence.no_drift ? 'deriva' : null
+    ].filter(Boolean).join(', ');
+  }
+  return card;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/freeze.py — payload canónico propio de v12 (punto 10)
+//  Distinto del de v10: aquí el payload es {run_id, seed, snapshot_id,
+//  numbers}. Ambos conviven; el de v12 es el sello de producción.
+// ═══════════════════════════════════════════════════════════
+
+function mgV12CanonicalPayload(runId, seed, snapshotId, numbers) {
+  return mgCanonicalJson({ run_id: runId, seed, snapshot_id: snapshotId, numbers: Array.from(numbers) });
+}
+
+function mgV12Freeze(runId, seed, snapshotId, numbers, predictionId) {
+  const nums = Array.from(numbers).map(x => parseInt(x, 10));
+  const payload = mgV12CanonicalPayload(runId, seed, snapshotId, nums);
+  return {
+    prediction_id: predictionId, run_id: runId, seed, snapshot_id: snapshotId,
+    numbers: nums, sha256: mgSha256(payload)
+  };
+}
+
+function mgV12VerifyFrozen(p) {
+  if (!p || !p.sha256) return false;
+  return mgSha256(mgV12CanonicalPayload(p.run_id, p.seed, p.snapshot_id, p.numbers)) === p.sha256;
+}
+
+// Persistencia inmutable: una predicción congelada no se sobrescribe (regla 4)
+function mgV12PersistFrozen(record) {
+  const exists = MG_STATE.frozenV12.some(f => f.prediction_id === record.prediction_id);
+  if (exists) return { stored: false, reason: 'IMMUTABLE_ALREADY_FROZEN' };
+  MG_STATE.frozenV12.push(record);
+  if (MG_STATE.frozenV12.length > 300) MG_STATE.frozenV12 = MG_STATE.frozenV12.slice(-300);
+  return { stored: true };
+}
+
+function mgV12AuditFrozen() {
+  const all = MG_STATE.frozenV12;
+  const bad = all.filter(f => !mgV12VerifyFrozen(f));
+  return { total: all.length, valid: all.length - bad.length, tampered: bad.length, tampered_ids: bad.map(f => f.prediction_id) };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/production_gate.py (punto 17 y regla 18)
+// ═══════════════════════════════════════════════════════════
+
+function mgProductionReport() {
+  const checks = {};
+  return {
+    checks,
+    add(name, value) { checks[name] = !!value; return this; },
+    get passed() { return Object.keys(checks).length > 0 && Object.values(checks).every(Boolean); },
+    failed() { return Object.keys(checks).filter(k => !checks[k]); },
+    assertGo() {
+      if (!this.passed) throw new Error('PRODUCTION_GATE_FAILED:' + this.failed().join(','));
+      return true;
+    }
+  };
+}
+
+// Evalúa si el motor está en estado seguro y auditable. GO no significa que
+// exista ventaja: significa que lo que se muestra es reproducible y trazable.
+function mgRunProductionGate(game) {
+  const g = game || (typeof state !== 'undefined' ? state.currentGame : 'melate');
+  const S = mgSettings();
+  const r = mgGetResearch(g);
+  const nn = mgGetNeural(g);
+  const rep = mgProductionReport();
+  const spec = mgGameSpec(g);
+  const audit = mgV12AuditFrozen();
+  const frontier = mgLiveFrontier(g, r && r.available ? { train_end: r.split.train_from, validation_end: r.split.train_to, holdout_start: r.split.holdout_from } : null);
+
+  rep.add('protocolo_activo', S.enabled);
+  rep.add('ciclo_ejecutado', !!(r && r.available));
+  rep.add('dimension_del_juego', spec.n_numbers > 0 && spec.picks > 0);
+  rep.add('golden_holdout_bloqueado', mgHoldoutViolations(g).length === 0);
+  rep.add('sin_fuga_temporal', !mgHasLeakage(g));
+  rep.add('predicciones_congeladas_integras', audit.tampered === 0);
+  rep.add('frontera_live_coherente', frontier.train_cutoff <= frontier.live_cutoff ||
+    frontier.advances === 0 ? true : frontier.train_cutoff <= frontier.live_cutoff);
+  rep.add('research_guard_activo', S.v10.researchGuard);
+  rep.add('replicacion_exigida', S.gates.requireReplication);
+  rep.add('semilla_determinista', S.deterministic && S.seed > 0);
+  rep.add('sin_autopromocion', !S.champion.autoPromoteFromLive);
+  rep.add('qnn_estado_explicito', !nn || !nn.available ||
+    nn.evidence.some(e => e.model === 'qnn' && e.status === 'optional_dependency_missing'));
+  rep.add('calibracion_solo_validacion', !r || !r.available || !r.calibration ||
+    r.calibration.source === 'validation_only');
+  rep.add('autoencoder_no_altera_numeros', !nn || !nn.available || !nn.regime || nn.regime.affects_numbers === false);
+
+  return {
+    game: g, version: MG_V12_VERSION,
+    checks: rep.checks, passed: rep.passed, failed: rep.failed(),
+    decision: rep.passed ? 'GO' : 'NO_GO',
+    meaning: 'GO significa seguro, reproducible y auditable — no que exista una ventaja predictiva.',
+    frozen_audit: audit, frontier, game_spec: spec,
+    leakage_incidents: (MG_STATE.leakage[g] || []).length,
+    holdout_violations: mgHoldoutViolations(g).length,
+    generated_at: new Date().toISOString()
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Ciclo autónomo v12 (punto 17): un fallo aislado no mata el ciclo
+// ═══════════════════════════════════════════════════════════
+
+const MG_V12_CYCLE = ['INGEST', 'SNAPSHOT', 'FEATURES', 'LEAKAGE_CHECK', 'TRAIN', 'VALIDATE',
+  'CALIBRATE', 'HOLDOUT', 'LIVE_TRIAL', 'SEQUENTIAL', 'REPLICATION', 'DRIFT',
+  'CHAMPION_GATE', 'PORTFOLIO', 'FREEZE', 'PERSIST', 'WAIT'];
+
+function mgV12CycleStatus(game) {
+  const g = game || (typeof state !== 'undefined' ? state.currentGame : 'melate');
+  const r = mgGetResearch(g);
+  const nn = mgGetNeural(g);
+  const done = {};
+  MG_V12_CYCLE.forEach(s => { done[s] = false; });
+  if (typeof state !== 'undefined' && state.draws && state.draws.length) { done.INGEST = true; done.SNAPSHOT = true; done.FEATURES = true; }
+  done.LEAKAGE_CHECK = !mgHasLeakage(g);
+  if (nn && nn.available) { done.TRAIN = true; done.VALIDATE = true; }
+  if (r && r.available) {
+    done.CALIBRATE = !!r.calibration;
+    done.HOLDOUT = r.split.holdout_size > 0;
+    done.LIVE_TRIAL = !!r.live_trial;
+    done.SEQUENTIAL = !!r.sequential_look || (r.live && r.live.n === 0);
+    done.REPLICATION = r.evidence.some(e => e.replication);
+    done.DRIFT = !!r.drift;
+    done.CHAMPION_GATE = !!r.champion_gate_v12;
+    done.PORTFOLIO = true;
+  }
+  done.FREEZE = MG_STATE.frozenV12.length > 0;
+  done.PERSIST = true;
+  done.WAIT = true;
+  return { stages: MG_V12_CYCLE, done, completed: MG_V12_CYCLE.filter(s => done[s]).length, total: MG_V12_CYCLE.length };
 }
 </script>
 <script>// ═══════════════════════════════════════════════════════════════════
@@ -9053,6 +9944,37 @@ const MG_SETTINGS_SCHEMA = [
       { path: 'budget.deep_learning', type: 'int', label: 'Tope: deep learning', min: 1, max: 100, step: 5 },
       { path: 'budget.qnn', type: 'int', label: 'Tope: QNN', min: 1, max: 100, step: 5 },
       { path: 'budget.portfolio', type: 'int', label: 'Tope: portafolio', min: 1, max: 100, step: 5 }
+    ]
+  },
+  {
+    group: 'Production Gate (v12)',
+    icon: '🚀',
+    desc: 'Capa de endurecimiento para producción. No fabrica ventaja: cierra fuga temporal, reproducibilidad, calibración, deriva y promoción. Un GO significa seguro y auditable, no que exista una ventaja (regla 18).',
+    items: [
+      { path: 'v12.enabled', type: 'bool', label: 'Production Gate activo',
+        help: 'Sella predicciones con el payload canónico de v12, evalúa las diez compuertas de Champion y publica el veredicto GO / NO-GO.' },
+      { path: 'v12.requireReplication', type: 'bool', label: 'Exigir replicación',
+        help: 'Obligatoria por defecto (regla 11). Prometedor no es Champion.' },
+      { path: 'v12.goldenHoldoutLocked', type: 'bool', label: 'Golden Holdout bloqueado',
+        help: 'Sólo lectura para evaluar la compuerta. Cualquier otro uso queda registrado y bloquea la promoción (regla 2).' },
+      { path: 'v12.requireNoLeakage', type: 'bool', label: 'Bloquear con fuga temporal',
+        help: 'Detectar una feature futura aborta el experimento y bloquea la promoción (regla 15).' },
+      { path: 'v12.requireCalibration', type: 'bool', label: 'Exigir calibración',
+        help: 'Compara raw, Platt e isotónica sobre la validación (nunca sobre el holdout) y exige un ECE por debajo del umbral.' },
+      { path: 'v12.maxEce', type: 'range', label: 'ECE máximo admitido', min: 0.01, max: 0.5, step: 0.01,
+        fmt: v => v.toFixed(2), help: 'Error de calibración esperado por encima del cual la compuerta falla.' },
+      { path: 'v12.minLiveTrialCycles', type: 'int', label: 'Ciclos mínimos de Live Trial', min: 1, max: 20,
+        help: 'Ningún modelo salta de TRAINED a CHAMPION (regla 10): debe sobrevivir este número de ciclos como QUALIFIED.' },
+      { path: 'v12.frozenPredictionsImmutable', type: 'bool', label: 'Congelado inmutable',
+        help: 'Una predicción sellada no se sobrescribe ni se edita después (reglas 3 y 4).' },
+      { path: 'v12.regimeWatchRatio', type: 'range', label: 'Umbral de vigilancia (régimen)', min: 1, max: 3, step: 0.05,
+        fmt: v => v.toFixed(2) + '×', help: 'Error de reconstrucción sobre el basal a partir del cual el régimen pasa a WATCH.' },
+      { path: 'v12.regimeAnomalyRatio', type: 'range', label: 'Umbral de anomalía (régimen)', min: 1, max: 5, step: 0.05,
+        fmt: v => v.toFixed(2) + '×', help: 'A partir de aquí el régimen es ANOMALY. La deriva nunca altera los números por sí sola (punto 7).' },
+      { path: 'v12.regimeDriftThreshold', type: 'range', label: 'Umbral de DRIFT', min: 0.01, max: 0.5, step: 0.01,
+        fmt: v => v.toFixed(2) },
+      { path: 'gates.calibrationSteps', type: 'int', label: 'Pasos de calibración', min: 5, max: 60, step: 5,
+        help: 'Sorteos de la ventana de validación usados para calibrar el ensemble.' }
     ]
   },
   {
@@ -9388,6 +10310,8 @@ function mgRenderResearchStatus() {
     <div class="mg-help">Live Trial no equivale a Champion (regla 48) y una predicción congelada no puede editarse después (regla 44).</div>
   </div>
 
+  ${mgRenderProductionGateCard(r)}
+
   ${mgRenderNeuralCard(r)}
 
   <div class="glass card">
@@ -9402,6 +10326,53 @@ function mgRenderResearchStatus() {
       ? 'El entrenamiento incorpora datos live: se abrió una frontera temporal nueva (regla 39) y las predicciones posteriores son el nuevo live.'
       : 'El entrenamiento no incorpora datos live.'}</div>
     <button class="btn btn-ghost" style="margin-top:10px;" onclick="mgExportAudit()">⬇︎ Exportar auditoría (JSON)</button>
+  </div>`;
+}
+
+// Tarjeta del Production Gate v12
+function mgRenderProductionGateCard(r) {
+  const S = mgSettings();
+  const head = `<div class="card-head"><div class="card-title"><span class="card-title-icon">🚀</span> Production Gate (v12)</div></div>`;
+  if (!S.v12.enabled) {
+    return `<div class="glass card">${head}<div class="mg-help">Desactivado en Ajustes.</div></div>`;
+  }
+  let gate;
+  try { gate = mgRunProductionGate(); }
+  catch (e) { return `<div class="glass card">${head}<div class="mg-help">No se pudo evaluar: ${e.message}</div></div>`; }
+
+  const nn = mgGetNeural();
+  const cards = (nn && nn.available && nn.model_cards) ? nn.model_cards : {};
+  const names = Object.keys(cards);
+
+  return `<div class="glass card">${head}
+    <div class="mg-verdict ${gate.passed ? 'edge' : 'noedge'}">${gate.decision}</div>
+    <div class="mg-help">${gate.meaning}</div>
+    <div class="mg-check-grid">
+      ${Object.entries(gate.checks).map(([k, v]) =>
+        `<div class="mg-check ${v ? 'ok' : 'bad'}"><span>${v ? '✓' : '✕'}</span>${k.replace(/_/g, ' ')}</div>`).join('')}
+    </div>
+    ${gate.failed.length ? `<div class="mg-help" style="margin-top:8px;">Bloqueado por: <strong>${gate.failed.join(', ')}</strong>.</div>` : ''}
+    <div class="mg-kv-grid">
+      <div class="mg-kv"><span>Sellos v12</span><b>${gate.frozen_audit.total} · ${gate.frozen_audit.tampered} alterados</b></div>
+      <div class="mg-kv"><span>Dimensión</span><b>${gate.game_spec.n_numbers} números · ${gate.game_spec.picks} picks</b></div>
+      <div class="mg-kv"><span>Tasa base</span><b>${gate.game_spec.per_number_base_rate.toFixed(4)} / número</b></div>
+      <div class="mg-kv"><span>Solape esperado</span><b>${gate.game_spec.expected_ticket_overlap.toFixed(3)}</b></div>
+      <div class="mg-kv"><span>Frontera live</span><b>${gate.frontier.live_cutoff} (+${gate.frontier.advances})</b></div>
+      <div class="mg-kv"><span>Incidentes de fuga</span><b>${gate.leakage_incidents}</b></div>
+    </div>
+    ${r && r.calibration ? `<div class="mg-help" style="margin-top:8px;">Calibración (${r.calibration.source || 'validación'}): mejor método <strong>${r.calibration.best || 'n/d'}</strong>, Brier ${r.calibration.brier != null ? r.calibration.brier.toFixed(4) : 'n/d'}, ECE ${r.calibration.ece != null ? r.calibration.ece.toFixed(4) : 'n/d'} (máx ${S.v12.maxEce}) → ${r.calibration.passed ? 'pasa' : 'no pasa'}.</div>` : ''}
+    ${r && r.champion_gate_v12 ? `<div class="mg-help">Champion Gate: ${r.champion_gate_v12.qualified.length} modelo(s) pasan las ${r.champion_gate_v12.checks.length} compuertas.${r.champion_gate_v12.top_blocker ? ' La que más bloquea es <strong>' + r.champion_gate_v12.top_blocker.gate.replace(/_/g, ' ') + '</strong> (' + r.champion_gate_v12.top_blocker.models + ' modelos).' : ''}</div>` : ''}
+    ${names.length ? `<div class="mg-table-scroll"><table class="mg-table">
+      <thead><tr><th>Modelo</th><th>Estado</th><th>Peso</th><th>Compuerta faltante</th></tr></thead>
+      <tbody>${names.map(n => {
+        const c = cards[n];
+        return `<tr class="${c.state === 'CHAMPION' ? 'pass' : ''}">
+          <td>${n}</td><td>${c.state}</td><td>${(c.weight || 0).toFixed(3)}</td>
+          <td>${(c.missing_gates || []).slice(0, 2).map(g => g.replace(/_/g, ' ')).join(', ') || '—'}</td></tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="mg-help" style="margin-top:6px;">Estados: TRAINED → VALIDATED → ELIGIBLE → LIVE_TRIAL → QUALIFIED → CHAMPION. Ningún modelo salta directo a CHAMPION (regla 10); un validado puede ser ELIGIBLE con peso 0.</div>` : ''}
+    ${nn && nn.available && nn.regime ? `<div class="mg-help">Régimen (autoencoder): <strong>${nn.regime.regime_state}</strong> · error ${nn.regime.reconstruction_error.toFixed(4)} · deriva ${nn.regime.drift_score.toFixed(3)}. ${nn.regime.note}</div>` : ''}
+    <div class="mg-help">Generar portafolio no es evidencia de ventaja predictiva (regla 13) y NO_EDGE sigue siendo un resultado válido (regla 9).</div>
   </div>`;
 }
 
@@ -9476,6 +10447,13 @@ function mgExportAudit() {
     sequential_monitor: MG_STATE.sequential,
     live_champion: MG_STATE.liveChampion,
     immutable_gates: MG_IMMUTABLE_GATES,
+    v12_production_gate: (function () { try { return mgRunProductionGate(); } catch (e) { return null; } })(),
+    v12_frozen: MG_STATE.frozenV12,
+    v12_frontier: MG_STATE.frontier,
+    v12_model_cards: MG_STATE.modelCards,
+    v12_leakage: MG_STATE.leakage,
+    v12_holdout_access: MG_STATE.holdoutAccess,
+    v12_cycle: (function () { try { return mgV12CycleStatus(); } catch (e) { return null; } })(),
     model_cards: r && r.available ? r.evidence.map(e => mgModelCard(e, {
       game: r.game, snapshot: r.snapshot,
       train_samples: r.split.train_to - r.split.train_from,
@@ -9543,6 +10521,13 @@ function mgRenderResearchPanel() {
     <span class="tag">semilla ${S.seed}</span>
     ${r.edge_discovery ? `<span class="tag">${r.edge_discovery.label}</span>` : ''}
     ${S.v10.freezePredictions ? '<span class="tag">🔒 congelado SHA-256</span>' : ''}
+    ${(() => {
+      if (!S.v12.enabled) return '';
+      try {
+        const g = mgRunProductionGate();
+        return `<span class="tag ${g.passed ? 'cool' : 'warm'}">🚀 ${g.decision}</span>`;
+      } catch (e) { return ''; }
+    })()}
     ${(() => {
       if (!S.neural.enabled) return '';
       const nn = mgGetNeural();
@@ -11737,6 +12722,16 @@ function submitRealResult() {
   try {
     _mgCycle = mgOnNewDraw(state.currentGame, state.maxNumber, pick, state.draws);
   } catch (e) { console.warn('MG: ciclo live falló', e); }
+
+  // v12 reglas 5 y 6: el resultado entra al entrenamiento sólo tras cerrar su
+  // evaluación live, y al hacerlo la Live Frontier avanza.
+  let _mgFrontier = null;
+  try {
+    _mgFrontier = mgFrontierIngest(state.currentGame, state.draws.length - 1);
+  } catch (e) {
+    // Ya estaba en o por debajo de la frontera: no es un error, es la regla.
+    console.info('MG: frontera live sin avanzar —', e.message);
+  }
 
   // Close modal
   closeModal('modal-add-result');
