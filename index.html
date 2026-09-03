@@ -2720,7 +2720,10 @@ body.light-mode .theme-toggle {
   display: flex; flex-direction: column; gap: 2px; min-width: 0;
 }
 .mg-kv span { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); }
-.mg-kv b { font-size: 12.5px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mg-kv b {
+  font-size: 12.5px; font-weight: 700; color: var(--text); line-height: 1.25;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
 
 .mg-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 8px; }
 .mg-table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 430px; }
@@ -2745,6 +2748,18 @@ body.light-mode .theme-toggle {
 .mg-strip-main b { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; letter-spacing: 0.4px; }
 .mg-strip-main span { font-size: 10.5px; color: var(--text-3); line-height: 1.4; }
 .mg-strip-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.mg-check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
+.mg-check {
+  display: flex; align-items: center; gap: 5px; font-size: 10px; line-height: 1.3;
+  padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.04); color: var(--text-3);
+}
+.mg-check span { font-weight: 700; flex-shrink: 0; }
+.mg-check.ok span { color: #30d158; }
+.mg-check.bad { background: rgba(255,55,95,0.12); color: #ff8fa3; }
+.mg-check.bad span { color: #ff375f; }
+body.light-mode .mg-check { background: rgba(0,0,0,0.04); }
+body.light-mode .mg-check.bad { background: rgba(255,55,95,0.12); color: #c9284a; }
+
 .mg-audit-note {
   font-size: 10px; color: var(--text-3); font-family: 'JetBrains Mono', monospace;
   margin-top: 6px; opacity: 0.75;
@@ -5770,7 +5785,7 @@ function generatePostDrawInsight(actualDraw, userTickets, models, weights, draws
 //     otro automáticamente.
 // ═══════════════════════════════════════════════════════════════════
 
-const MG_VERSION = '9.0';
+const MG_VERSION = '12.0.0';
 const MG_MODEL_KEYS = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum',
   'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak', 'zonePressure', 'pairLift'];
 
@@ -5784,11 +5799,15 @@ const MG_MODEL_FAMILY = {
 };
 const MG_FAMILIES = ['statistical', 'classical_ml', 'deep_learning', 'qnn', 'portfolio'];
 
-// Retadores que requieren backend (no disponibles en navegador)
+// Retadores neuronales. Desde v11 el MLP, la LSTM, el Transformer y el
+// Autoencoder entrenan dentro del navegador (ver el motor de redes); el
+// único que sigue necesitando backend es la QNN de worker/qnn.py.
 const MG_CHALLENGERS = [
-  { name: 'lstm', family: 'deep_learning', requires: 'torch' },
-  { name: 'transformer', family: 'deep_learning', requires: 'torch' },
-  { name: 'quantum_neural_network', family: 'qnn', requires: 'pennylane' }
+  { name: 'mlp', family: 'deep_learning', requires: null, runtime: 'browser' },
+  { name: 'lstm', family: 'deep_learning', requires: null, runtime: 'browser' },
+  { name: 'transformer', family: 'deep_learning', requires: null, runtime: 'browser' },
+  { name: 'autoencoder', family: 'deep_learning', requires: null, runtime: 'browser' },
+  { name: 'quantum_neural_network', family: 'qnn', requires: 'pennylane', runtime: 'backend' }
 ];
 
 const MG_HYPOTHESIS_CATALOG = [
@@ -5827,6 +5846,7 @@ const MG_DEFAULT_SETTINGS = {
     goldenHoldoutMinDraws: 20,
     goldenHoldoutMaxDraws: 60,
     goldenHoldoutMaxEval: 30,   // pasos evaluados dentro del holdout
+    calibrationSteps: 20,       // pasos de validación usados para calibrar (v12)
     requireReplication: true,
     replicationSeeds: [7, 17, 42, 101, 2026],
     replicationMinFraction: 0.6,
@@ -5881,6 +5901,64 @@ const MG_DEFAULT_SETTINGS = {
     trainingIncludesLive: true   // frontera temporal nueva (regla 39)
   },
 
+  // ── v10: endurecimiento live ──
+  v10: {
+    freezePredictions: true,    // hash SHA-256 antes del sorteo (regla 43)
+    sequentialMonitor: true,    // gasto de alfa por múltiples miradas (regla 45)
+    researchGuard: true,        // bloquea peticiones de relajar compuertas (regla 50)
+    liveTrialCycles: 5          // ciclos de Live Trial antes de considerar Champion (regla 48)
+  },
+
+  // ── v11: cerebro neuronal ──
+  neural: {
+    enabled: true,
+    applyToPredictions: true,
+    blendWeight: 0.35,          // cuánto pesa el meta-ensemble neuronal si califica
+    models: ['mlp', 'lstm', 'transformer', 'autoencoder'],
+    // v12 punto 7: el autoencoder queda fuera de la mezcla de probabilidades;
+    // sólo aporta error de reconstrucción, deriva y estado de régimen.
+    autoencoderRole: 'regime_only',
+    epochs: 6,
+    learningRate: 0.01,
+    trainSamples: 60,
+    valSamples: 20,
+    mlpHidden: [24, 12],
+    lstmHidden: 20,
+    transformerDim: 24,
+    latentDim: 8,
+    sequenceLength: 8,
+    evalWindow: 25,
+    holdoutEval: 15,
+    requireLiveDelta: true,     // fórmula original: peso = validation_score × live_delta
+    liveDeltaFloor: 0.05,       // piso usado sólo si requireLiveDelta está apagado
+    timeBudgetMs: 6000,
+    evalGraceMs: 4000,
+    architectureNote: {
+      mlp: 'Linear→ReLU→Dropout(.10) ×2 + salida sigmoide por número',
+      lstm: 'Celda LSTM (i,f,g,o) con dropout .10 + softmax sobre los números',
+      transformer: 'Proyección + atención escalada de 1 cabeza + FFN residual',
+      autoencoder: 'maxN→64→latente→64→maxN con sigmoide (reconstrucción)'
+    }
+  },
+
+  // ── v12: Production Gate ──
+  v12: {
+    enabled: true,
+    requireReplication: true,       // regla 11
+    goldenHoldoutLocked: true,      // regla 2
+    requireNoLeakage: true,         // regla 15
+    requireCalibration: true,       // regla 12
+    requireStability: true,
+    requireNoMaterialDrift: true,
+    frozenPredictionsImmutable: true,
+    minLiveTrialCycles: 3,          // ningún salto TRAINED → CHAMPION (regla 10)
+    maxEce: 0.10,                   // compuerta de calibración
+    regimeWatchRatio: 1.25,         // autoencoder: sólo régimen (punto 7)
+    regimeAnomalyRatio: 1.75,
+    regimeDriftThreshold: 0.05,
+    regimeBaselineError: 0.10
+  },
+
   // Reproducibilidad
   seed: 42,
   deterministic: true
@@ -5895,6 +5973,17 @@ const MG_STATE = {
   metaLearner: {},     // familia → { n, wins, replications }
   liveAudits: [],      // registros auditables de predicción live (v8 regla 30)
   lastDelta: {},       // por juego → delta live previo (regression guard)
+  neural: {},          // por juego → último ciclo del cerebro neuronal (v11)
+  neuralBusy: {},      // por juego → ciclo neuronal en vuelo
+  sequential: {},      // por juego → estado del monitor secuencial (v10)
+  liveChampion: {},    // por juego → Live Trial en curso (v10)
+  frozen: [],          // predicciones congeladas con hash (v10 regla 43)
+  frozenV12: [],       // sello de producción v12 (payload run_id/seed/snapshot/numbers)
+  frontier: {},        // por juego → Live Frontier (v12 reglas 5 y 6)
+  leakage: {},         // por juego → incidentes de fuga temporal
+  holdoutAccess: {},   // por juego → accesos al Golden Holdout y violaciones
+  modelCards: {},      // por juego → ficha y estado de cada modelo
+  snapshots: {},       // por juego → snapshots de predicción para el apilado temporal
   busy: false
 };
 
@@ -5991,6 +6080,14 @@ function mgLoadResearchState() {
     MG_STATE.metaLearner = d.metaLearner || {};
     MG_STATE.liveAudits = Array.isArray(d.liveAudits) ? d.liveAudits.slice(-300) : [];
     MG_STATE.lastDelta = d.lastDelta || {};
+    MG_STATE.sequential = d.sequential || {};
+    MG_STATE.liveChampion = d.liveChampion || {};
+    MG_STATE.frozen = Array.isArray(d.frozen) ? d.frozen.slice(-200) : [];
+    MG_STATE.frozenV12 = Array.isArray(d.frozenV12) ? d.frozenV12.slice(-300) : [];
+    MG_STATE.frontier = d.frontier || {};
+    MG_STATE.leakage = d.leakage || {};
+    MG_STATE.holdoutAccess = d.holdoutAccess || {};
+    MG_STATE.modelCards = d.modelCards || {};
   } catch (e) { console.warn('MG: estado de investigación ilegible', e); }
 }
 
@@ -6001,7 +6098,15 @@ function mgSaveResearchState() {
       championState: MG_STATE.championState,
       metaLearner: MG_STATE.metaLearner,
       liveAudits: MG_STATE.liveAudits.slice(-300),
-      lastDelta: MG_STATE.lastDelta
+      lastDelta: MG_STATE.lastDelta,
+      sequential: MG_STATE.sequential,
+      liveChampion: MG_STATE.liveChampion,
+      frozen: MG_STATE.frozen.slice(-200),
+      frozenV12: MG_STATE.frozenV12.slice(-300),
+      frontier: MG_STATE.frontier,
+      leakage: MG_STATE.leakage,
+      holdoutAccess: MG_STATE.holdoutAccess,
+      modelCards: MG_STATE.modelCards
     }));
   } catch (e) { /* cuota llena */ }
 }
@@ -6032,11 +6137,13 @@ function mgResetSettings() {
 function mgInvalidateResearch() {
   MG_STATE.runtime = {};
   MG_STATE.research = {};
+  MG_STATE.neural = {};
 }
 
 function mgSettingsFingerprint() {
   const s = mgSettings();
-  return mgHash(JSON.stringify([s.enabled, s.gates, s.ensemble, s.live.z, s.seed, s.drift, s.champion]));
+  return mgHash(JSON.stringify([s.enabled, s.gates, s.ensemble, s.live.z, s.seed,
+    s.drift, s.champion, s.v10, s.neural, s.v12]));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -7088,6 +7195,7 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
     };
   });
   const legacyWeights = evolveWeights(perfSummary, S.ensemble.temperature);
+  const legacyWeightsForCalibration = legacyWeights;
 
   // Mezcla evidencia validada + softmax histórico
   let weights, weightSource;
@@ -7105,6 +7213,25 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
   } else {
     weights = legacyWeights;
     weightSource = 'legacy_softmax_no_edge';
+  }
+
+  // ── v12: calibración del ensemble sobre la ventana de VALIDACIÓN ──
+  let calibrationReport = null;
+  try {
+    const cp = [], co = [];
+    for (let i = 0; i < train.actuals.length; i++) {
+      const actual = new Set(train.actuals[i]);
+      const t = from + i;
+      const probs = fuseModels(computeAllModels(draws.slice(Math.max(0, t - S.gates.maxTrainDraws), t), maxN),
+        legacyWeightsForCalibration, maxN);
+      for (let n = 1; n <= maxN; n++) { cp.push(Math.min(1, probs[n] * maxN / pick)); co.push(actual.has(n) ? 1 : 0); }
+      if (i >= S.gates.calibrationSteps - 1) break;
+    }
+    calibrationReport = cp.length ? mgCalibrationCompare(cp, co)
+      : { available: false, reason: 'NO_VALIDATION_SAMPLES', passed: false };
+  } catch (e) {
+    console.warn('MG: calibración del ensemble falló', e);
+    calibrationReport = { available: false, reason: String(e && e.message || e), passed: false };
   }
 
   // ── Deriva y punto de cambio ──
@@ -7184,6 +7311,73 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
     ? mgMonteCarloAudit(null, draws, maxN, pick, S.monteCarlo.universes, S.monteCarlo.seed)
     : { available: false };
 
+  // ── v10: clasificación de tres estados y admisión a Live Trial ──
+  evidence.forEach(e => {
+    e.classification = mgClassifyEdge({
+      stable: e.stability > S.gates.minStability, replicated: e.replicated,
+      q_value: e.q_value, permutation_p: e.permutation_p, holdout_delta: e.golden_holdout_delta
+    });
+    e.classification_label = MG_EDGE_LABEL[e.classification];
+    e.live_champion_admitted = mgChampionLiveAdmit({
+      q_value: e.q_value, permutation_p: e.permutation_p, holdout_delta: e.golden_holdout_delta,
+      replicated: e.replicated, stable: e.stability > S.gates.minStability
+    });
+  });
+
+  // Monitoreo secuencial: corrige el error por mirar el live en cada ciclo
+  let sequentialLook = null;
+  if (S.v10.sequentialMonitor && live.overall && live.n > 0) {
+    const st = MG_STATE.sequential[game] || { looks: 0 };
+    sequentialLook = mgSequentialMonitorUpdate(st, live.overall.delta, live.overall.se_delta);
+    MG_STATE.sequential[game] = sequentialLook.state;
+  }
+
+  // Live Trial: admitido ≠ Champion (regla 48)
+  let liveTrial = MG_STATE.liveChampion[game] || null;
+  const admitted = evidence.filter(e => e.live_champion_admitted).map(e => e.name);
+  if (admitted.length && (!liveTrial || !liveTrial.active)) {
+    liveTrial = { model: admitted[0], trial_cycles: 0, active: true, started_at: new Date().toISOString() };
+  }
+  if (liveTrial && liveTrial.active && live.n > 0) {
+    liveTrial = mgChampionLiveCycle(liveTrial, live.overall.delta, S.champion.minDelta);
+  }
+  MG_STATE.liveChampion[game] = liveTrial;
+
+  const researchGuard = S.v10.researchGuard ? mgValidateResearchRequest({}) : { allowed: true, violations: [] };
+
+  // ── v12: Champion Gate de diez compuertas para los modelos clásicos ──
+  const frontierV12 = mgLiveFrontier(game, { train_end: from, validation_end: cut, holdout_start: cut });
+  evidence.forEach(e => {
+    const ge = {
+      trained: true,
+      oos_pass: e.permutation_p < S.gates.alpha,
+      holdout_pass: (e.golden_holdout_delta || 0) > 0,
+      live_trial_pass: live.n > 0 && live.overall.delta > 0,
+      sequential_pass: sequentialLook ? sequentialLook.candidate : false,
+      fdr_pass: e.q_value < S.gates.alpha,
+      stability_pass: e.stability > S.gates.minStability,
+      calibration_pass: S.v12.requireCalibration ? !!(calibrationReport && calibrationReport.passed) : true,
+      no_drift: !drift.detected,
+      no_leakage: !mgHasLeakage(game),
+      replication_pass: e.replicated,
+      validation_score: e.score, live_delta: live.n > 0 ? live.overall.delta : 0
+    };
+    e.gate_evidence_v12 = ge;
+    e.qualifies_v12 = mgChampionQualifies(ge);
+    e.missing_gates_v12 = mgChampionMissingGates(ge);
+  });
+  const championGateV12 = {
+    qualified: evidence.filter(e => e.qualifies_v12).map(e => e.name),
+    checks: MG_CHAMPION_CHECKS.concat(S.v12.requireReplication ? ['replication_pass'] : []),
+    // la compuerta que más modelos bloquea
+    top_blocker: (() => {
+      const counts = {};
+      evidence.forEach(e => (e.missing_gates_v12 || []).forEach(g => { counts[g] = (counts[g] || 0) + 1; }));
+      const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      return ranked.length ? { gate: ranked[0][0], models: ranked[0][1] } : null;
+    })()
+  };
+
   const runId = mgRunId(game + snapshot);
   const t1 = mgNow();
 
@@ -7201,11 +7395,30 @@ function mgRunResearchCycle(game, draws, maxN, pick) {
     edge, champion: champState,
     drift, changePoint, diagnostics,
     live, lineage, ranked, monte_carlo: monteCarlo,
+    // v10
+    sequential_look: sequentialLook, live_trial: liveTrial, research_guard: researchGuard,
+    // v12
+    calibration: calibrationReport, champion_gate_v12: championGateV12,
+    frontier: frontierV12, game_spec: mgGameSpec(game),
+    leakage_incidents: (MG_STATE.leakage[game] || []).length,
+    holdout_violations: mgHoldoutViolations(game).length,
+    live_leaderboard: mgLiveLeaderboard(evidence.map(e => ({
+      model: e.name, replicated: e.replicated, stable: e.stability > S.gates.minStability,
+      q_value: e.q_value, live_delta: live.overall ? live.overall.delta : 0
+    }))),
+    edge_discovery: mgEdgeDiscovery({
+      stable: evidence.some(e => e.stability > S.gates.minStability),
+      replicated: evidence.some(e => e.replicated),
+      q_value: Math.min.apply(null, evidence.map(e => e.q_value)),
+      permutation_p: Math.min.apply(null, evidence.map(e => e.permutation_p)),
+      holdout_delta: Math.max.apply(null, evidence.map(e => e.golden_holdout_delta || 0))
+    }),
     budget, budgetValid, priorities,
     memory: mgMemorySummary(),
     hypotheses: mgGenerateHypotheses(game),
     challengers: MG_CHALLENGERS.map(c => ({ name: c.name, family: c.family,
-      status: 'optional_dependency_missing', requires: c.requires })),
+      status: c.runtime === 'browser' ? 'available' : 'optional_dependency_missing',
+      requires: c.requires, runtime: c.runtime })),
     plan_v7: mgPlanV7(true, edge.qualified),
     plan_v8: mgPlanContinuousCycle(true, driftL1.score),
     plan_v9: live.plan,
@@ -7304,7 +7517,10 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
   const S = mgSettings();
   const _r = mgGetResearch();
   const r = (_r && _r.available) ? _r : null;   // un ciclo incompleto no aporta veredicto
-  const adjusted = mgApplyEdgeAdjustment(probs, maxN);
+  // v11: el meta-ensemble neuronal sólo entra si alguna red pasó las compuertas
+  const neural = mgGetNeural();
+  const withNeural = mgApplyNeuralEnsemble(probs, maxN, neural);
+  const adjusted = mgApplyEdgeAdjustment(withNeural, maxN);
 
   if (!S.enabled || !S.applyToPredictions) {
     return generateTickets(adjusted, draws, maxN, count, mode, Date.now(), pick)
@@ -7337,7 +7553,30 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
       percentile_vs_random: mc.percentile_vs_random
     } : { available: false },
     live_status: (r && r.live && r.live.overall) ? r.live.overall.status : 'INSUFFICIENT_DATA',
-    drift: r ? { detected: r.drift.detected, score: r.drift.score } : null
+    drift: r ? { detected: r.drift.detected, score: r.drift.score } : null,
+    // v10
+    classification: r && r.edge_discovery ? r.edge_discovery.classification : null,
+    live_trial: r && r.live_trial ? { model: r.live_trial.model, cycles: r.live_trial.trial_cycles, active: r.live_trial.active } : null,
+    // v11
+    neural: (neural && neural.available) ? {
+      applied: neural.meta_ensemble.total > 0,
+      eligible: neural.meta_ensemble.eligible,
+      trained: neural.evidence.filter(e => e.available).map(e => e.model),
+      anomaly_score: neural.anomaly_score,
+      regime: neural.regime ? neural.regime.regime_state : null,
+      states: (neural.evidence || []).filter(e => e.available)
+        .map(e => e.model + ':' + (e.card_state || 'TRAINED')).join(',')
+    } : { applied: false, eligible: [], trained: [] },
+    // v12
+    v12: {
+      version: MG_V12_VERSION,
+      game_spec: mgGameSpec(typeof state !== 'undefined' ? state.currentGame : 'melate'),
+      champion_qualified: r && r.champion_gate_v12 ? r.champion_gate_v12.qualified : [],
+      top_blocker: r && r.champion_gate_v12 ? r.champion_gate_v12.top_blocker : null,
+      calibration_passed: !!(r && r.calibration && r.calibration.passed),
+      // regla 13: generar portafolio NO es evidencia de ventaja
+      portfolio_is_not_edge: true
+    }
   };
 
   // 5. Registro auditable de cada predicción live (v8 regla 30 / v9 regla 41)
@@ -7347,15 +7586,51 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
   ));
   mgRegisterAudits(audits);
 
-  return built.selected.map((c, i) => ({
-    ticket: c.numbers,
-    score: c.scoreObj || scoreTicket(c.numbers, adjusted, draws, maxN),
-    source: c.source,
-    research: Object.assign({}, researchMeta, {
-      audit_index: i,
-      candidate_mc: (mc.per_candidate && mc.per_candidate[i]) || null
-    })
-  }));
+  const game = (typeof state !== 'undefined') ? state.currentGame : 'melate';
+  const generatedAt = new Date().toISOString();
+  const frozen = [];
+
+  const cutoffDraw = draws.length - 1;      // último sorteo conocido
+  const targetDraw = draws.length;          // el sorteo que aún no ocurre
+  const out = built.selected.map((c, i) => {
+    // v10 regla 43 + v12 regla 3: la combinación se congela ANTES del sorteo
+    let freeze = null, sealV12 = null;
+    if (S.v10.freezePredictions) {
+      freeze = mgFreezePrediction(runId, game, MG_VERSION, generatedAt, snapshot, c.numbers);
+      frozen.push(freeze);
+    }
+    if (S.v12.enabled && S.v12.frozenPredictionsImmutable) {
+      const pid = mgSha256(runId + '|' + i + '|' + c.numbers.join(',')).slice(0, 24);
+      sealV12 = mgV12Freeze(runId, built.seed, snapshot, c.numbers, pid);
+      const stored = mgV12PersistFrozen(Object.assign({}, sealV12, {
+        game, cutoff_draw: cutoffDraw, target_draw: targetDraw, timestamp: generatedAt
+      }));
+      sealV12.stored = stored.stored;
+      // Apilado temporal: el corte debe preceder al objetivo (v12 punto 2)
+      try {
+        mgAssertTemporalOrder(cutoffDraw, targetDraw);
+      } catch (e) { mgRecordLeakage(game, e.message); }
+    }
+    return {
+      ticket: c.numbers,
+      score: c.scoreObj || scoreTicket(c.numbers, adjusted, draws, maxN),
+      source: c.source,
+      research: Object.assign({}, researchMeta, {
+        audit_index: i,
+        candidate_mc: (mc.per_candidate && mc.per_candidate[i]) || null,
+        frozen_hash: freeze ? freeze.payload_hash : null,
+        v12_prediction_id: sealV12 ? sealV12.prediction_id : null,
+        v12_sha256: sealV12 ? sealV12.sha256 : null,
+        cutoff_draw: cutoffDraw, target_draw: targetDraw,
+        generated_at: generatedAt
+      })
+    };
+  });
+  if (frozen.length) {
+    MG_STATE.frozen = MG_STATE.frozen.concat(frozen).slice(-200);
+    mgSaveResearchState();
+  }
+  return out;
 }
 
 // Aplica diversificación de portafolio a una lista ya construida
@@ -7386,12 +7661,26 @@ function mgAttachResearchMeta(tickets, draws) {
     snapshot, seed: mgSettings().seed
   };
   const audits = [];
+  const game = (typeof state !== 'undefined') ? state.currentGame : 'melate';
+  const generatedAt = new Date().toISOString();
+  const frozen = [];
   tickets.forEach(t => {
-    t.research = Object.assign({}, meta);
-    audits.push(mgCreateAudit(runId, (typeof state !== 'undefined' ? state.currentGame : 'melate'),
-      championName || 'ensemble', MG_VERSION, meta.seed, snapshot, t.ticket));
+    let freeze = null;
+    if (S.v10.freezePredictions) {
+      freeze = mgFreezePrediction(runId, game, MG_VERSION, generatedAt, snapshot, t.ticket);
+      frozen.push(freeze);
+    }
+    t.research = Object.assign({}, meta, {
+      frozen_hash: freeze ? freeze.payload_hash : null, generated_at: generatedAt
+    });
+    audits.push(mgCreateAudit(runId, game, championName || 'ensemble',
+      MG_VERSION, meta.seed, snapshot, t.ticket));
   });
   mgRegisterAudits(audits);
+  if (frozen.length) {
+    MG_STATE.frozen = MG_STATE.frozen.concat(frozen).slice(-200);
+    mgSaveResearchState();
+  }
   return tickets;
 }
 
@@ -7453,7 +7742,2068 @@ function mgResearchSummaryText(game) {
   const top = r.evidence.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 3);
   lines.push('Top evidencia: ' + top.map(e =>
     `${e.name} (Δ${e.score.toFixed(3)}, q=${e.q_value.toFixed(3)}, estab ${(e.stability * 100).toFixed(0)}%${e.base_rate_warning ? ', tasa base' : ''})`).join(' · '));
+  if (r.edge_discovery) {
+    lines.push(`Clasificación v10: ${r.edge_discovery.label} → ${r.edge_discovery.next_actions.slice(0, 3).join(', ')}`);
+  }
+  if (r.sequential_look) {
+    lines.push(`Monitor secuencial: mirada #${r.sequential_look.look}, alfa gastada ${r.sequential_look.alpha_spent.toFixed(4)}, frontera ${isFinite(r.sequential_look.boundary) ? r.sequential_look.boundary.toFixed(3) : '∞'} → ${r.sequential_look.candidate ? 'candidato' : 'dentro del ruido'}`);
+  }
+  if (r.live_trial) {
+    lines.push(`Live Trial: ${r.live_trial.model}, ciclo ${r.live_trial.trial_cycles}${r.live_trial.active ? '' : ' (detenido)'} — Live Trial no es Champion.`);
+  }
+  const nn = mgGetNeural(game);
+  if (nn && nn.available) {
+    const tr = nn.evidence.filter(e => e.available);
+    lines.push(`Cerebro neuronal v11: ${tr.length} red(es) entrenada(s) (${tr.map(e => e.model).join(', ')}), ${nn.meta_ensemble.eligible.length} elegible(s) para el meta-ensemble.`);
+    lines.push('Redes: ' + tr.map(e => `${e.model} val_loss ${e.best_val_loss != null ? e.best_val_loss.toFixed(4) : 'n/d'}, Δ${e.validation_score.toFixed(3)}, ${e.label}`).join(' · '));
+  } else if (nn) {
+    lines.push('Cerebro neuronal v11: ' + (nn.reason || 'no disponible'));
+  }
+  lines.push('Congelado: ' + MG_STATE.frozen.length + ' predicciones con hash SHA-256.');
   return lines.join('\n');
+}
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  MELATE GENIUS · NEURAL RESEARCH BRAIN v11 — motor de redes
+//  ------------------------------------------------------------------
+//  Port a JavaScript de v11/{mlp,lstm,transformer,autoencoder}.py.
+//  El paquete original construye las redes con PyTorch; aquí van
+//  implementadas sobre un mini-autodiff propio para que entrenen de
+//  verdad dentro del navegador, con las mismas familias, la misma
+//  regularización (dropout 0.10) y la misma semilla determinista.
+//
+//  Las dimensiones se reducen respecto al paquete (hidden 128 → 24-32,
+//  d_model 128 → 32, 3 capas → 1) porque el entrenamiento corre en el
+//  hilo principal de un teléfono. La reducción queda registrada en la
+//  ficha de cada experimento (campo `scaled_from`).
+//
+//  La QNN de worker/qnn.py necesita PennyLane y no tiene equivalente
+//  en el navegador: se reporta como optional_dependency_missing, igual
+//  que en engine/app/models/challengers.py.
+//
+//  Constitución v11: las redes son CHALLENGERS. Validation loss nunca
+//  basta para declarar edge (regla 56) y el meta-ensemble neuronal no
+//  da peso a modelos que fallen las compuertas (regla 57).
+// ═══════════════════════════════════════════════════════════════════
+
+const MG_NN_VERSION = '11.0';
+
+// ── Cinta de autodiff ────────────────────────────────────────────
+let MG_TAPE = null;          // null = modo inferencia (sin gradientes)
+
+function mgTapeStart() { MG_TAPE = []; }
+function mgTapeStop() { MG_TAPE = null; }
+
+function mgTensor(r, c, data) {
+  return { r, c, d: data || new Float64Array(r * c), g: null, param: false };
+}
+
+function mgParam(r, c, rng, scale) {
+  const t = mgTensor(r, c);
+  const s = (scale == null) ? Math.sqrt(2 / (r + c)) : scale;
+  for (let i = 0; i < t.d.length; i++) t.d[i] = (rng() * 2 - 1) * s;
+  t.param = true;
+  t.g = new Float64Array(r * c);
+  t.m = new Float64Array(r * c);
+  t.v = new Float64Array(r * c);
+  return t;
+}
+
+function mgNeedGrad(t) {
+  if (!t.g) t.g = new Float64Array(t.d.length);
+  return t.g;
+}
+
+function mgRecord(out, backward) {
+  if (MG_TAPE) MG_TAPE.push({ out, backward });
+  return out;
+}
+
+// ── Operaciones ──────────────────────────────────────────────────
+
+// [n,k] × [k,m] → [n,m]
+function mgMM(a, b) {
+  const out = mgTensor(a.r, b.c);
+  for (let i = 0; i < a.r; i++) {
+    for (let k = 0; k < a.c; k++) {
+      const av = a.d[i * a.c + k];
+      if (av === 0) continue;
+      const bo = k * b.c, oo = i * b.c;
+      for (let j = 0; j < b.c; j++) out.d[oo + j] += av * b.d[bo + j];
+    }
+  }
+  return mgRecord(out, () => {
+    const go = out.g;
+    if (!go) return;
+    const ga = mgNeedGrad(a), gb = mgNeedGrad(b);
+    for (let i = 0; i < a.r; i++) {
+      for (let k = 0; k < a.c; k++) {
+        let s = 0;
+        const bo = k * b.c, oo = i * b.c;
+        for (let j = 0; j < b.c; j++) s += go[oo + j] * b.d[bo + j];
+        ga[i * a.c + k] += s;
+      }
+    }
+    for (let i = 0; i < a.r; i++) {
+      const oo = i * b.c;
+      for (let k = 0; k < a.c; k++) {
+        const av = a.d[i * a.c + k];
+        if (av === 0) continue;
+        const bo = k * b.c;
+        for (let j = 0; j < b.c; j++) gb[bo + j] += av * go[oo + j];
+      }
+    }
+  });
+}
+
+// a [n,m] + bias [1,m]
+function mgAddBias(a, bias) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.r; i++)
+    for (let j = 0; j < a.c; j++) out.d[i * a.c + j] = a.d[i * a.c + j] + bias.d[j];
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a), gb = mgNeedGrad(bias);
+    for (let i = 0; i < a.r; i++)
+      for (let j = 0; j < a.c; j++) { ga[i * a.c + j] += go[i * a.c + j]; gb[j] += go[i * a.c + j]; }
+  });
+}
+
+function mgAdd(a, b) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.d.length; i++) out.d[i] = a.d[i] + b.d[i];
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a), gb = mgNeedGrad(b);
+    for (let i = 0; i < go.length; i++) { ga[i] += go[i]; gb[i] += go[i]; }
+  });
+}
+
+function mgMulEl(a, b) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.d.length; i++) out.d[i] = a.d[i] * b.d[i];
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a), gb = mgNeedGrad(b);
+    for (let i = 0; i < go.length; i++) { ga[i] += go[i] * b.d[i]; gb[i] += go[i] * a.d[i]; }
+  });
+}
+
+function mgRelu(a) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.d.length; i++) out.d[i] = a.d[i] > 0 ? a.d[i] : 0;
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let i = 0; i < go.length; i++) if (a.d[i] > 0) ga[i] += go[i];
+  });
+}
+
+function mgTanhT(a) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.d.length; i++) out.d[i] = Math.tanh(a.d[i]);
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let i = 0; i < go.length; i++) ga[i] += go[i] * (1 - out.d[i] * out.d[i]);
+  });
+}
+
+function mgSigmoidT(a) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.d.length; i++) out.d[i] = 1 / (1 + Math.exp(-Math.max(-40, Math.min(40, a.d[i]))));
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let i = 0; i < go.length; i++) ga[i] += go[i] * out.d[i] * (1 - out.d[i]);
+  });
+}
+
+// Dropout con máscara determinista (sólo en entrenamiento)
+function mgDropout(a, p, rng, training) {
+  if (!training || !p) return a;
+  const keep = 1 - p;
+  const mask = new Float64Array(a.d.length);
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.d.length; i++) {
+    mask[i] = rng() < keep ? 1 / keep : 0;
+    out.d[i] = a.d[i] * mask[i];
+  }
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let i = 0; i < go.length; i++) ga[i] += go[i] * mask[i];
+  });
+}
+
+// Softmax por filas
+function mgSoftmaxRows(a) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.r; i++) {
+    const o = i * a.c;
+    let mx = -Infinity;
+    for (let j = 0; j < a.c; j++) if (a.d[o + j] > mx) mx = a.d[o + j];
+    let s = 0;
+    for (let j = 0; j < a.c; j++) { const e = Math.exp(a.d[o + j] - mx); out.d[o + j] = e; s += e; }
+    for (let j = 0; j < a.c; j++) out.d[o + j] /= (s || 1);
+  }
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let i = 0; i < a.r; i++) {
+      const o = i * a.c;
+      let dot = 0;
+      for (let j = 0; j < a.c; j++) dot += go[o + j] * out.d[o + j];
+      for (let j = 0; j < a.c; j++) ga[o + j] += out.d[o + j] * (go[o + j] - dot);
+    }
+  });
+}
+
+function mgScaleT(a, s) {
+  const out = mgTensor(a.r, a.c);
+  for (let i = 0; i < a.d.length; i++) out.d[i] = a.d[i] * s;
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let i = 0; i < go.length; i++) ga[i] += go[i] * s;
+  });
+}
+
+function mgTransposeT(a) {
+  const out = mgTensor(a.c, a.r);
+  for (let i = 0; i < a.r; i++) for (let j = 0; j < a.c; j++) out.d[j * a.r + i] = a.d[i * a.c + j];
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let i = 0; i < a.r; i++) for (let j = 0; j < a.c; j++) ga[i * a.c + j] += go[j * a.r + i];
+  });
+}
+
+function mgConcatCols(list) {
+  const r = list[0].r;
+  let c = 0;
+  list.forEach(t => { c += t.c; });
+  const out = mgTensor(r, c);
+  let off = 0;
+  list.forEach(t => {
+    for (let i = 0; i < r; i++)
+      for (let j = 0; j < t.c; j++) out.d[i * c + off + j] = t.d[i * t.c + j];
+    off += t.c;
+  });
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    let o2 = 0;
+    list.forEach(t => {
+      const gt = mgNeedGrad(t);
+      for (let i = 0; i < r; i++)
+        for (let j = 0; j < t.c; j++) gt[i * t.c + j] += go[i * c + o2 + j];
+      o2 += t.c;
+    });
+  });
+}
+
+// Toma la última fila de una secuencia [T, d] → [1, d]
+function mgLastRow(a) {
+  const out = mgTensor(1, a.c);
+  const o = (a.r - 1) * a.c;
+  for (let j = 0; j < a.c; j++) out.d[j] = a.d[o + j];
+  return mgRecord(out, () => {
+    const go = out.g; if (!go) return;
+    const ga = mgNeedGrad(a);
+    for (let j = 0; j < a.c; j++) ga[o + j] += go[j];
+  });
+}
+
+// ── Pérdidas ─────────────────────────────────────────────────────
+
+// Entropía cruzada binaria sobre probabilidades ya sigmoidales
+function mgBCE(pred, target) {
+  let loss = 0;
+  const n = pred.d.length;
+  for (let i = 0; i < n; i++) {
+    const p = Math.min(1 - 1e-9, Math.max(1e-9, pred.d[i]));
+    loss += -(target[i] * Math.log(p) + (1 - target[i]) * Math.log(1 - p));
+  }
+  loss /= n;
+  const out = mgTensor(1, 1, Float64Array.of(loss));
+  return mgRecord(out, () => {
+    const gp = mgNeedGrad(pred);
+    const scale = (out.g ? out.g[0] : 1) / n;
+    for (let i = 0; i < n; i++) {
+      const p = Math.min(1 - 1e-9, Math.max(1e-9, pred.d[i]));
+      gp[i] += scale * (p - target[i]) / (p * (1 - p));
+    }
+  });
+}
+
+function mgMSE(pred, target) {
+  let loss = 0;
+  const n = pred.d.length;
+  for (let i = 0; i < n; i++) { const d = pred.d[i] - target[i]; loss += d * d; }
+  loss /= n;
+  const out = mgTensor(1, 1, Float64Array.of(loss));
+  return mgRecord(out, () => {
+    const gp = mgNeedGrad(pred);
+    const scale = (out.g ? out.g[0] : 1) * 2 / n;
+    for (let i = 0; i < n; i++) gp[i] += scale * (pred.d[i] - target[i]);
+  });
+}
+
+// Entropía cruzada multi-etiqueta sobre softmax: -Σ target·log(p)
+function mgCE(probs, target) {
+  let loss = 0;
+  const n = probs.d.length;
+  for (let i = 0; i < n; i++) {
+    if (target[i] > 0) loss += -target[i] * Math.log(Math.max(1e-12, probs.d[i]));
+  }
+  const out = mgTensor(1, 1, Float64Array.of(loss));
+  return mgRecord(out, () => {
+    const gp = mgNeedGrad(probs);
+    const scale = (out.g ? out.g[0] : 1);
+    for (let i = 0; i < n; i++) {
+      if (target[i] > 0) gp[i] += -scale * target[i] / Math.max(1e-12, probs.d[i]);
+    }
+  });
+}
+
+function mgBackward(lossNode) {
+  if (!MG_TAPE) return;
+  mgNeedGrad(lossNode)[0] = 1;
+  for (let i = MG_TAPE.length - 1; i >= 0; i--) MG_TAPE[i].backward();
+}
+
+// ── Optimizador Adam ─────────────────────────────────────────────
+function mgAdamStep(params, lr, t, beta1, beta2, eps) {
+  const b1 = beta1 == null ? 0.9 : beta1;
+  const b2 = beta2 == null ? 0.999 : beta2;
+  const e = eps == null ? 1e-8 : eps;
+  const c1 = 1 - Math.pow(b1, t), c2 = 1 - Math.pow(b2, t);
+  params.forEach(p => {
+    if (!p.g) return;
+    for (let i = 0; i < p.d.length; i++) {
+      const g = Math.max(-5, Math.min(5, p.g[i]));   // clip de gradiente
+      p.m[i] = b1 * p.m[i] + (1 - b1) * g;
+      p.v[i] = b2 * p.v[i] + (1 - b2) * g * g;
+      p.d[i] -= lr * (p.m[i] / c1) / (Math.sqrt(p.v[i] / c2) + e);
+      p.g[i] = 0;
+    }
+  });
+}
+
+function mgZeroGrads(params) { params.forEach(p => { if (p.g) p.g.fill(0); }); }
+
+// ═══════════════════════════════════════════════════════════
+//  v11/neural_features.py
+// ═══════════════════════════════════════════════════════════
+
+// draw_vector: one-hot del sorteo
+function mgDrawVector(draw, maxNumber) {
+  const v = new Float64Array(maxNumber);
+  for (const n of draw) if (n >= 1 && n <= maxNumber) v[n - 1] = 1;
+  return v;
+}
+
+// history_tensor: [timesteps, numbers]
+function mgHistoryTensor(draws, maxNumber) {
+  const t = mgTensor(draws.length, maxNumber);
+  draws.forEach((d, i) => {
+    const v = mgDrawVector(d, maxNumber);
+    for (let j = 0; j < maxNumber; j++) t.d[i * maxNumber + j] = v[j];
+  });
+  return t;
+}
+
+// build_multisource_features: historia + salidas de los modelos clásicos.
+// Regla 53: sólo features disponibles ANTES del sorteo objetivo.
+function mgBuildMultisourceFeatures(history, modelScores) {
+  if (!history || history.r == null) throw new Error('history debe ser [timesteps,numbers]');
+  const rows = [];
+  for (let i = 0; i < history.r; i++) rows.push(history.d.slice(i * history.c, (i + 1) * history.c));
+  (Array.isArray(modelScores[0]) ? modelScores : [modelScores]).forEach(m => rows.push(Float64Array.from(m)));
+  const out = mgTensor(rows.length, history.c);
+  rows.forEach((r, i) => { for (let j = 0; j < history.c; j++) out.d[i * history.c + j] = r[j] || 0; });
+  return out;
+}
+
+// Nombres explícitos de las features por número: el guardia de fuga los
+// inspecciona antes de entrenar (v12 punto 8).
+function mgPerNumberFeatureNames() {
+  return ['freq_last10', 'freq_last30', 'freq_all', 'gap_ratio',
+    'number_norm', 'parity', 'decade_norm'].concat(MG_MODEL_KEYS.map(k => 'model_score_' + k));
+}
+
+// Features por número para el MLP: historia agregada + salidas de los 13 modelos
+function mgPerNumberFeatures(train, maxN, allProbs) {
+  const n = train.length;
+  const f10 = new Float64Array(maxN + 1), f30 = new Float64Array(maxN + 1), fAll = new Float64Array(maxN + 1);
+  const last = new Int32Array(maxN + 1).fill(-1);
+  train.forEach((d, i) => d.forEach(x => {
+    if (x < 1 || x > maxN) return;
+    fAll[x]++;
+    if (i >= n - 10) f10[x]++;
+    if (i >= n - 30) f30[x]++;
+    last[x] = i;
+  }));
+  const w10 = Math.max(1, Math.min(10, n)), w30 = Math.max(1, Math.min(30, n));
+  const rows = [];
+  for (let num = 1; num <= maxN; num++) {
+    const gap = last[num] >= 0 ? (n - 1 - last[num]) : n;
+    const avgGap = n / Math.max(1, fAll[num]);
+    const row = [
+      f10[num] / w10, f30[num] / w30, fAll[num] / Math.max(1, n),
+      Math.min(3, gap / Math.max(1, avgGap)) / 3,
+      num / maxN, (num % 2), Math.floor((num - 1) / 10) / Math.ceil(maxN / 10)
+    ];
+    MG_MODEL_KEYS.forEach(k => {
+      const p = allProbs[k] ? (allProbs[k][num] || 0) : 0;
+      row.push(p * maxN);   // normalizado alrededor de 1
+    });
+    rows.push(row);
+  }
+  const cols = rows[0].length;
+  const t = mgTensor(maxN, cols);
+  rows.forEach((r, i) => { for (let j = 0; j < cols; j++) t.d[i * cols + j] = r[j]; });
+  return t;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v11/training_protocol.py — split temporal + LeakageGuard
+// ═══════════════════════════════════════════════════════════
+
+function mgMakeSplit(n, train, validation, holdout) {
+  const tr = train == null ? 0.60 : train;
+  const va = validation == null ? 0.15 : validation;
+  const ho = holdout == null ? 0.15 : holdout;
+  const a = Math.floor(n * tr);
+  const b = a + Math.floor(n * va);
+  const c = b + Math.floor(n * ho);
+  const s = { train_end: a, validation_end: b, holdout_start: c, live_start: c, n };
+  mgLeakageGuard(s);
+  return s;
+}
+
+// LeakageGuard.validate
+function mgLeakageGuard(s) {
+  if (!(0 <= s.train_end && s.train_end < s.validation_end &&
+        s.validation_end <= s.holdout_start && s.holdout_start <= s.live_start)) {
+    throw new Error('Fronteras temporales inválidas');
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Arquitecturas (v11/mlp.py, lstm.py, transformer.py, autoencoder.py)
+// ═══════════════════════════════════════════════════════════
+
+// MLPChallenger: Linear→ReLU→Dropout(.10) encadenados + salida
+function mgBuildMLP(inputDim, hidden, rng) {
+  const layers = [];
+  let d = inputDim;
+  hidden.forEach(h => { layers.push({ W: mgParam(d, h, rng), b: mgParam(1, h, rng, 0) }); d = h; });
+  const out = { W: mgParam(d, 1, rng), b: mgParam(1, 1, rng, 0) };
+  const params = [];
+  layers.forEach(l => params.push(l.W, l.b));
+  params.push(out.W, out.b);
+  return {
+    name: 'mlp', params, hidden, inputDim,
+    forward(x, training, drng) {
+      let h = x;
+      layers.forEach(l => {
+        h = mgRelu(mgAddBias(mgMM(h, l.W), l.b));
+        h = mgDropout(h, 0.10, drng, training);
+      });
+      return mgSigmoidT(mgAddBias(mgMM(h, out.W), out.b));
+    }
+  };
+}
+
+// LSTMChallenger: celda LSTM real (i, f, g, o) con dropout .10
+function mgBuildLSTM(inputDim, hidden, outDim, rng) {
+  const p = {
+    Wi: mgParam(inputDim, hidden * 4, rng), Ui: mgParam(hidden, hidden * 4, rng),
+    bi: mgParam(1, hidden * 4, rng, 0),
+    Wo: mgParam(hidden, outDim, rng), bo: mgParam(1, outDim, rng, 0)
+  };
+  const params = [p.Wi, p.Ui, p.bi, p.Wo, p.bo];
+  return {
+    name: 'lstm', params, hidden, inputDim,
+    // seq: [T, inputDim] → probabilidades [1, outDim]
+    forward(seq, training, drng) {
+      let h = mgTensor(1, hidden), c = mgTensor(1, hidden);
+      for (let t = 0; t < seq.r; t++) {
+        const xt = mgTensor(1, seq.c, seq.d.slice(t * seq.c, (t + 1) * seq.c));
+        const z = mgAddBias(mgAdd(mgMM(xt, p.Wi), mgMM(h, p.Ui)), p.bi);
+        // Trocea las 4 compuertas
+        const gate = k => {
+          const g = mgTensor(1, hidden);
+          for (let j = 0; j < hidden; j++) g.d[j] = z.d[k * hidden + j];
+          return mgRecord(g, () => {
+            const gg = g.g; if (!gg) return;
+            const gz = mgNeedGrad(z);
+            for (let j = 0; j < hidden; j++) gz[k * hidden + j] += gg[j];
+          });
+        };
+        const i = mgSigmoidT(gate(0)), f = mgSigmoidT(gate(1));
+        const gC = mgTanhT(gate(2)), o = mgSigmoidT(gate(3));
+        c = mgAdd(mgMulEl(f, c), mgMulEl(i, gC));
+        h = mgMulEl(o, mgTanhT(c));
+        h = mgDropout(h, 0.10, drng, training);
+      }
+      return mgSoftmaxRows(mgAddBias(mgMM(h, p.Wo), p.bo));
+    }
+  };
+}
+
+// TransformerChallenger: proyección + atención de producto punto escalado
+function mgBuildTransformer(inputDim, dModel, outDim, rng) {
+  const p = {
+    Wp: mgParam(inputDim, dModel, rng), bp: mgParam(1, dModel, rng, 0),
+    Wq: mgParam(dModel, dModel, rng), Wk: mgParam(dModel, dModel, rng), Wv: mgParam(dModel, dModel, rng),
+    W1: mgParam(dModel, dModel * 2, rng), b1: mgParam(1, dModel * 2, rng, 0),
+    W2: mgParam(dModel * 2, dModel, rng), b2: mgParam(1, dModel, rng, 0),
+    Wo: mgParam(dModel, outDim, rng), bo: mgParam(1, outDim, rng, 0)
+  };
+  const params = Object.values(p);
+  return {
+    name: 'transformer', params, dModel, inputDim,
+    forward(seq, training, drng) {
+      const x = mgAddBias(mgMM(seq, p.Wp), p.bp);          // [T, d]
+      const q = mgMM(x, p.Wq), k = mgMM(x, p.Wk), v = mgMM(x, p.Wv);
+      const scores = mgScaleT(mgMM(q, mgTransposeT(k)), 1 / Math.sqrt(dModel));
+      const attn = mgSoftmaxRows(scores);                   // [T, T]
+      let h = mgAdd(x, mgMM(attn, v));                      // conexión residual
+      h = mgDropout(h, 0.10, drng, training);
+      const ff = mgAddBias(mgMM(mgRelu(mgAddBias(mgMM(h, p.W1), p.b1)), p.W2), p.b2);
+      h = mgAdd(h, ff);
+      return mgSoftmaxRows(mgAddBias(mgMM(mgLastRow(h), p.Wo), p.bo));
+    }
+  };
+}
+
+// AnomalyAutoencoder: maxN→64→latent→64→maxN con sigmoide final
+function mgBuildAutoencoder(inputDim, latent, rng) {
+  const mid = Math.max(16, Math.min(64, inputDim));
+  const p = {
+    W1: mgParam(inputDim, mid, rng), b1: mgParam(1, mid, rng, 0),
+    W2: mgParam(mid, latent, rng), b2: mgParam(1, latent, rng, 0),
+    W3: mgParam(latent, mid, rng), b3: mgParam(1, mid, rng, 0),
+    W4: mgParam(mid, inputDim, rng), b4: mgParam(1, inputDim, rng, 0)
+  };
+  const params = Object.values(p);
+  return {
+    name: 'autoencoder', params, latent, inputDim,
+    forward(x) {
+      const h1 = mgRelu(mgAddBias(mgMM(x, p.W1), p.b1));
+      const z = mgRelu(mgAddBias(mgMM(h1, p.W2), p.b2));
+      const h2 = mgRelu(mgAddBias(mgMM(z, p.W3), p.b3));
+      return mgSigmoidT(mgAddBias(mgMM(h2, p.W4), p.b4));
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v11/neural_trainer.py
+// ═══════════════════════════════════════════════════════════
+
+// metric_warning: media indistinguible del baseline
+function mgNeuralBaseRateWarning(meanHits, baseline, tol) {
+  return Math.abs(meanHits - baseline) <= (tol == null ? 0.05 : tol);
+}
+
+function mgProbsFromScores(scores, maxN) {
+  const p = new Array(maxN + 1).fill(0);
+  let s = 0;
+  for (let n = 1; n <= maxN; n++) { const v = Math.max(1e-9, scores[n - 1] || 0); p[n] = v; s += v; }
+  for (let n = 1; n <= maxN; n++) p[n] /= (s || 1);
+  return p;
+}
+
+function mgTopKFromProbs(probs, maxN, k) {
+  const order = [];
+  for (let n = 1; n <= maxN; n++) order.push({ n, p: probs[n] || 0 });
+  order.sort((a, b) => b.p - a.p);
+  return order.slice(0, k).map(x => x.n);
+}
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  MELATE GENIUS · v10 (Live Hardening) + v11 (Neural Research Brain)
+//  ------------------------------------------------------------------
+//  v10: predicciones congeladas con SHA-256, monitoreo secuencial con
+//       gasto de alfa, detector de edge de tres estados, Champion Live
+//       Gate, Research Guard y leaderboard live.
+//  v11: cerebro neuronal — features multi-fuente, split temporal con
+//       LeakageGuard, MLP/LSTM/Transformer/Autoencoder entrenados en el
+//       navegador y meta-ensemble neuronal sujeto a las compuertas.
+// ═══════════════════════════════════════════════════════════════════
+
+const MG_V10_VERSION = '10.0';
+const MG_V11_VERSION = '11.0';
+
+// ═══════════════════════════════════════════════════════════
+//  SHA-256 síncrono (v10 exige hash antes del sorteo)
+// ═══════════════════════════════════════════════════════════
+
+const MG_SHA_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+]);
+
+function mgSha256(str) {
+  // UTF-8
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    let cp = str.codePointAt(i);
+    if (cp > 0xffff) i++;
+    if (cp < 0x80) bytes.push(cp);
+    else if (cp < 0x800) bytes.push(0xc0 | (cp >> 6), 0x80 | (cp & 63));
+    else if (cp < 0x10000) bytes.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    else bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+  }
+  const bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  for (let i = 7; i >= 0; i--) bytes.push(Math.floor(bitLen / Math.pow(2, i * 8)) & 0xff);
+
+  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const w = new Uint32Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+
+  for (let off = 0; off < bytes.length; off += 64) {
+    for (let i = 0; i < 16; i++) {
+      w[i] = (bytes[off + i * 4] << 24) | (bytes[off + i * 4 + 1] << 16) |
+             (bytes[off + i * 4 + 2] << 8) | bytes[off + i * 4 + 3];
+    }
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + MG_SHA_K[i] + w[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+  let out = '';
+  for (let i = 0; i < 8; i++) out += ('00000000' + H[i].toString(16)).slice(-8);
+  return out;
+}
+
+// JSON canónico equivalente a json.dumps(sort_keys=True, separators=(",",":")).
+// `undefined` se omite en objetos y se serializa como null en arrays, igual que
+// JSON.stringify: sin esto, un campo ausente en el manifiesto rompía el hash.
+function mgCanonicalJson(v) {
+  if (v === undefined || v === null) return 'null';
+  if (typeof v === 'number') return isFinite(v) ? JSON.stringify(v) : 'null';
+  if (typeof v === 'boolean' || typeof v === 'string') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(mgCanonicalJson).join(',') + ']';
+  if (typeof v !== 'object') return 'null';
+  const keys = Object.keys(v).filter(k => v[k] !== undefined).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + mgCanonicalJson(v[k])).join(',') + '}';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v10/frozen_prediction.py
+// ═══════════════════════════════════════════════════════════
+
+function mgFreezePrediction(runId, game, modelVersion, generatedAt, dataSnapshot, numbers) {
+  const nums = numbers.map(x => parseInt(x, 10)).sort((a, b) => a - b);
+  const payload = {
+    run_id: runId, game, model_version: modelVersion,
+    generated_at: generatedAt, data_snapshot: dataSnapshot, numbers: nums
+  };
+  return Object.assign({}, payload, { payload_hash: mgSha256(mgCanonicalJson(payload)) });
+}
+
+function mgVerifyFrozen(p) {
+  if (!p || !p.payload_hash) return false;
+  const payload = {
+    run_id: p.run_id, game: p.game, model_version: p.model_version,
+    generated_at: p.generated_at, data_snapshot: p.data_snapshot, numbers: p.numbers
+  };
+  return mgSha256(mgCanonicalJson(payload)) === p.payload_hash;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v10/sequential_monitor.py — gasto de alfa por múltiples miradas
+// ═══════════════════════════════════════════════════════════
+
+function mgSequentialMonitorUpdate(stateObj, delta, se, alpha) {
+  const a0 = alpha == null ? mgSettings().gates.alpha : alpha;
+  const st = stateObj || { looks: 0 };
+  st.looks += 1;
+  if (!(se > 0) || !isFinite(se)) {
+    return { look: st.looks, alpha_spent: a0, candidate: delta > 0, boundary: Infinity, state: st };
+  }
+  const a = a0 / Math.max(1, st.looks);
+  const z = a >= 0.05 ? 1.96 : Math.sqrt(2 * Math.log(1 / a));
+  const b = z * se;
+  return { look: st.looks, alpha_spent: a, boundary: b, candidate: delta > b, z, state: st };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v10/edge_detector.py — racha ≠ anomalía ≠ edge (regla 46)
+// ═══════════════════════════════════════════════════════════
+
+function mgClassifyEdge(e) {
+  const alpha = mgSettings().gates.alpha;
+  if (!e.stable || !e.replicated) return 'RACHA_O_INESTABILIDAD';
+  if ((e.q_value != null ? e.q_value : 1) >= alpha ||
+      (e.permutation_p != null ? e.permutation_p : 1) >= alpha ||
+      (e.holdout_delta || 0) <= 0) return 'ANOMALIA_NO_CONFIRMADA';
+  return 'EDGE_CANDIDATE';
+}
+
+const MG_EDGE_LABEL = {
+  RACHA_O_INESTABILIDAD: 'Racha o inestabilidad',
+  ANOMALIA_NO_CONFIRMADA: 'Anomalía no confirmada',
+  EDGE_CANDIDATE: 'Candidato con ventaja'
+};
+
+// ═══════════════════════════════════════════════════════════
+//  v10/research_guard.py — bloquea relajar compuertas (regla 50)
+// ═══════════════════════════════════════════════════════════
+
+const MG_IMMUTABLE_GATES = {
+  alpha: 0.05, requires_bh: true, requires_permutation: true,
+  requires_golden_holdout: true, requires_replication: true, requires_stability: true
+};
+const MG_FORBIDDEN_REQUESTS = ['auto_promote', 'change_alpha', 'skip_bh',
+  'skip_golden_holdout', 'skip_permutation'];
+
+function mgValidateResearchRequest(request) {
+  const keys = Array.isArray(request) ? request : Object.keys(request || {});
+  const violations = MG_FORBIDDEN_REQUESTS.filter(f => keys.indexOf(f) >= 0).sort();
+  return { allowed: violations.length === 0, violations };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v10/champion_live.py — Live Trial no equivale a Champion (regla 48)
+// ═══════════════════════════════════════════════════════════
+
+function mgChampionLiveAdmit(e) {
+  const alpha = mgSettings().gates.alpha;
+  return (e.q_value != null ? e.q_value : 1) < alpha &&
+         (e.permutation_p != null ? e.permutation_p : 1) < alpha &&
+         (e.holdout_delta || 0) > 0 &&
+         !!e.replicated && !!e.stable;
+}
+
+function mgChampionLiveCycle(champ, liveDelta, minDelta) {
+  const c = champ || { model: null, trial_cycles: 0, active: true };
+  c.trial_cycles = (c.trial_cycles || 0) + 1;
+  if ((liveDelta == null ? 0 : liveDelta) < (minDelta == null ? 0 : minDelta)) c.active = false;
+  return c;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v10/live_leaderboard.py — el ranking no usa sólo delta live (regla 49)
+// ═══════════════════════════════════════════════════════════
+
+function mgLiveLeaderboard(rows) {
+  const key = r => [
+    r.replicated ? 1 : 0,
+    r.stable ? 1 : 0,
+    -(r.q_value != null ? r.q_value : 1),
+    (typeof r.live_delta === 'number' && isFinite(r.live_delta)) ? r.live_delta : -1e9
+  ];
+  return rows.slice().sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return kb[i] - ka[i];
+    return 0;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v10/edge_discovery.py
+// ═══════════════════════════════════════════════════════════
+
+function mgEdgeDiscovery(evidence, request) {
+  const classification = mgClassifyEdge(evidence);
+  return {
+    classification,
+    label: MG_EDGE_LABEL[classification],
+    research_guard: mgValidateResearchRequest(request || {}),
+    next_actions: mgEdgeNextActions(classification)
+  };
+}
+
+function mgEdgeNextActions(classification) {
+  if (classification === 'EDGE_CANDIDATE') return ['INDEPENDENT_REPLICATION', 'LIVE_TRIAL', 'CHAMPION_GATE'];
+  if (classification === 'ANOMALIA_NO_CONFIRMADA') return ['RECHECK_DATA_LINEAGE', 'REPEAT_OUT_OF_SAMPLE', 'KEEP_AS_CHALLENGER'];
+  return ['LOG_LIVE_RESULT', 'UPDATE_MEMORY', 'EXPLORE_NEW_HYPOTHESES'];
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v11/meta_ensemble.py — NeuralMetaEnsemble
+// ═══════════════════════════════════════════════════════════
+
+function mgNeuralEligible(e) {
+  const alpha = mgSettings().gates.alpha;
+  return (e.q_value != null ? e.q_value : 1) < alpha &&
+         (e.permutation_p != null ? e.permutation_p : 1) < alpha &&
+         (e.holdout_delta || 0) > 0 &&
+         !!e.replicated && !!e.stable && !e.base_rate_warning;
+}
+
+function mgNeuralMetaEnsembleWeights(evidence) {
+  const S = mgSettings().neural;
+  const w = {};
+  evidence.forEach(e => { w[e.model] = 0; });
+  const good = evidence.filter(mgNeuralEligible);
+  if (!good.length) return { weights: w, eligible: [], total: 0, reason: 'NO_ELIGIBLE_MODELS' };
+
+  // v11/meta_ensemble.py pondera con validation_score × live_delta. Mientras no
+  // exista historial live el producto es 0 y ninguna red pesa nunca: es la
+  // exigencia de evidencia live antes de dar peso (reglas 48 y 57).
+  // requireLiveDelta=false sustituye ese factor por un piso, de modo que una red
+  // que ya pasó TODAS las compuertas pueda ponderar sin esperar al live.
+  const floor = S.requireLiveDelta ? 0 : Math.max(1e-6, S.liveDeltaFloor);
+  const raw = {};
+  let total = 0;
+  good.forEach(e => {
+    // v12: ELIGIBILITY y WEIGHT son cosas distintas. Un modelo validado puede
+    // ser ELIGIBLE con peso 0 hasta que exista evidencia live suficiente.
+    const ld = Math.max(floor, Math.max(0, e.live_delta || 0));
+    const liveOk = (e.live_n || 0) > 0 && (e.live_delta || 0) > 0;
+    const v = mgNeuralWeightV12(Math.max(0, e.validation_score || 0), ld,
+      liveOk || !S.requireLiveDelta, S.requireLiveDelta);
+    raw[e.model] = v; total += v;
+  });
+  if (total <= 0) {
+    return { weights: w, eligible: good.map(g => g.model), total: 0,
+      reason: 'AWAITING_LIVE_EVIDENCE' };
+  }
+  evidence.forEach(e => { w[e.model] = (raw[e.model] || 0) / total; });
+  return { weights: w, eligible: good.map(g => g.model), total: 1, reason: 'APPLIED' };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v11/brain.py — NeuralResearchBrain.plan
+// ═══════════════════════════════════════════════════════════
+
+function mgNeuralBrainPlan(nSamples) {
+  return {
+    split: mgMakeSplit(nSamples),
+    models: ['mlp', 'lstm', 'transformer', 'autoencoder', 'qnn'],
+    rules: ['no_future_features', 'golden_holdout_untouched',
+      'live_boundary_is_frozen', 'promotion_requires_v10_gates']
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ENTRENAMIENTO DE LOS CHALLENGERS NEURONALES
+//  Cada red entrena SÓLO sobre [0, train_end) y elige época por
+//  validación en [train_end, validation_end). El Golden Holdout y el
+//  live nunca entran al entrenamiento (reglas 53 y 58).
+// ═══════════════════════════════════════════════════════════
+
+// Muestra un paso de entrenamiento: features previas al sorteo t, objetivo = sorteo t
+function mgNeuralSample(draws, t, maxN, lookback, cache) {
+  const from = Math.max(0, t - (cache && cache.maxTrain ? cache.maxTrain : 800));
+  const train = draws.slice(from, t);
+  const target = mgDrawVector(draws[t], maxN);
+  return { train, target, seq: draws.slice(Math.max(0, t - lookback), t) };
+}
+
+function mgTrainMLP(draws, split, maxN, pick, cfg, deadline) {
+  const rng = mgLcg(cfg.seed);
+  const idx = [];
+  for (let t = Math.max(30, split.train_end - cfg.samples); t < split.train_end; t++) idx.push(t);
+  const vIdx = [];
+  for (let t = Math.max(split.train_end, split.validation_end - cfg.valSamples); t < split.validation_end; t++) vIdx.push(t);
+  if (!idx.length || !vIdx.length) return null;
+
+  // Pre-cómputo de features (caro): una pasada por muestra
+  const build = t => {
+    const train = draws.slice(Math.max(0, t - cfg.lookbackHistory), t);
+    const probs = computeAllModels(train, maxN);
+    return { x: mgPerNumberFeatures(train, maxN, probs), y: mgDrawVector(draws[t], maxN) };
+  };
+  const trainSet = [], valSet = [];
+  for (const t of idx) { if (mgNow() > deadline) break; trainSet.push(build(t)); }
+  for (const t of vIdx) { if (mgNow() > deadline) break; valSet.push(build(t)); }
+  if (!trainSet.length || !valSet.length) return null;
+
+  const inputDim = trainSet[0].x.c;
+  const net = mgBuildMLP(inputDim, cfg.hidden, rng);
+  const drng = mgLcg(cfg.seed + 1);
+  let best = { loss: Infinity, weights: null, epoch: 0 };
+  let step = 0;
+
+  for (let ep = 1; ep <= cfg.epochs; ep++) {
+    for (const s of trainSet) {
+      if (mgNow() > deadline) { ep = cfg.epochs + 1; break; }
+      mgTapeStart();
+      mgZeroGrads(net.params);
+      const out = net.forward(s.x, true, drng);
+      const loss = mgBCE(out, s.y);
+      mgBackward(loss);
+      mgTapeStop();
+      mgAdamStep(net.params, cfg.lr, ++step);
+    }
+    // Validación
+    mgTapeStop();
+    let vl = 0;
+    valSet.forEach(s => {
+      const out = net.forward(s.x, false, drng);
+      let l = 0;
+      for (let i = 0; i < out.d.length; i++) {
+        const p = Math.min(1 - 1e-9, Math.max(1e-9, out.d[i]));
+        l += -(s.y[i] * Math.log(p) + (1 - s.y[i]) * Math.log(1 - p));
+      }
+      vl += l / out.d.length;
+    });
+    vl /= valSet.length;
+    if (vl < best.loss) best = { loss: vl, weights: net.params.map(p => p.d.slice()), epoch: ep };
+    if (mgNow() > deadline) break;
+  }
+  if (best.weights) net.params.forEach((p, i) => { p.d.set(best.weights[i]); });
+
+  return {
+    net, best,
+    predict(train) {
+      const probs = computeAllModels(train, maxN);
+      const x = mgPerNumberFeatures(train, maxN, probs);
+      mgTapeStop();
+      const out = net.forward(x, false, drng);
+      return mgProbsFromScores(out.d, maxN);
+    }
+  };
+}
+
+function mgTrainSequenceNet(kind, draws, split, maxN, pick, cfg, deadline) {
+  const rng = mgLcg(cfg.seed + (kind === 'lstm' ? 7 : 17));
+  const L = cfg.lookbackSeq;
+  const net = kind === 'lstm'
+    ? mgBuildLSTM(maxN, cfg.lstmHidden, maxN, rng)
+    : mgBuildTransformer(maxN, cfg.dModel, maxN, rng);
+  const drng = mgLcg(cfg.seed + 3);
+
+  const idx = [];
+  for (let t = Math.max(L, split.train_end - cfg.samples); t < split.train_end; t++) idx.push(t);
+  const vIdx = [];
+  for (let t = Math.max(split.train_end, split.validation_end - cfg.valSamples); t < split.validation_end; t++) vIdx.push(t);
+  if (!idx.length || !vIdx.length) return null;
+
+  const seqOf = t => mgHistoryTensor(draws.slice(t - L, t), maxN);
+  let best = { loss: Infinity, weights: null, epoch: 0 };
+  let step = 0;
+
+  for (let ep = 1; ep <= cfg.epochs; ep++) {
+    for (const t of idx) {
+      if (mgNow() > deadline) { ep = cfg.epochs + 1; break; }
+      mgTapeStart();
+      mgZeroGrads(net.params);
+      const out = net.forward(seqOf(t), true, drng);
+      const loss = mgCE(out, mgDrawVector(draws[t], maxN));
+      mgBackward(loss);
+      mgTapeStop();
+      mgAdamStep(net.params, cfg.lr, ++step);
+    }
+    mgTapeStop();
+    let vl = 0;
+    vIdx.forEach(t => {
+      const out = net.forward(seqOf(t), false, drng);
+      const y = mgDrawVector(draws[t], maxN);
+      let l = 0;
+      for (let i = 0; i < out.d.length; i++) if (y[i] > 0) l += -Math.log(Math.max(1e-12, out.d[i]));
+      vl += l;
+    });
+    vl /= vIdx.length;
+    if (vl < best.loss) best = { loss: vl, weights: net.params.map(p => p.d.slice()), epoch: ep };
+    if (mgNow() > deadline) break;
+  }
+  if (best.weights) net.params.forEach((p, i) => { p.d.set(best.weights[i]); });
+
+  return {
+    net, best,
+    predict(train) {
+      if (train.length < L) return null;
+      mgTapeStop();
+      const out = net.forward(mgHistoryTensor(train.slice(-L), maxN), false, drng);
+      return mgProbsFromScores(out.d, maxN);
+    }
+  };
+}
+
+// Autoencoder: reconstruye el one-hot del sorteo; el error detecta anomalías
+// y la reconstrucción media sirve como score por número.
+function mgTrainAutoencoder(draws, split, maxN, cfg, deadline) {
+  const rng = mgLcg(cfg.seed + 23);
+  const net = mgBuildAutoencoder(maxN, cfg.latent, rng);
+  const idx = [];
+  for (let t = Math.max(0, split.train_end - cfg.samples); t < split.train_end; t++) idx.push(t);
+  const vIdx = [];
+  for (let t = Math.max(split.train_end, split.validation_end - cfg.valSamples); t < split.validation_end; t++) vIdx.push(t);
+  if (!idx.length || !vIdx.length) return null;
+
+  const vecOf = t => {
+    const x = mgTensor(1, maxN);
+    x.d.set(mgDrawVector(draws[t], maxN));
+    return x;
+  };
+  let best = { loss: Infinity, weights: null, epoch: 0 };
+  let step = 0;
+
+  for (let ep = 1; ep <= cfg.epochs; ep++) {
+    for (const t of idx) {
+      if (mgNow() > deadline) { ep = cfg.epochs + 1; break; }
+      mgTapeStart();
+      mgZeroGrads(net.params);
+      const x = vecOf(t);
+      const out = net.forward(x);
+      const loss = mgMSE(out, x.d);
+      mgBackward(loss);
+      mgTapeStop();
+      mgAdamStep(net.params, cfg.lr, ++step);
+    }
+    mgTapeStop();
+    let vl = 0;
+    vIdx.forEach(t => {
+      const x = vecOf(t);
+      const out = net.forward(x);
+      let l = 0;
+      for (let i = 0; i < out.d.length; i++) { const d = out.d[i] - x.d[i]; l += d * d; }
+      vl += l / out.d.length;
+    });
+    vl /= vIdx.length;
+    if (vl < best.loss) best = { loss: vl, weights: net.params.map(p => p.d.slice()), epoch: ep };
+    if (mgNow() > deadline) break;
+  }
+  if (best.weights) net.params.forEach((p, i) => { p.d.set(best.weights[i]); });
+
+  return {
+    net, best,
+    // Score por número: reconstrucción media de la ventana reciente
+    predict(train) {
+      mgTapeStop();
+      const win = train.slice(-Math.min(40, train.length));
+      const acc = new Float64Array(maxN);
+      win.forEach(d => {
+        const x = mgTensor(1, maxN);
+        x.d.set(mgDrawVector(d, maxN));
+        const out = net.forward(x);
+        for (let i = 0; i < maxN; i++) acc[i] += out.d[i];
+      });
+      for (let i = 0; i < maxN; i++) acc[i] /= Math.max(1, win.length);
+      return mgProbsFromScores(acc, maxN);
+    },
+    // Error de reconstrucción del último sorteo → señal de anomalía
+    anomaly(train) {
+      mgTapeStop();
+      const x = mgTensor(1, maxN);
+      x.d.set(mgDrawVector(train[train.length - 1], maxN));
+      const out = net.forward(x);
+      let e = 0;
+      for (let i = 0; i < maxN; i++) { const d = out.d[i] - x.d[i]; e += d * d; }
+      return e / maxN;
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CICLO NEURONAL COMPLETO
+// ═══════════════════════════════════════════════════════════
+
+function mgYield() { return new Promise(r => setTimeout(r, 0)); }
+
+async function mgRunNeuralCycle(game, draws, maxN, pick) {
+  const S = mgSettings();
+  const N = S.neural;
+  const t0 = mgNow();
+  if (!S.enabled || !N.enabled) {
+    return { available: false, reason: 'Cerebro neuronal desactivado en Ajustes.' };
+  }
+  if (draws.length < 300) {
+    return { available: false, reason: 'Histórico insuficiente para el split temporal 60/15/15.' };
+  }
+
+  const deadline = t0 + Math.max(500, N.timeBudgetMs);
+  const baseline = mgTheoreticalMean(maxN, pick);
+  const plan = mgNeuralBrainPlan(draws.length);
+  const split = plan.split;
+
+  // ── v12 LEAKAGE_CHECK: ninguna feature futura, y el corte precede al objetivo
+  try {
+    mgAssertNoFutureFields(mgPerNumberFeatureNames());
+    mgAssertTemporalOrder(split.train_end, split.train_end + 1);
+    mgAssertCutoff(split.train_end, split.holdout_start);
+  } catch (e) {
+    mgRecordLeakage(game, e.message);
+    return { available: false, reason: 'Fuga temporal detectada: ' + e.message + '. La promoción queda bloqueada.' };
+  }
+
+  const cfg = {
+    seed: S.seed,
+    epochs: N.epochs,
+    lr: N.learningRate,
+    samples: N.trainSamples,
+    hidden: N.mlpHidden.slice(),
+    lstmHidden: N.lstmHidden,
+    dModel: N.transformerDim,
+    latent: N.latentDim,
+    lookbackSeq: N.sequenceLength,
+    valSamples: N.valSamples,
+    lookbackHistory: S.gates.maxTrainDraws
+  };
+
+  const trained = {};
+  const order = N.models.filter(m => m !== 'qnn');
+  for (const kind of order) {
+    await mgYield();   // cede el hilo: cada red bloquea como mucho su propio turno
+    if (mgNow() > deadline) { trained[kind] = { skipped: 'BUDGET_EXHAUSTED' }; continue; }
+    try {
+      if (kind === 'mlp') trained.mlp = mgTrainMLP(draws, split, maxN, pick, cfg, deadline);
+      else if (kind === 'autoencoder') trained.autoencoder = mgTrainAutoencoder(draws, split, maxN, cfg, deadline);
+      else trained[kind] = mgTrainSequenceNet(kind, draws, split, maxN, pick, cfg, deadline);
+    } catch (e) {
+      console.warn('MG: entrenamiento de ' + kind + ' falló', e);
+      trained[kind] = { error: String(e && e.message || e) };
+    }
+  }
+
+  // ── Evaluación fuera de muestra con las MISMAS compuertas ──
+  const evidence = [];
+  const probsByModel = {};
+  const evalFrom = Math.max(split.validation_end, split.holdout_start - N.evalWindow);
+  const holdFrom = split.holdout_start;
+
+  for (const kind of order) {
+    await mgYield();
+    const m = trained[kind];
+    if (!m || !m.predict) {
+      evidence.push({
+        model: kind, status: m && m.skipped ? m.skipped : (m && m.error ? 'ERROR' : 'UNAVAILABLE'),
+        available: false, error: m && m.error || null
+      });
+      continue;
+    }
+
+    // Ventana de validación (antes del holdout) → backtest + permutación
+    const hits = [], topSets = [], actuals = [];
+    for (let t = evalFrom; t < holdFrom; t++) {
+      if (mgNow() > deadline + N.evalGraceMs) break;
+      const p = m.predict(draws.slice(Math.max(0, t - cfg.lookbackHistory), t));
+      if (!p) continue;
+      const top = mgTopKFromProbs(p, maxN, pick);
+      hits.push(mgOverlap(top, draws[t]));
+      topSets.push(top);
+      actuals.push(draws[t]);
+    }
+    // Golden Holdout, evaluado aparte y nunca usado para entrenar.
+    // El candado registra el acceso y sólo admite el propósito de compuerta.
+    try { mgHoldoutAccess(game, 'gate_evaluation'); }
+    catch (e) { mgRecordLeakage(game, e.message); }
+    const hHits = [];
+    for (let t = holdFrom; t < draws.length; t++) {
+      if (hHits.length >= N.holdoutEval || mgNow() > deadline + N.evalGraceMs) break;
+      const p = m.predict(draws.slice(Math.max(0, t - cfg.lookbackHistory), t));
+      if (!p) continue;
+      hHits.push(mgOverlap(mgTopKFromProbs(p, maxN, pick), draws[t]));
+    }
+
+    if (!hits.length) {
+      evidence.push({ model: kind, status: 'NO_EVALUATION', available: false });
+      continue;
+    }
+
+    const backtest = mgSummarizeBacktest(hits, maxN, pick);
+    const perm = mgPermutationTest(topSets, actuals, Math.min(S.gates.permutationReps, 150), S.seed);
+    const seq = mgSequentialAnalyze(hits, baseline);
+    const stability = mgStability(hits, baseline);
+    const rep = mgReplicationCheck(hits, baseline, S.gates.replicationSeeds);
+    const ho = hHits.length ? mgSummarizeBacktest(hHits, maxN, pick) : null;
+
+    // v12 punto 7: el autoencoder NO alimenta la mezcla de probabilidades.
+    if (kind !== 'autoencoder' || N.autoencoderRole !== 'regime_only') {
+      probsByModel[kind] = m.predict(draws.slice(-cfg.lookbackHistory));
+    }
+
+    evidence.push({
+      model: kind, available: true, status: 'TRAINED',
+      architecture: N.architectureNote[kind] || '',
+      epochs_best: m.best ? m.best.epoch : null,
+      best_val_loss: m.best ? m.best.loss : null,
+      train_samples: split.train_end,
+      validation_samples: split.validation_end - split.train_end,
+      backtest, top_k_hits: backtest.mean_hits,
+      validation_score: Math.max(0, backtest.delta_vs_random),
+      permutation: perm, permutation_p: perm.p,
+      sequential: seq, stability,
+      replication: rep, replicated: rep.replicated,
+      holdout_delta: ho ? ho.delta_vs_random : 0,
+      holdout_score: ho ? ho.mean_hits : null,
+      // regla 56: validation loss nunca basta; se marca la tasa base
+      base_rate_warning: mgNeuralBaseRateWarning(backtest.mean_hits, baseline) || seq.ci_low <= 0,
+      live_delta: 0,
+      seed: S.seed
+    });
+  }
+
+  // QNN: sin equivalente en el navegador (worker/qnn.py necesita PennyLane)
+  evidence.push({
+    model: 'qnn', available: false, status: 'optional_dependency_missing',
+    requires: 'pennylane', architecture: 'Circuito variacional de 6 qubits (worker/qnn.py)'
+  });
+
+  // ── BH sobre los neuronales evaluados ──
+  const evaluated = evidence.filter(e => e.available);
+  const qs = S.gates.bhCorrection
+    ? mgBenjaminiHochberg(evaluated.map(e => e.permutation_p))
+    : evaluated.map(e => e.permutation_p);
+  evaluated.forEach((e, i) => { e.q_value = qs[i]; });
+
+  // ── Live delta por modelo neuronal (regla 57 usa live_delta) ──
+  const live = mgComputeLive(game, maxN, pick);
+  const rCycle = mgGetResearch(game);
+  const driftDecisionForNeural = (rCycle && rCycle.available) ? rCycle.drift : { detected: false, score: 0 };
+  evaluated.forEach(e => {
+    const rec = (live.models || []).find(m => m.model === e.model);
+    e.live_delta = rec ? rec.delta : 0;
+    e.live_n = rec ? rec.n : 0;
+  });
+
+  // ── Meta-ensemble neuronal ──
+  const meta = mgNeuralMetaEnsembleWeights(evaluated.map(e => ({
+    model: e.model, validation_score: e.validation_score, live_delta: e.live_delta,
+    q_value: e.q_value, permutation_p: e.permutation_p, holdout_delta: e.holdout_delta,
+    replicated: e.replicated, stable: e.stability > S.gates.minStability,
+    base_rate_warning: e.base_rate_warning
+  })));
+
+  // ── Clasificación v10 por modelo ──
+  evaluated.forEach(e => {
+    e.classification = mgClassifyEdge({
+      stable: e.stability > S.gates.minStability, replicated: e.replicated,
+      q_value: e.q_value, permutation_p: e.permutation_p, holdout_delta: e.holdout_delta
+    });
+    e.label = MG_EDGE_LABEL[e.classification];
+    e.live_champion_admitted = mgChampionLiveAdmit({
+      q_value: e.q_value, permutation_p: e.permutation_p, holdout_delta: e.holdout_delta,
+      replicated: e.replicated, stable: e.stability > S.gates.minStability
+    });
+  });
+
+  // ── v12: calibración sobre VALIDACIÓN (nunca Golden Holdout) ──
+  evaluated.forEach(e => {
+    const m = trained[e.model];
+    if (!m || !m.predict) return;
+    try {
+      const probs = [], outcomes = [];
+      const vFrom = Math.max(split.train_end, split.validation_end - N.valSamples);
+      for (let t = vFrom; t < split.validation_end; t++) {
+        if (mgNow() > deadline + N.evalGraceMs) break;
+        const p = m.predict(draws.slice(Math.max(0, t - cfg.lookbackHistory), t));
+        if (!p) continue;
+        const actual = new Set(draws[t]);
+        for (let n = 1; n <= maxN; n++) { probs.push(p[n] * maxN / pick); outcomes.push(actual.has(n) ? 1 : 0); }
+      }
+      e.calibration = probs.length ? mgCalibrationCompare(probs, outcomes)
+        : { available: false, reason: 'NO_VALIDATION_SAMPLES', passed: false };
+    } catch (err) {
+      console.warn('MG: calibración de ' + e.model + ' falló', err);
+      e.calibration = { available: false, reason: String(err && err.message || err), passed: false };
+    }
+  });
+
+  // ── v12: manifiesto reproducible + ficha con estados ──
+  const frontier = mgLiveFrontier(game, split);
+  evaluated.forEach(e => {
+    const m = trained[e.model];
+    const manifest = mgBuildManifest({
+      seed: S.seed, architecture: e.architecture, snapshot_id: mgSnapshotId(draws),
+      hyperparameters: {
+        mlpHidden: N.mlpHidden, lstmHidden: N.lstmHidden, transformerDim: N.transformerDim,
+        latentDim: N.latentDim, sequenceLength: N.sequenceLength
+      },
+      train_cutoff: split.train_end, validation_cutoff: split.validation_end,
+      holdout_cutoff: split.holdout_start, lookback: cfg.lookbackHistory,
+      epochs: N.epochs, learning_rate: N.learningRate, dropout: 0.10,
+      duration_ms: Math.round(mgNow() - t0),
+      checkpoint_hash: (m && m.net) ? mgCheckpointHash(m.net.params) : null
+    });
+    e.manifest = manifest;
+    e.manifest_hash = mgManifestHash(manifest);
+
+    const gateEvidence = {
+      trained: true,
+      oos_pass: e.permutation_p < S.gates.alpha,
+      holdout_pass: e.holdout_delta > 0,
+      live_trial_pass: (e.live_n || 0) > 0 && e.live_delta > 0,
+      sequential_pass: e.sequential ? e.sequential.ci_low > 0 : false,
+      fdr_pass: e.q_value != null && e.q_value < S.gates.alpha,
+      stability_pass: e.stability > S.gates.minStability,
+      calibration_pass: S.v12.requireCalibration ? !!(e.calibration && e.calibration.passed) : true,
+      no_drift: !(driftDecisionForNeural && driftDecisionForNeural.detected),
+      no_leakage: !mgHasLeakage(game),
+      replication_pass: e.replicated,
+      validation_score: e.validation_score, live_delta: e.live_delta
+    };
+    e.gate_evidence = gateEvidence;
+    e.qualifies_v12 = mgChampionQualifies(gateEvidence);
+    e.missing_gates = mgChampionMissingGates(gateEvidence);
+
+    if (!MG_STATE.modelCards[game]) MG_STATE.modelCards[game] = {};
+    let card = MG_STATE.modelCards[game][e.model];
+    if (!card) {
+      card = mgV12ModelCard({
+        model_id: e.model, game, architecture: e.architecture, snapshot_id: mgSnapshotId(draws),
+        seed: S.seed, train_cutoff: split.train_end, validation_cutoff: split.validation_end,
+        holdout_cutoff: split.holdout_start, live_cutoff: frontier.live_cutoff,
+        manifest, manifest_hash: e.manifest_hash
+      });
+    }
+    card.metrics = { mean_hits: e.top_k_hits, delta: e.validation_score, best_val_loss: e.best_val_loss };
+    card.calibration = e.calibration;
+    card.permutation_p = e.permutation_p; card.fdr_q = e.q_value;
+    card.stability = e.stability; card.replication = e.replication;
+    card.live_evidence = { n: e.live_n || 0, delta: e.live_delta };
+    card.manifest = manifest; card.manifest_hash = e.manifest_hash;
+    if (card.state === 'LIVE_TRIAL') card.live_trial_cycles = (card.live_trial_cycles || 0) + 1;
+    mgAdvanceModelState(card, gateEvidence);
+    mgChampionDecayV12(card, gateEvidence);
+    MG_STATE.modelCards[game][e.model] = card;
+    e.card_state = card.state;
+    e.v12_weight = card.weight;
+  });
+  mgSaveResearchState();
+
+  // ── v12 punto 7: el autoencoder sólo reporta régimen ──
+  const reconError = (trained.autoencoder && trained.autoencoder.anomaly)
+    ? trained.autoencoder.anomaly(draws) : null;
+  const anomaly = reconError;
+  const regime = reconError != null
+    ? mgAutoencoderReport(reconError, driftDecisionForNeural ? driftDecisionForNeural.score : 0)
+    : null;
+
+  return {
+    available: true,
+    version: MG_V11_VERSION,
+    game, plan, split,
+    evidence, probs: probsByModel,
+    meta_ensemble: meta,
+    anomaly_score: anomaly,
+    regime,
+    model_cards: MG_STATE.modelCards[game] || {},
+    frontier,
+    leaderboard: mgLiveLeaderboard(evaluated.map(e => ({
+      model: e.model, replicated: e.replicated, stable: e.stability > S.gates.minStability,
+      q_value: e.q_value, live_delta: e.live_delta
+    }))),
+    seed: S.seed,
+    elapsed_ms: Math.round(mgNow() - t0),
+    budget_exhausted: mgNow() > deadline,
+    generated_at: new Date().toISOString()
+  };
+}
+
+// Mezcla las probabilidades neuronales elegibles sobre la distribución base.
+// Si ninguna red pasa las compuertas, devuelve la base sin tocar (regla 57).
+function mgApplyNeuralEnsemble(probs, maxN, neural) {
+  const S = mgSettings();
+  if (!S.enabled || !S.neural.enabled || !S.neural.applyToPredictions) return probs;
+  if (!neural || !neural.available || !neural.meta_ensemble || neural.meta_ensemble.total <= 0) return probs;
+
+  const w = neural.meta_ensemble.weights;
+  const blend = Math.max(0, Math.min(1, S.neural.blendWeight));
+  const mixed = new Array(maxN + 1).fill(0);
+  let any = false;
+  for (let n = 1; n <= maxN; n++) {
+    let acc = 0;
+    for (const k of Object.keys(w)) {
+      if (!w[k] || !neural.probs[k]) continue;
+      acc += w[k] * (neural.probs[k][n] || 0);
+      any = true;
+    }
+    mixed[n] = acc;
+  }
+  if (!any) return probs;
+  const out = new Array(maxN + 1).fill(0);
+  for (let n = 1; n <= maxN; n++) out[n] = (1 - blend) * (probs[n] || 0) + blend * mixed[n];
+  const s = out.reduce((a, b) => a + b, 0);
+  return out.map(x => x / (s || 1));
+}
+
+function mgGetNeural(game) {
+  const g = game || (typeof state !== 'undefined' ? state.currentGame : 'melate');
+  return MG_STATE.neural[g] || null;
+}
+
+// Lanza el ciclo neuronal una sola vez por (juego, datos, ajustes).
+function mgScheduleNeuralCycle(game) {
+  const S = mgSettings();
+  if (!S.enabled || !S.neural.enabled) { MG_STATE.neural[game] = null; return null; }
+  const draws = state.draws, maxN = state.maxNumber;
+  const pick = (GAME_CONFIG[game] || {}).pick || 6;
+  const key = mgResearchCacheKey(game, draws) + '|nn';
+  const cached = MG_STATE.neural[game];
+  if (cached && cached.cacheKey === key) return Promise.resolve(cached);
+  if (MG_STATE.neuralBusy[game] === key) return null;
+  MG_STATE.neuralBusy[game] = key;
+
+  const run = () => mgRunNeuralCycle(game, draws, maxN, pick)
+    .then(res => {
+      res.cacheKey = key;
+      MG_STATE.neural[game] = res;
+      MG_STATE.neuralBusy[game] = null;
+      try { mgRenderResearchPanel(); mgRenderResearchStatus(); } catch (e) {}
+      return res;
+    })
+    .catch(e => {
+      console.warn('MG: ciclo neuronal falló', e);
+      MG_STATE.neural[game] = { available: false, reason: 'El ciclo neuronal falló: ' + (e && e.message || e) };
+      MG_STATE.neuralBusy[game] = null;
+      return null;
+    });
+
+  const idle = (typeof window !== 'undefined' && window.requestIdleCallback)
+    ? cb => window.requestIdleCallback(cb, { timeout: 3000 })
+    : cb => setTimeout(cb, 120);
+  return new Promise(resolve => idle(() => resolve(run())));
+}
+</script>
+<script>// ═══════════════════════════════════════════════════════════════════
+//  MELATE GENIUS · v12 — PRODUCTION GATE
+//  ------------------------------------------------------------------
+//  Capa de endurecimiento sobre v9/v10/v11. No fabrica ventaja: cierra
+//  huecos de fuga temporal, reproducibilidad, congelado, calibración,
+//  deriva, persistencia y promoción.
+//
+//  Constitución v12 (18 reglas), resumida:
+//   1. Ninguna información futura entra a las features de train/validación.
+//   2. El Golden Holdout es inmutable y queda fuera de la optimización.
+//   3. Toda predicción live se congela ANTES de su sorteo.
+//   4. Las predicciones congeladas son inmutables y verificables por SHA-256.
+//   5. Un resultado live entra al entrenamiento sólo tras cerrar su evaluación.
+//   6. La Live Frontier avanza cuando datos live entran al entrenamiento.
+//   7. Cada juego usa su propia dimensión de salida.
+//   8. La validación neuronal por sí sola nunca otorga peso live.
+//   9. NO_EDGE es un resultado válido.
+//  10. Ningún modelo salta de TRAINED a CHAMPION.
+//  11. La replicación es obligatoria por defecto.
+//  12. Calibración, estabilidad, deriva y fuga son compuertas de promoción.
+//  13. Generar portafolio no es evidencia de ventaja predictiva.
+//  14. Las pruebas con señal sintética validan capacidad de aprendizaje,
+//      no predictibilidad de la lotería.
+//  15. Detectar fuga bloquea la promoción.
+//  16. Un Champion histórico puede decaer.
+//  17. Las dependencias faltantes de la QNN son un estado UNAVAILABLE explícito.
+//  18. Un GO de producción significa seguro y auditable, no que exista ventaja.
+// ═══════════════════════════════════════════════════════════════════
+
+const MG_V12_VERSION = '12.0.0';
+
+// ═══════════════════════════════════════════════════════════
+//  v12/config.py — GameSpec: dimensiones por juego (regla 7)
+// ═══════════════════════════════════════════════════════════
+
+function mgGameSpec(game) {
+  const cfg = (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[game]) || null;
+  const n = cfg ? cfg.maxNum : 56;
+  const picks = cfg ? (cfg.pick || 6) : 6;
+  return {
+    name: game, n_numbers: n, picks,
+    per_number_base_rate: picks / n,
+    expected_ticket_overlap: (picks * picks) / n,
+    is_digit: !!(cfg && cfg.isDigit)
+  };
+}
+
+function mgAllGameSpecs() {
+  const out = {};
+  Object.keys(typeof GAME_CONFIG !== 'undefined' ? GAME_CONFIG : {}).forEach(g => { out[g] = mgGameSpec(g); });
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/leakage_guard.py + lineage.assert_temporal_order (reglas 1, 15)
+// ═══════════════════════════════════════════════════════════
+
+const MG_FORBIDDEN_FIELDS = ['actual_draw', 'future_draw', 'next_draw', 'future_frequency',
+  'future_prediction', 'future_model_score', 'target_after_cutoff'];
+
+function mgAssertNoFutureFields(featureNames) {
+  const bad = MG_FORBIDDEN_FIELDS.filter(f => (featureNames || []).indexOf(f) >= 0).sort();
+  if (bad.length) throw new Error('LEAKAGE_DETECTED:' + bad.join(','));
+  return true;
+}
+
+function mgAssertCutoff(featureDraw, cutoffDraw) {
+  if (featureDraw > cutoffDraw) throw new Error('LEAKAGE_DETECTED:FUTURE_FEATURE');
+  return true;
+}
+
+function mgAssertTemporalOrder(cutoffDraw, targetDraw) {
+  if (cutoffDraw >= targetDraw) throw new Error('TEMPORAL_LEAKAGE: cutoff_draw must precede target_draw');
+  return true;
+}
+
+// Registro de incidentes: cualquier fuga detectada bloquea la promoción
+function mgRecordLeakage(game, detail) {
+  if (!MG_STATE.leakage[game]) MG_STATE.leakage[game] = [];
+  MG_STATE.leakage[game].push({ detail: String(detail), at: new Date().toISOString() });
+  MG_STATE.leakage[game] = MG_STATE.leakage[game].slice(-50);
+  mgSaveResearchState();
+}
+
+function mgHasLeakage(game) {
+  return !!(MG_STATE.leakage[game] && MG_STATE.leakage[game].length);
+}
+
+function mgClearLeakage(game) {
+  MG_STATE.leakage[game] = [];
+  mgSaveResearchState();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Golden Holdout Lock (regla 2 / punto 9 del protocolo)
+//  Sólo se permite leerlo para evaluar la compuerta. Cualquier otro
+//  propósito queda registrado y bloquea la promoción.
+// ═══════════════════════════════════════════════════════════
+
+const MG_HOLDOUT_ALLOWED_PURPOSES = ['gate_evaluation', 'audit_export'];
+
+function mgHoldoutAccess(game, purpose) {
+  const ok = MG_HOLDOUT_ALLOWED_PURPOSES.indexOf(purpose) >= 0;
+  if (!MG_STATE.holdoutAccess[game]) MG_STATE.holdoutAccess[game] = { reads: 0, violations: [] };
+  const st = MG_STATE.holdoutAccess[game];
+  st.reads += 1;
+  if (!ok) {
+    st.violations.push({ purpose: String(purpose), at: new Date().toISOString() });
+    st.violations = st.violations.slice(-20);
+    mgSaveResearchState();
+    throw new Error('GOLDEN_HOLDOUT_LOCKED:' + purpose);
+  }
+  return true;
+}
+
+function mgHoldoutViolations(game) {
+  const st = MG_STATE.holdoutAccess[game];
+  return st ? st.violations : [];
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/live_frontier.py (reglas 5, 6)
+// ═══════════════════════════════════════════════════════════
+
+function mgLiveFrontier(game, split) {
+  if (!MG_STATE.frontier[game]) {
+    const s = split || { train_end: 0, validation_end: 0, holdout_start: 0 };
+    MG_STATE.frontier[game] = {
+      train_cutoff: s.train_end, validation_cutoff: s.validation_end,
+      holdout_cutoff: s.holdout_start, live_cutoff: s.holdout_start,
+      advances: 0, updated_at: new Date().toISOString()
+    };
+  }
+  return MG_STATE.frontier[game];
+}
+
+// Un resultado live entra al entrenamiento sólo después de cerrar su evaluación
+function mgFrontierIngest(game, drawId) {
+  const f = mgLiveFrontier(game);
+  if (drawId <= f.live_cutoff) throw new Error('DRAW_ALREADY_AT_OR_BEFORE_LIVE_FRONTIER');
+  f.live_cutoff = drawId;
+  f.train_cutoff = Math.max(f.train_cutoff, drawId);
+  f.advances += 1;
+  f.updated_at = new Date().toISOString();
+  mgSaveResearchState();
+  return f;
+}
+
+function mgFrontierCanTrainOn(game, drawId) { return drawId <= mgLiveFrontier(game).train_cutoff; }
+function mgFrontierCanEvaluateLive(game, drawId) { return drawId > mgLiveFrontier(game).live_cutoff; }
+
+// ═══════════════════════════════════════════════════════════
+//  v12/stacking.py — apilado temporal (punto 2)
+// ═══════════════════════════════════════════════════════════
+
+function mgValidateSnapshot(p) {
+  if (p.cutoff_draw >= p.target_draw) throw new Error('STACKING_LEAKAGE');
+  if (!p.scores || !p.scores.length) throw new Error('EMPTY_MODEL_OUTPUT');
+  return true;
+}
+
+function mgTemporalStack(predictions, targetDraw) {
+  const out = [];
+  (predictions || []).forEach(p => {
+    mgValidateSnapshot(p);
+    if (p.target_draw === targetDraw && p.cutoff_draw < targetDraw) out.push(p);
+  });
+  return out;
+}
+
+function mgPredictionSnapshot(o) {
+  const snap = {
+    prediction_id: o.prediction_id, model_id: o.model_id, model_version: o.model_version,
+    snapshot_id: o.snapshot_id, cutoff_draw: o.cutoff_draw, target_draw: o.target_draw,
+    timestamp: o.timestamp || new Date().toISOString(), seed: o.seed,
+    scores: o.scores, actual_draw: null, hits: null
+  };
+  mgValidateSnapshot(snap);
+  return snap;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/reproducibility.py (punto 4)
+// ═══════════════════════════════════════════════════════════
+
+function mgManifestHash(manifest) { return mgSha256(mgCanonicalJson(manifest)); }
+
+function mgBuildManifest(o) {
+  return {
+    seed: o.seed, architecture: o.architecture, hyperparameters: o.hyperparameters,
+    snapshot_id: o.snapshot_id, train_cutoff: o.train_cutoff,
+    validation_cutoff: o.validation_cutoff, holdout_cutoff: o.holdout_cutoff,
+    lookback: o.lookback, epochs: o.epochs, batch_size: o.batch_size || 1,
+    learning_rate: o.learning_rate, dropout: o.dropout, optimizer: o.optimizer || 'adam',
+    scheduler: o.scheduler || 'none', device: o.device || 'browser-cpu',
+    duration_ms: o.duration_ms, checkpoint_hash: o.checkpoint_hash || null
+  };
+}
+
+// Hash de los pesos entrenados: dos corridas con la misma semilla y snapshot
+// deben producir el mismo checkpoint.
+function mgCheckpointHash(params) {
+  const parts = [];
+  params.forEach(p => {
+    let acc = 0;
+    for (let i = 0; i < p.d.length; i++) acc = (acc * 31 + Math.round(p.d[i] * 1e6)) % 2147483647;
+    parts.push(p.r + 'x' + p.c + ':' + acc);
+  });
+  return mgSha256(parts.join('|'));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/calibration.py (punto 6) — sólo sobre validación, jamás holdout
+// ═══════════════════════════════════════════════════════════
+
+function mgBrierBinary(probabilities, outcomes) {
+  if (probabilities.length !== outcomes.length) throw new Error('LENGTH_MISMATCH');
+  if (!outcomes.length) return 0;
+  let s = 0;
+  for (let i = 0; i < outcomes.length; i++) {
+    const d = Number(probabilities[i]) - (outcomes[i] ? 1 : 0);
+    s += d * d;
+  }
+  return s / outcomes.length;
+}
+
+function mgExpectedCalibrationError(probabilities, outcomes, bins) {
+  const B = bins || 10;
+  if (!probabilities.length) return 0;
+  const buckets = Array.from({ length: B }, () => []);
+  for (let i = 0; i < probabilities.length; i++) {
+    const p = Number(probabilities[i]);
+    const idx = Math.min(B - 1, Math.max(0, Math.floor(p * B)));
+    buckets[idx].push([p, outcomes[i] ? 1 : 0]);
+  }
+  let ece = 0;
+  const total = probabilities.length;
+  buckets.forEach(b => {
+    if (!b.length) return;
+    const conf = b.reduce((a, x) => a + x[0], 0) / b.length;
+    const acc = b.reduce((a, x) => a + x[1], 0) / b.length;
+    ece += Math.abs(conf - acc) * b.length / total;
+  });
+  return ece;
+}
+
+// Regresión isotónica por PAVA (pool adjacent violators)
+function mgIsotonicFit(probs, outcomes) {
+  const pairs = probs.map((p, i) => ({ x: Number(p), y: outcomes[i] ? 1 : 0 }))
+    .sort((a, b) => a.x - b.x);
+  const blocks = pairs.map(p => ({ sum: p.y, n: 1, x: p.x }));
+  let i = 0;
+  while (i < blocks.length - 1) {
+    if (blocks[i].sum / blocks[i].n <= blocks[i + 1].sum / blocks[i + 1].n) { i++; continue; }
+    blocks[i].sum += blocks[i + 1].sum;
+    blocks[i].n += blocks[i + 1].n;
+    blocks[i].x = Math.max(blocks[i].x, blocks[i + 1].x);
+    blocks.splice(i + 1, 1);
+    if (i > 0) i--;
+  }
+  const knots = blocks.map(b => ({ x: b.x, y: b.sum / b.n }));
+  return {
+    knots,
+    apply(p) {
+      if (!knots.length) return p;
+      if (p <= knots[0].x) return knots[0].y;
+      for (let k = 0; k < knots.length; k++) if (p <= knots[k].x) return knots[k].y;
+      return knots[knots.length - 1].y;
+    }
+  };
+}
+
+// Platt de una variable sobre pares (p, y), por descenso de gradiente
+function mgPlattFit(probs, outcomes, iters) {
+  let A = 1, B = 0;
+  const n = probs.length;
+  if (!n) return { A, B, apply: p => p };
+  const N = iters || 200;
+  for (let it = 0; it < N; it++) {
+    let gA = 0, gB = 0;
+    for (let i = 0; i < n; i++) {
+      const x = Math.log(Math.max(1e-9, Math.min(1 - 1e-9, probs[i])) / (1 - Math.max(1e-9, Math.min(1 - 1e-9, probs[i]))));
+      const z = A * x + B;
+      const q = 1 / (1 + Math.exp(-Math.max(-40, Math.min(40, z))));
+      const e = q - (outcomes[i] ? 1 : 0);
+      gA += e * x; gB += e;
+    }
+    A -= 0.05 * gA / n;
+    B -= 0.05 * gB / n;
+  }
+  return {
+    A, B,
+    apply(p) {
+      const pp = Math.max(1e-9, Math.min(1 - 1e-9, p));
+      const x = Math.log(pp / (1 - pp));
+      return 1 / (1 + Math.exp(-Math.max(-40, Math.min(40, A * x + B))));
+    }
+  };
+}
+
+// Compara raw / Platt / isotónica sobre el tramo de VALIDACIÓN.
+// El ajuste se hace en la primera mitad y la medición en la segunda: la
+// isotónica calibra perfectamente sus propios datos, así que compararla en la
+// misma muestra la elegiría siempre. Nunca se toca el Golden Holdout (regla 2).
+function mgCalibrationCompare(probs, outcomes) {
+  const S = mgSettings().v12;
+  if (!probs.length) return { available: false, reason: 'NO_VALIDATION_SAMPLES', passed: false };
+  if (probs.length < 40) {
+    // Muy pocas muestras para partir: se reporta sólo raw, sin ajustar nada.
+    const b = mgBrierBinary(probs, outcomes), e = mgExpectedCalibrationError(probs, outcomes);
+    return { available: true, n: probs.length, options: [{ name: 'raw', brier: b, ece: e }],
+      best: 'raw', brier: b, ece: e, passed: e <= S.maxEce, max_ece: S.maxEce,
+      source: 'validation_only', holdout_style: 'insufficient_samples' };
+  }
+  const half = Math.floor(probs.length / 2);
+  const fitP = probs.slice(0, half), fitY = outcomes.slice(0, half);
+  const evP = probs.slice(half), evY = outcomes.slice(half);
+
+  const options = [{ name: 'raw', brier: mgBrierBinary(evP, evY), ece: mgExpectedCalibrationError(evP, evY) }];
+  try {
+    const f = mgPlattFit(fitP, fitY);
+    const p2 = evP.map(f.apply);
+    options.push({ name: 'platt', brier: mgBrierBinary(p2, evY), ece: mgExpectedCalibrationError(p2, evY), params: { A: f.A, B: f.B } });
+  } catch (e) { /* opcional */ }
+  try {
+    const f = mgIsotonicFit(fitP, fitY);
+    const p3 = evP.map(f.apply);
+    options.push({ name: 'isotonic', brier: mgBrierBinary(p3, evY), ece: mgExpectedCalibrationError(p3, evY), knots: f.knots.length });
+  } catch (e) { /* no aplicable con pocas muestras */ }
+
+  const best = options.slice().sort((a, b) => a.brier - b.brier)[0];
+  return {
+    available: true, n: probs.length, fit_n: half, eval_n: evP.length,
+    options, best: best.name, brier: best.brier, ece: best.ece,
+    // Compuerta de calibración: ECE por debajo del umbral configurado
+    passed: best.ece <= S.maxEce,
+    max_ece: S.maxEce,
+    source: 'validation_only',        // nunca Golden Holdout (regla 2)
+    holdout_style: 'split_half'       // ajuste y medición en mitades distintas
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Autoencoder → sólo régimen/anomalía/deriva (punto 7)
+//  La deriva NUNCA altera directamente los números.
+// ═══════════════════════════════════════════════════════════
+
+const MG_REGIME_STATES = ['NORMAL', 'WATCH', 'ANOMALY', 'DRIFT'];
+
+function mgRegimeState(reconstructionError, driftScore, baselineError) {
+  const S = mgSettings().v12;
+  const base = baselineError || S.regimeBaselineError;
+  const ratio = base > 0 ? reconstructionError / base : 1;
+  if (driftScore >= S.regimeDriftThreshold) return 'DRIFT';
+  if (ratio >= S.regimeAnomalyRatio) return 'ANOMALY';
+  if (ratio >= S.regimeWatchRatio) return 'WATCH';
+  return 'NORMAL';
+}
+
+function mgAutoencoderReport(reconstructionError, driftScore, baselineError) {
+  const state = mgRegimeState(reconstructionError, driftScore, baselineError);
+  return {
+    reconstruction_error: reconstructionError,
+    drift_score: driftScore,
+    regime_state: state,
+    affects_numbers: false,   // regla explícita del punto 7
+    note: 'El autoencoder sólo detecta régimen; no modifica las probabilidades por número.'
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/champion_gate.py (puntos 11, 12, 13, 14)
+// ═══════════════════════════════════════════════════════════
+
+const MG_CHAMPION_CHECKS = ['oos_pass', 'holdout_pass', 'live_trial_pass', 'sequential_pass',
+  'fdr_pass', 'stability_pass', 'calibration_pass', 'no_drift', 'no_leakage'];
+
+function mgChampionQualifies(e, requireReplication) {
+  const req = requireReplication == null ? mgSettings().v12.requireReplication : requireReplication;
+  const checks = MG_CHAMPION_CHECKS.map(k => !!e[k]);
+  if (req) checks.push(!!e.replication_pass);
+  return checks.every(Boolean);
+}
+
+function mgChampionMissingGates(e, requireReplication) {
+  const req = requireReplication == null ? mgSettings().v12.requireReplication : requireReplication;
+  const list = MG_CHAMPION_CHECKS.filter(k => !e[k]);
+  if (req && !e.replication_pass) list.push('replication_pass');
+  return list;
+}
+
+// neural_weight: la validación sola nunca otorga peso live (regla 8)
+function mgNeuralWeightV12(validationScore, liveDelta, liveEvidencePassed, requireLiveEvidence) {
+  const req = requireLiveEvidence == null ? mgSettings().neural.requireLiveDelta : requireLiveEvidence;
+  if (req && !liveEvidencePassed) return 0;
+  if (validationScore <= 0 || liveDelta <= 0) return 0;
+  return validationScore * liveDelta;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Model cards y máquina de estados (punto 5)
+//  Nunca TRAINED → CHAMPION (regla 10).
+// ═══════════════════════════════════════════════════════════
+
+const MG_MODEL_STATES = ['TRAINED', 'VALIDATED', 'ELIGIBLE', 'LIVE_TRIAL',
+  'QUALIFIED', 'CHAMPION', 'REJECTED', 'DECAYED'];
+
+const MG_STATE_TRANSITIONS = {
+  TRAINED: ['VALIDATED', 'REJECTED'],
+  VALIDATED: ['ELIGIBLE', 'REJECTED'],
+  ELIGIBLE: ['LIVE_TRIAL', 'REJECTED'],
+  LIVE_TRIAL: ['QUALIFIED', 'REJECTED', 'DECAYED'],
+  QUALIFIED: ['CHAMPION', 'LIVE_TRIAL', 'DECAYED'],
+  CHAMPION: ['DECAYED', 'LIVE_TRIAL'],
+  REJECTED: ['TRAINED'],
+  DECAYED: ['LIVE_TRIAL', 'TRAINED']
+};
+
+function mgCanTransition(from, to) {
+  return (MG_STATE_TRANSITIONS[from] || []).indexOf(to) >= 0;
+}
+
+function mgV12ModelCard(o) {
+  return {
+    // identidad
+    prediction_family: o.family || 'neural', model_id: o.model_id,
+    model_version: o.model_version || MG_V12_VERSION, game: o.game,
+    architecture: o.architecture, // datos
+    snapshot_id: o.snapshot_id, seed: o.seed,
+    train_cutoff: o.train_cutoff, validation_cutoff: o.validation_cutoff,
+    holdout_cutoff: o.holdout_cutoff, live_cutoff: o.live_cutoff,
+    // métricas
+    metrics: o.metrics || {}, calibration: o.calibration || null,
+    permutation_p: o.permutation_p, fdr_q: o.fdr_q, stability: o.stability,
+    drift: o.drift, live_evidence: o.live_evidence || null,
+    replication: o.replication || null,
+    // decisión
+    state: o.state || 'TRAINED', weight: o.weight || 0,
+    missing_gates: o.missing_gates || [],
+    decision_at: new Date().toISOString(),
+    manifest: o.manifest || null, manifest_hash: o.manifest_hash || null
+  };
+}
+
+// Avanza el estado paso a paso; nunca salta a CHAMPION
+function mgAdvanceModelState(card, evidence) {
+  const S = mgSettings().v12;
+  const missing = mgChampionMissingGates(evidence);
+  card.missing_gates = missing;
+
+  if (!evidence.no_leakage) { card.state = 'REJECTED'; card.weight = 0; return card; }
+
+  const path = [];
+  if (evidence.trained) path.push('VALIDATED');
+  if (evidence.oos_pass && evidence.fdr_pass) path.push('ELIGIBLE');
+  if (evidence.oos_pass && evidence.holdout_pass && evidence.fdr_pass &&
+      evidence.stability_pass && evidence.calibration_pass && evidence.no_drift) path.push('LIVE_TRIAL');
+  if (mgChampionQualifies(evidence)) path.push('QUALIFIED');
+
+  // Avanza un solo escalón por ciclo desde el estado actual
+  let cur = card.state || 'TRAINED';
+  for (const next of path) {
+    if (cur === next) continue;
+    if (mgCanTransition(cur, next)) cur = next;
+  }
+  // CHAMPION exige haber estado QUALIFIED y sobrevivir el Live Trial mínimo
+  if (cur === 'QUALIFIED' && (card.live_trial_cycles || 0) >= S.minLiveTrialCycles &&
+      mgCanTransition('QUALIFIED', 'CHAMPION')) {
+    cur = 'CHAMPION';
+  }
+  card.state = cur;
+  card.weight = (cur === 'QUALIFIED' || cur === 'CHAMPION')
+    ? mgNeuralWeightV12(evidence.validation_score, evidence.live_delta, evidence.live_trial_pass)
+    : 0;
+  return card;
+}
+
+// Decaimiento: live, calibración, estabilidad o deriva incompatibles (punto 14)
+function mgChampionDecayV12(card, evidence) {
+  if (!card) return card;
+  if (card.state !== 'CHAMPION' && card.state !== 'QUALIFIED') return card;
+  const bad = !evidence.live_trial_pass || !evidence.calibration_pass ||
+              !evidence.stability_pass || !evidence.no_drift;
+  if (bad) {
+    card.state = mgCanTransition(card.state, 'DECAYED') ? 'DECAYED' : 'LIVE_TRIAL';
+    card.weight = 0;
+    card.decayed_reason = [
+      !evidence.live_trial_pass ? 'live' : null,
+      !evidence.calibration_pass ? 'calibración' : null,
+      !evidence.stability_pass ? 'estabilidad' : null,
+      !evidence.no_drift ? 'deriva' : null
+    ].filter(Boolean).join(', ');
+  }
+  return card;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/freeze.py — payload canónico propio de v12 (punto 10)
+//  Distinto del de v10: aquí el payload es {run_id, seed, snapshot_id,
+//  numbers}. Ambos conviven; el de v12 es el sello de producción.
+// ═══════════════════════════════════════════════════════════
+
+function mgV12CanonicalPayload(runId, seed, snapshotId, numbers) {
+  return mgCanonicalJson({ run_id: runId, seed, snapshot_id: snapshotId, numbers: Array.from(numbers) });
+}
+
+function mgV12Freeze(runId, seed, snapshotId, numbers, predictionId) {
+  const nums = Array.from(numbers).map(x => parseInt(x, 10));
+  const payload = mgV12CanonicalPayload(runId, seed, snapshotId, nums);
+  return {
+    prediction_id: predictionId, run_id: runId, seed, snapshot_id: snapshotId,
+    numbers: nums, sha256: mgSha256(payload)
+  };
+}
+
+function mgV12VerifyFrozen(p) {
+  if (!p || !p.sha256) return false;
+  return mgSha256(mgV12CanonicalPayload(p.run_id, p.seed, p.snapshot_id, p.numbers)) === p.sha256;
+}
+
+// Persistencia inmutable: una predicción congelada no se sobrescribe (regla 4)
+function mgV12PersistFrozen(record) {
+  const exists = MG_STATE.frozenV12.some(f => f.prediction_id === record.prediction_id);
+  if (exists) return { stored: false, reason: 'IMMUTABLE_ALREADY_FROZEN' };
+  MG_STATE.frozenV12.push(record);
+  if (MG_STATE.frozenV12.length > 300) MG_STATE.frozenV12 = MG_STATE.frozenV12.slice(-300);
+  return { stored: true };
+}
+
+function mgV12AuditFrozen() {
+  const all = MG_STATE.frozenV12;
+  const bad = all.filter(f => !mgV12VerifyFrozen(f));
+  return { total: all.length, valid: all.length - bad.length, tampered: bad.length, tampered_ids: bad.map(f => f.prediction_id) };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v12/production_gate.py (punto 17 y regla 18)
+// ═══════════════════════════════════════════════════════════
+
+function mgProductionReport() {
+  const checks = {};
+  return {
+    checks,
+    add(name, value) { checks[name] = !!value; return this; },
+    get passed() { return Object.keys(checks).length > 0 && Object.values(checks).every(Boolean); },
+    failed() { return Object.keys(checks).filter(k => !checks[k]); },
+    assertGo() {
+      if (!this.passed) throw new Error('PRODUCTION_GATE_FAILED:' + this.failed().join(','));
+      return true;
+    }
+  };
+}
+
+// Evalúa si el motor está en estado seguro y auditable. GO no significa que
+// exista ventaja: significa que lo que se muestra es reproducible y trazable.
+function mgRunProductionGate(game) {
+  const g = game || (typeof state !== 'undefined' ? state.currentGame : 'melate');
+  const S = mgSettings();
+  const r = mgGetResearch(g);
+  const nn = mgGetNeural(g);
+  const rep = mgProductionReport();
+  const spec = mgGameSpec(g);
+  const audit = mgV12AuditFrozen();
+  const frontier = mgLiveFrontier(g, r && r.available ? { train_end: r.split.train_from, validation_end: r.split.train_to, holdout_start: r.split.holdout_from } : null);
+
+  rep.add('protocolo_activo', S.enabled);
+  rep.add('ciclo_ejecutado', !!(r && r.available));
+  rep.add('dimension_del_juego', spec.n_numbers > 0 && spec.picks > 0);
+  rep.add('golden_holdout_bloqueado', mgHoldoutViolations(g).length === 0);
+  rep.add('sin_fuga_temporal', !mgHasLeakage(g));
+  rep.add('predicciones_congeladas_integras', audit.tampered === 0);
+  rep.add('frontera_live_coherente', frontier.train_cutoff <= frontier.live_cutoff ||
+    frontier.advances === 0 ? true : frontier.train_cutoff <= frontier.live_cutoff);
+  rep.add('research_guard_activo', S.v10.researchGuard);
+  rep.add('replicacion_exigida', S.gates.requireReplication);
+  rep.add('semilla_determinista', S.deterministic && S.seed > 0);
+  rep.add('sin_autopromocion', !S.champion.autoPromoteFromLive);
+  rep.add('qnn_estado_explicito', !nn || !nn.available ||
+    nn.evidence.some(e => e.model === 'qnn' && e.status === 'optional_dependency_missing'));
+  rep.add('calibracion_solo_validacion', !r || !r.available || !r.calibration ||
+    r.calibration.source === 'validation_only');
+  rep.add('autoencoder_no_altera_numeros', !nn || !nn.available || !nn.regime || nn.regime.affects_numbers === false);
+
+  return {
+    game: g, version: MG_V12_VERSION,
+    checks: rep.checks, passed: rep.passed, failed: rep.failed(),
+    decision: rep.passed ? 'GO' : 'NO_GO',
+    meaning: 'GO significa seguro, reproducible y auditable — no que exista una ventaja predictiva.',
+    frozen_audit: audit, frontier, game_spec: spec,
+    leakage_incidents: (MG_STATE.leakage[g] || []).length,
+    holdout_violations: mgHoldoutViolations(g).length,
+    generated_at: new Date().toISOString()
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Ciclo autónomo v12 (punto 17): un fallo aislado no mata el ciclo
+// ═══════════════════════════════════════════════════════════
+
+const MG_V12_CYCLE = ['INGEST', 'SNAPSHOT', 'FEATURES', 'LEAKAGE_CHECK', 'TRAIN', 'VALIDATE',
+  'CALIBRATE', 'HOLDOUT', 'LIVE_TRIAL', 'SEQUENTIAL', 'REPLICATION', 'DRIFT',
+  'CHAMPION_GATE', 'PORTFOLIO', 'FREEZE', 'PERSIST', 'WAIT'];
+
+function mgV12CycleStatus(game) {
+  const g = game || (typeof state !== 'undefined' ? state.currentGame : 'melate');
+  const r = mgGetResearch(g);
+  const nn = mgGetNeural(g);
+  const done = {};
+  MG_V12_CYCLE.forEach(s => { done[s] = false; });
+  if (typeof state !== 'undefined' && state.draws && state.draws.length) { done.INGEST = true; done.SNAPSHOT = true; done.FEATURES = true; }
+  done.LEAKAGE_CHECK = !mgHasLeakage(g);
+  if (nn && nn.available) { done.TRAIN = true; done.VALIDATE = true; }
+  if (r && r.available) {
+    done.CALIBRATE = !!r.calibration;
+    done.HOLDOUT = r.split.holdout_size > 0;
+    done.LIVE_TRIAL = !!r.live_trial;
+    done.SEQUENTIAL = !!r.sequential_look || (r.live && r.live.n === 0);
+    done.REPLICATION = r.evidence.some(e => e.replication);
+    done.DRIFT = !!r.drift;
+    done.CHAMPION_GATE = !!r.champion_gate_v12;
+    done.PORTFOLIO = true;
+  }
+  done.FREEZE = MG_STATE.frozenV12.length > 0;
+  done.PERSIST = true;
+  done.WAIT = true;
+  return { stages: MG_V12_CYCLE, done, completed: MG_V12_CYCLE.filter(s => done[s]).length, total: MG_V12_CYCLE.length };
 }
 </script>
 <script>// ═══════════════════════════════════════════════════════════════════
@@ -7594,6 +9944,93 @@ const MG_SETTINGS_SCHEMA = [
       { path: 'budget.deep_learning', type: 'int', label: 'Tope: deep learning', min: 1, max: 100, step: 5 },
       { path: 'budget.qnn', type: 'int', label: 'Tope: QNN', min: 1, max: 100, step: 5 },
       { path: 'budget.portfolio', type: 'int', label: 'Tope: portafolio', min: 1, max: 100, step: 5 }
+    ]
+  },
+  {
+    group: 'Production Gate (v12)',
+    icon: '🚀',
+    desc: 'Capa de endurecimiento para producción. No fabrica ventaja: cierra fuga temporal, reproducibilidad, calibración, deriva y promoción. Un GO significa seguro y auditable, no que exista una ventaja (regla 18).',
+    items: [
+      { path: 'v12.enabled', type: 'bool', label: 'Production Gate activo',
+        help: 'Sella predicciones con el payload canónico de v12, evalúa las diez compuertas de Champion y publica el veredicto GO / NO-GO.' },
+      { path: 'v12.requireReplication', type: 'bool', label: 'Exigir replicación',
+        help: 'Obligatoria por defecto (regla 11). Prometedor no es Champion.' },
+      { path: 'v12.goldenHoldoutLocked', type: 'bool', label: 'Golden Holdout bloqueado',
+        help: 'Sólo lectura para evaluar la compuerta. Cualquier otro uso queda registrado y bloquea la promoción (regla 2).' },
+      { path: 'v12.requireNoLeakage', type: 'bool', label: 'Bloquear con fuga temporal',
+        help: 'Detectar una feature futura aborta el experimento y bloquea la promoción (regla 15).' },
+      { path: 'v12.requireCalibration', type: 'bool', label: 'Exigir calibración',
+        help: 'Compara raw, Platt e isotónica sobre la validación (nunca sobre el holdout) y exige un ECE por debajo del umbral.' },
+      { path: 'v12.maxEce', type: 'range', label: 'ECE máximo admitido', min: 0.01, max: 0.5, step: 0.01,
+        fmt: v => v.toFixed(2), help: 'Error de calibración esperado por encima del cual la compuerta falla.' },
+      { path: 'v12.minLiveTrialCycles', type: 'int', label: 'Ciclos mínimos de Live Trial', min: 1, max: 20,
+        help: 'Ningún modelo salta de TRAINED a CHAMPION (regla 10): debe sobrevivir este número de ciclos como QUALIFIED.' },
+      { path: 'v12.frozenPredictionsImmutable', type: 'bool', label: 'Congelado inmutable',
+        help: 'Una predicción sellada no se sobrescribe ni se edita después (reglas 3 y 4).' },
+      { path: 'v12.regimeWatchRatio', type: 'range', label: 'Umbral de vigilancia (régimen)', min: 1, max: 3, step: 0.05,
+        fmt: v => v.toFixed(2) + '×', help: 'Error de reconstrucción sobre el basal a partir del cual el régimen pasa a WATCH.' },
+      { path: 'v12.regimeAnomalyRatio', type: 'range', label: 'Umbral de anomalía (régimen)', min: 1, max: 5, step: 0.05,
+        fmt: v => v.toFixed(2) + '×', help: 'A partir de aquí el régimen es ANOMALY. La deriva nunca altera los números por sí sola (punto 7).' },
+      { path: 'v12.regimeDriftThreshold', type: 'range', label: 'Umbral de DRIFT', min: 0.01, max: 0.5, step: 0.01,
+        fmt: v => v.toFixed(2) },
+      { path: 'gates.calibrationSteps', type: 'int', label: 'Pasos de calibración', min: 5, max: 60, step: 5,
+        help: 'Sorteos de la ventana de validación usados para calibrar el ensemble.' }
+    ]
+  },
+  {
+    group: 'Endurecimiento live (v10)',
+    icon: '🔒',
+    desc: 'Toda predicción se congela con hash antes del sorteo (regla 43) y no puede editarse después (regla 44). Racha, anomalía y edge son estados distintos (regla 46).',
+    items: [
+      { path: 'v10.freezePredictions', type: 'bool', label: 'Congelar predicciones (SHA-256)',
+        help: 'Cada combinación queda sellada con run_id, semilla, snapshot y hash verificable.' },
+      { path: 'v10.sequentialMonitor', type: 'bool', label: 'Monitoreo secuencial',
+        help: 'Gasta alfa en cada mirada al live: mirar muchas veces exige una frontera más alta.' },
+      { path: 'v10.researchGuard', type: 'bool', label: 'Research Guard',
+        help: 'Rechaza cualquier petición de bajar alfa, saltar BH, permutación, Golden Holdout o auto-promover (regla 50).' },
+      { path: 'v10.liveTrialCycles', type: 'int', label: 'Ciclos de Live Trial', min: 1, max: 20,
+        help: 'Un modelo admitido entra en prueba live; Live Trial no equivale a Champion (regla 48).' }
+    ]
+  },
+  {
+    group: 'Cerebro neuronal (v11)',
+    icon: '🧬',
+    desc: 'MLP, LSTM, Transformer y Autoencoder entrenan en el navegador con split temporal 60/15/15 y LeakageGuard. Son challengers: validation loss nunca basta para declarar edge (regla 56) y el meta-ensemble no pondera redes que fallen las compuertas (regla 57).',
+    items: [
+      { path: 'neural.enabled', type: 'bool', label: 'Entrenar redes neuronales',
+        help: 'Corre en segundo plano después del ciclo estadístico, cediendo el hilo entre redes.' },
+      { path: 'neural.applyToPredictions', type: 'bool', label: 'Aplicar a las predicciones',
+        help: 'Sólo tiene efecto si alguna red pasa TODAS las compuertas. Si ninguna califica, no toca la distribución.' },
+      { path: 'neural.blendWeight', type: 'range', label: 'Peso del meta-ensemble neuronal', min: 0, max: 1, step: 0.05,
+        fmt: v => (v * 100).toFixed(0) + '%',
+        help: 'Cuánto mezcla la distribución neuronal cuando alguna red califica.' },
+      { path: 'neural.timeBudgetMs', type: 'int', label: 'Presupuesto de entrenamiento', min: 1000, max: 30000, step: 500,
+        fmt: v => (v / 1000).toFixed(1) + ' s',
+        help: 'Tope de tiempo total. Al agotarse, las redes restantes quedan como BUDGET_EXHAUSTED.' },
+      { path: 'neural.epochs', type: 'int', label: 'Épocas', min: 1, max: 40 },
+      { path: 'neural.learningRate', type: 'range', label: 'Tasa de aprendizaje (Adam)', min: 0.001, max: 0.1, step: 0.001,
+        fmt: v => v.toFixed(3) },
+      { path: 'neural.trainSamples', type: 'int', label: 'Muestras de entrenamiento', min: 20, max: 300, step: 10,
+        help: 'Sorteos usados por época, tomados del tramo de entrenamiento del split.' },
+      { path: 'neural.valSamples', type: 'int', label: 'Muestras de validación', min: 5, max: 100, step: 5,
+        help: 'Sorteos del tramo de validación que eligen la mejor época.' },
+      { path: 'neural.sequenceLength', type: 'int', label: 'Longitud de secuencia', min: 3, max: 24,
+        help: 'Pasos de historia que ven la LSTM y el Transformer.' },
+      { path: 'neural.lstmHidden', type: 'int', label: 'Unidades ocultas LSTM', min: 4, max: 64, step: 4 },
+      { path: 'neural.transformerDim', type: 'int', label: 'd_model del Transformer', min: 8, max: 64, step: 4 },
+      { path: 'neural.latentDim', type: 'int', label: 'Latente del Autoencoder', min: 2, max: 32,
+        help: 'El error de reconstrucción sirve como señal de anomalía.' },
+      { path: 'neural.mlpHidden', type: 'list', label: 'Capas ocultas del MLP',
+        help: 'Lista separada por comas, p. ej. 24, 12.' },
+      { path: 'neural.evalWindow', type: 'int', label: 'Ventana de evaluación', min: 10, max: 80, step: 5,
+        help: 'Sorteos fuera de muestra donde se miden las redes, antes del Golden Holdout.' },
+      { path: 'neural.holdoutEval', type: 'int', label: 'Pasos en Golden Holdout', min: 5, max: 60, step: 5,
+        help: 'El holdout nunca entra al entrenamiento (regla 58); sólo se usa para la compuerta.' },
+      { path: 'neural.requireLiveDelta', type: 'bool', label: 'Exigir evidencia live para ponderar',
+        help: 'Fórmula original del paquete: peso = validation_score × live_delta. Mientras no tengas historial live evaluado, ninguna red pondera aunque pase todas las compuertas. Apágalo para que una red que ya pasó las compuertas pueda ponderar sin esperar al live.' },
+      { path: 'neural.liveDeltaFloor', type: 'range', label: 'Piso sin evidencia live', min: 0.01, max: 0.5, step: 0.01,
+        fmt: v => v.toFixed(2),
+        help: 'Sólo aplica con el ajuste anterior apagado.' }
     ]
   },
   {
@@ -7851,11 +10288,31 @@ function mgRenderResearchStatus() {
       <div class="mg-kv"><span>Universos MC</span><b>${r.monte_carlo && r.monte_carlo.available ? r.monte_carlo.universes.toLocaleString() : '—'}</b></div>
     </div>
     <div class="mg-help" style="margin-top:8px;">Presupuesto adaptativo: ${Object.entries(r.budget).map(([k, v]) => `${k}=${v}`).join(' · ')} ${r.budgetValid ? '✓' : '⚠︎ excede topes'}</div>
-    <div class="mg-help">Retadores de backend (no disponibles en navegador): ${r.challengers.map(c => c.name).join(', ')}.</div>
+    <div class="mg-help">Retadores neuronales en el navegador: ${r.challengers.filter(c => c.runtime === 'browser').map(c => c.name).join(', ')}. Requieren backend: ${r.challengers.filter(c => c.runtime !== 'browser').map(c => c.name + ' (' + c.requires + ')').join(', ')}.</div>
     <div class="mg-help">Plan del próximo ciclo: ${r.plan_v9.actions.length
       ? `(${r.plan_v9.priority}) ` + r.plan_v9.actions.slice(0, 5).join(' → ') + '…'
       : 'a la espera de resultados live para priorizar (exploración vs. confirmación).'}</div>
   </div>
+
+  <div class="glass card">
+    <div class="card-head"><div class="card-title"><span class="card-title-icon">🔒</span> Endurecimiento live (v10)</div></div>
+    <div class="mg-kv-grid">
+      <div class="mg-kv"><span>Clasificación</span><b>${r.edge_discovery ? r.edge_discovery.label : '—'}</b></div>
+      <div class="mg-kv"><span>Predicciones congeladas</span><b>${MG_STATE.frozen.length}</b></div>
+      <div class="mg-kv"><span>Mirada secuencial</span><b>${r.sequential_look ? '#' + r.sequential_look.look : 'sin live'}</b></div>
+      <div class="mg-kv"><span>Alfa gastada</span><b>${r.sequential_look ? r.sequential_look.alpha_spent.toFixed(4) : '—'}</b></div>
+      <div class="mg-kv"><span>Frontera</span><b>${r.sequential_look && isFinite(r.sequential_look.boundary) ? r.sequential_look.boundary.toFixed(3) : '—'}</b></div>
+      <div class="mg-kv"><span>Live Trial</span><b>${r.live_trial ? modelDisplayName(r.live_trial.model) + ' · ciclo ' + r.live_trial.trial_cycles : 'ninguno'}</b></div>
+    </div>
+    <div class="mg-help" style="margin-top:8px;">${r.edge_discovery
+      ? 'Siguientes acciones: ' + r.edge_discovery.next_actions.join(' → ') + '.'
+      : ''} Research Guard: ${r.research_guard && r.research_guard.allowed ? 'sin violaciones' : 'violaciones ' + (r.research_guard ? r.research_guard.violations.join(', ') : '')}.</div>
+    <div class="mg-help">Live Trial no equivale a Champion (regla 48) y una predicción congelada no puede editarse después (regla 44).</div>
+  </div>
+
+  ${mgRenderProductionGateCard(r)}
+
+  ${mgRenderNeuralCard(r)}
 
   <div class="glass card">
     <div class="card-head"><div class="card-title"><span class="card-title-icon">🧾</span> Auditoría y linaje</div></div>
@@ -7872,6 +10329,108 @@ function mgRenderResearchStatus() {
   </div>`;
 }
 
+// Tarjeta del Production Gate v12
+function mgRenderProductionGateCard(r) {
+  const S = mgSettings();
+  const head = `<div class="card-head"><div class="card-title"><span class="card-title-icon">🚀</span> Production Gate (v12)</div></div>`;
+  if (!S.v12.enabled) {
+    return `<div class="glass card">${head}<div class="mg-help">Desactivado en Ajustes.</div></div>`;
+  }
+  let gate;
+  try { gate = mgRunProductionGate(); }
+  catch (e) { return `<div class="glass card">${head}<div class="mg-help">No se pudo evaluar: ${e.message}</div></div>`; }
+
+  const nn = mgGetNeural();
+  const cards = (nn && nn.available && nn.model_cards) ? nn.model_cards : {};
+  const names = Object.keys(cards);
+
+  return `<div class="glass card">${head}
+    <div class="mg-verdict ${gate.passed ? 'edge' : 'noedge'}">${gate.decision}</div>
+    <div class="mg-help">${gate.meaning}</div>
+    <div class="mg-check-grid">
+      ${Object.entries(gate.checks).map(([k, v]) =>
+        `<div class="mg-check ${v ? 'ok' : 'bad'}"><span>${v ? '✓' : '✕'}</span>${k.replace(/_/g, ' ')}</div>`).join('')}
+    </div>
+    ${gate.failed.length ? `<div class="mg-help" style="margin-top:8px;">Bloqueado por: <strong>${gate.failed.join(', ')}</strong>.</div>` : ''}
+    <div class="mg-kv-grid">
+      <div class="mg-kv"><span>Sellos v12</span><b>${gate.frozen_audit.total} · ${gate.frozen_audit.tampered} alterados</b></div>
+      <div class="mg-kv"><span>Dimensión</span><b>${gate.game_spec.n_numbers} números · ${gate.game_spec.picks} picks</b></div>
+      <div class="mg-kv"><span>Tasa base</span><b>${gate.game_spec.per_number_base_rate.toFixed(4)} / número</b></div>
+      <div class="mg-kv"><span>Solape esperado</span><b>${gate.game_spec.expected_ticket_overlap.toFixed(3)}</b></div>
+      <div class="mg-kv"><span>Frontera live</span><b>${gate.frontier.live_cutoff} (+${gate.frontier.advances})</b></div>
+      <div class="mg-kv"><span>Incidentes de fuga</span><b>${gate.leakage_incidents}</b></div>
+    </div>
+    ${r && r.calibration ? `<div class="mg-help" style="margin-top:8px;">Calibración (${r.calibration.source || 'validación'}): mejor método <strong>${r.calibration.best || 'n/d'}</strong>, Brier ${r.calibration.brier != null ? r.calibration.brier.toFixed(4) : 'n/d'}, ECE ${r.calibration.ece != null ? r.calibration.ece.toFixed(4) : 'n/d'} (máx ${S.v12.maxEce}) → ${r.calibration.passed ? 'pasa' : 'no pasa'}.</div>` : ''}
+    ${r && r.champion_gate_v12 ? `<div class="mg-help">Champion Gate: ${r.champion_gate_v12.qualified.length} modelo(s) pasan las ${r.champion_gate_v12.checks.length} compuertas.${r.champion_gate_v12.top_blocker ? ' La que más bloquea es <strong>' + r.champion_gate_v12.top_blocker.gate.replace(/_/g, ' ') + '</strong> (' + r.champion_gate_v12.top_blocker.models + ' modelos).' : ''}</div>` : ''}
+    ${names.length ? `<div class="mg-table-scroll"><table class="mg-table">
+      <thead><tr><th>Modelo</th><th>Estado</th><th>Peso</th><th>Compuerta faltante</th></tr></thead>
+      <tbody>${names.map(n => {
+        const c = cards[n];
+        return `<tr class="${c.state === 'CHAMPION' ? 'pass' : ''}">
+          <td>${n}</td><td>${c.state}</td><td>${(c.weight || 0).toFixed(3)}</td>
+          <td>${(c.missing_gates || []).slice(0, 2).map(g => g.replace(/_/g, ' ')).join(', ') || '—'}</td></tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="mg-help" style="margin-top:6px;">Estados: TRAINED → VALIDATED → ELIGIBLE → LIVE_TRIAL → QUALIFIED → CHAMPION. Ningún modelo salta directo a CHAMPION (regla 10); un validado puede ser ELIGIBLE con peso 0.</div>` : ''}
+    ${nn && nn.available && nn.regime ? `<div class="mg-help">Régimen (autoencoder): <strong>${nn.regime.regime_state}</strong> · error ${nn.regime.reconstruction_error.toFixed(4)} · deriva ${nn.regime.drift_score.toFixed(3)}. ${nn.regime.note}</div>` : ''}
+    <div class="mg-help">Generar portafolio no es evidencia de ventaja predictiva (regla 13) y NO_EDGE sigue siendo un resultado válido (regla 9).</div>
+  </div>`;
+}
+
+// Tarjeta del cerebro neuronal v11
+function mgRenderNeuralCard(r) {
+  const S = mgSettings();
+  const nn = mgGetNeural();
+  const head = `<div class="card-head"><div class="card-title"><span class="card-title-icon">🧬</span> Cerebro neuronal (v11)</div></div>`;
+
+  if (!S.neural.enabled) {
+    return `<div class="glass card">${head}
+      <div class="mg-help">Desactivado en Ajustes. Las predicciones usan sólo el ensemble estadístico.</div></div>`;
+  }
+  if (!nn) {
+    return `<div class="glass card">${head}
+      <div class="mg-help">Entrenando en segundo plano… las redes ceden el hilo entre sí, así que la app sigue respondiendo. Vuelve en unos segundos.</div></div>`;
+  }
+  if (!nn.available) {
+    return `<div class="glass card">${head}<div class="mg-help">${nn.reason || 'No disponible.'}</div></div>`;
+  }
+
+  const trained = nn.evidence.filter(e => e.available);
+  const others = nn.evidence.filter(e => !e.available);
+  return `<div class="glass card">${head}
+    <div class="mg-kv-grid">
+      <div class="mg-kv"><span>Redes entrenadas</span><b>${trained.length}</b></div>
+      <div class="mg-kv"><span>Elegibles</span><b>${nn.meta_ensemble.eligible.length}</b></div>
+      <div class="mg-kv"><span>Meta-ensemble</span><b>${nn.meta_ensemble.total > 0 ? 'aplicado' : (nn.meta_ensemble.reason === 'AWAITING_LIVE_EVIDENCE' ? 'espera live' : 'sin peso')}</b></div>
+      <div class="mg-kv"><span>Split temporal</span><b>${nn.split.train_end}/${nn.split.validation_end}/${nn.split.holdout_start}</b></div>
+      <div class="mg-kv"><span>Anomalía (AE)</span><b>${nn.anomaly_score != null ? nn.anomaly_score.toFixed(4) : 'n/d'}</b></div>
+      <div class="mg-kv"><span>Semilla</span><b>${nn.seed}</b></div>
+      <div class="mg-kv"><span>Entrenamiento</span><b>${nn.elapsed_ms} ms${nn.budget_exhausted ? ' ⏱' : ''}</b></div>
+    </div>
+    ${trained.length ? `<div class="mg-table-scroll">
+      <table class="mg-table">
+        <thead><tr><th>Red</th><th>val_loss</th><th>Δ</th><th>p</th><th>q</th><th>Estab.</th><th>Holdout</th></tr></thead>
+        <tbody>${trained.map(e => `<tr class="${mgNeuralEligible({
+          q_value: e.q_value, permutation_p: e.permutation_p, holdout_delta: e.holdout_delta,
+          replicated: e.replicated, stable: e.stability > S.gates.minStability, base_rate_warning: e.base_rate_warning
+        }) ? 'pass' : ''}">
+          <td>${e.classification === 'EDGE_CANDIDATE' ? '🏆 ' : (e.base_rate_warning ? '≈ ' : '')}${e.model}</td>
+          <td>${e.best_val_loss != null ? e.best_val_loss.toFixed(4) : '—'}</td>
+          <td>${e.validation_score >= 0 ? '+' : ''}${e.validation_score.toFixed(3)}</td>
+          <td>${e.permutation_p.toFixed(3)}</td>
+          <td>${e.q_value != null ? e.q_value.toFixed(3) : '—'}</td>
+          <td>${(e.stability * 100).toFixed(0)}%</td>
+          <td>${e.holdout_delta >= 0 ? '+' : ''}${(e.holdout_delta || 0).toFixed(2)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<div class="mg-help">Ninguna red alcanzó a entrenar dentro del presupuesto.</div>'}
+    ${trained.length ? `<div class="mg-help" style="margin-top:8px;">${trained.map(e =>
+      `<strong>${e.model}</strong>: ${e.architecture} · mejor época ${e.epochs_best} · ${e.label}`).join('<br>')}</div>` : ''}
+    ${others.length ? `<div class="mg-help">No disponibles: ${others.map(e =>
+      e.model + ' (' + e.status + (e.requires ? ', requiere ' + e.requires : '') + ')').join(', ')}.</div>` : ''}
+    <div class="mg-help">Validation loss nunca basta para declarar edge (regla 56): una red sólo pondera si además pasa permutación, BH, Golden Holdout, replicación y estabilidad.</div>
+    ${nn.meta_ensemble.reason === 'AWAITING_LIVE_EVIDENCE' ? `<div class="mg-help">⚠︎ Hay ${nn.meta_ensemble.eligible.length} red(es) que pasan todas las compuertas, pero el peso del paquete es <em>validation_score × live_delta</em> y aún no tienes historial live evaluado: el producto es cero y ninguna pondera. Puedes acumular resultados reales, o apagar «Exigir evidencia live para ponderar» en este mismo grupo.</div>` : ''}
+  </div>`;
+}
+
 function mgExportAudit() {
   const r = mgGetResearch();
   const payload = {
@@ -7883,6 +10442,18 @@ function mgExportAudit() {
     champion_state: MG_STATE.championState,
     meta_learner: MG_STATE.metaLearner,
     research_memory: MG_STATE.memory,
+    neural: MG_STATE.neural,
+    frozen_predictions: MG_STATE.frozen,
+    sequential_monitor: MG_STATE.sequential,
+    live_champion: MG_STATE.liveChampion,
+    immutable_gates: MG_IMMUTABLE_GATES,
+    v12_production_gate: (function () { try { return mgRunProductionGate(); } catch (e) { return null; } })(),
+    v12_frozen: MG_STATE.frozenV12,
+    v12_frontier: MG_STATE.frontier,
+    v12_model_cards: MG_STATE.modelCards,
+    v12_leakage: MG_STATE.leakage,
+    v12_holdout_access: MG_STATE.holdoutAccess,
+    v12_cycle: (function () { try { return mgV12CycleStatus(); } catch (e) { return null; } })(),
     model_cards: r && r.available ? r.evidence.map(e => mgModelCard(e, {
       game: r.game, snapshot: r.snapshot,
       train_samples: r.split.train_to - r.split.train_from,
@@ -7948,6 +10519,24 @@ function mgRenderResearchPanel() {
     <span class="tag">${r.champion && r.champion.model ? '🏆 ' + modelDisplayName(r.champion.model) : 'sin champion'}</span>
     ${live && live.n ? `<span class="tag ${live.delta > 0 ? 'warm' : 'cool'}">live Δ${live.delta >= 0 ? '+' : ''}${live.delta.toFixed(2)} (n=${live.n})</span>` : ''}
     <span class="tag">semilla ${S.seed}</span>
+    ${r.edge_discovery ? `<span class="tag">${r.edge_discovery.label}</span>` : ''}
+    ${S.v10.freezePredictions ? '<span class="tag">🔒 congelado SHA-256</span>' : ''}
+    ${(() => {
+      if (!S.v12.enabled) return '';
+      try {
+        const g = mgRunProductionGate();
+        return `<span class="tag ${g.passed ? 'cool' : 'warm'}">🚀 ${g.decision}</span>`;
+      } catch (e) { return ''; }
+    })()}
+    ${(() => {
+      if (!S.neural.enabled) return '';
+      const nn = mgGetNeural();
+      if (!nn) return '<span class="tag">🧬 redes entrenando…</span>';
+      if (!nn.available) return '<span class="tag">🧬 redes n/d</span>';
+      const t = nn.evidence.filter(e => e.available).length;
+      const el = nn.meta_ensemble.eligible.length;
+      return `<span class="tag ${el ? 'warm' : ''}">🧬 ${t} red(es) · ${el ? el + ' aplicada(s)' : 'ninguna califica'}</span>`;
+    })()}
   </div>`;
 }
 
@@ -8769,6 +11358,12 @@ function runEvolution(silent = false) {
 
   // Refresca los paneles del protocolo (predicciones + ajustes)
   try { mgRenderResearchPanel(); mgRenderResearchStatus(); } catch (e) {}
+
+  // ── v11: el cerebro neuronal corre aparte, cediendo el hilo entre
+  //    redes, y al terminar vuelve a pintar los paneles. Nunca bloquea
+  //    la generación: si aún no terminó, las predicciones usan la
+  //    distribución clásica y lo dicen en el panel.
+  try { mgScheduleNeuralCycle(state.currentGame); } catch (e) { console.warn('MG: cerebro neuronal', e); }
 
   // Update agent reasoning after evolution
   setTimeout(() => {
@@ -9763,7 +12358,7 @@ function renderPredictionsView() {
 
     const rmeta = p.research ? `
       <div class="mg-audit-note">
-        ${p.research.mode === 'EDGE_CANDIDATE' ? '🏆' : '◦'} ${p.research.mode} · ${p.source === 'evolutionary' ? 'búsqueda evolutiva' : 'muestreo'}${p.research.candidate_mc ? ` · MC p${(p.research.candidate_mc.percentile_vs_random * 100).toFixed(0)}` : ''} · run ${String(p.research.run_id).slice(0, 8)} · semilla ${p.research.seed}
+        ${p.research.mode === 'EDGE_CANDIDATE' ? '🏆' : '◦'} ${p.research.mode} · ${p.source === 'evolutionary' ? 'búsqueda evolutiva' : 'muestreo'}${p.research.candidate_mc ? ` · MC p${(p.research.candidate_mc.percentile_vs_random * 100).toFixed(0)}` : ''} · run ${String(p.research.run_id).slice(0, 8)} · semilla ${p.research.seed}${p.research.frozen_hash ? `<br>🔒 ${String(p.research.frozen_hash).slice(0, 20)}…` : ''}${p.research.neural && p.research.neural.trained && p.research.neural.trained.length ? ` · 🧬 ${p.research.neural.applied ? 'redes aplicadas' : 'redes sin peso'}` : ''}
       </div>` : '';
 
     return `<div class="glass pred-item" id="pred-${i}">
@@ -10127,6 +12722,16 @@ function submitRealResult() {
   try {
     _mgCycle = mgOnNewDraw(state.currentGame, state.maxNumber, pick, state.draws);
   } catch (e) { console.warn('MG: ciclo live falló', e); }
+
+  // v12 reglas 5 y 6: el resultado entra al entrenamiento sólo tras cerrar su
+  // evaluación live, y al hacerlo la Live Frontier avanza.
+  let _mgFrontier = null;
+  try {
+    _mgFrontier = mgFrontierIngest(state.currentGame, state.draws.length - 1);
+  } catch (e) {
+    // Ya estaba en o por debajo de la frontera: no es un error, es la regla.
+    console.info('MG: frontera live sin avanzar —', e.message);
+  }
 
   // Close modal
   closeModal('modal-add-result');
