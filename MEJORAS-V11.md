@@ -1,4 +1,4 @@
-# Melate Genius · Protocolo autónomo v9 (Live Intelligence)
+# Melate Genius · Protocolo autónomo v11 (Neural Research Brain)
 
 Port a JavaScript, dentro de `index.html`, de las mejoras entregadas en los
 paquetes `melatepro-autonomous-v3 … v9`. Todo corre en el navegador: no hay
@@ -12,10 +12,36 @@ backend, ni Docker, ni FastAPI.
 | `v7/*` | ensemble dinámico, portafolio con límite de solape, búsqueda evolutiva, Monte Carlo, Research Memory, modo NO_EDGE |
 | `v8/*` | aprendizaje continuo, meta-learner de presupuesto, early stopping, disparador de deriva, decaimiento de Champion, auditoría live, track record |
 | `v9/*` | análisis secuencial, ventanas móviles 20/40/60, presupuesto adaptativo, linaje de datos, guardia de regresión, ranking por evidencia, plan del siguiente ciclo |
+| `v10/*` | predicciones congeladas con SHA-256, monitoreo secuencial con gasto de alfa, detector de edge de tres estados, Champion Live Gate, Research Guard, leaderboard live |
+| `v11/*` | features multi-fuente, split temporal con LeakageGuard, MLP, LSTM, Transformer, Autoencoder y meta-ensemble neuronal |
 
-Los retadores que exigen backend (LSTM, Transformer y la red neuronal cuántica
-de `worker/qnn.py`) se reportan como `optional_dependency_missing`, igual que en
-`engine/app/models/challengers.py`.
+Desde v11, el MLP, la LSTM, el Transformer y el Autoencoder entrenan dentro del
+navegador. El único retador que sigue necesitando backend es la QNN de
+`worker/qnn.py`, que requiere PennyLane y se reporta como
+`optional_dependency_missing`, igual que en `engine/app/models/challengers.py`.
+
+## Las redes neuronales
+
+El paquete construye las redes con PyTorch. Aquí van implementadas sobre un
+mini-autodiff propio (tensores 2D con cinta de operaciones, Adam y recorte de
+gradiente) para que entrenen de verdad en el cliente:
+
+| Red | Arquitectura | Rol |
+|---|---|---|
+| MLP | `Linear→ReLU→Dropout(.10)` ×2 + salida sigmoide, una muestra por número | Combina historia agregada con las salidas de los 13 modelos clásicos |
+| LSTM | Celda completa (i, f, g, o) con dropout .10 + softmax sobre los números | Dependencia temporal en la secuencia de sorteos |
+| Transformer | Proyección + atención escalada de 1 cabeza + FFN residual | Atención sobre la ventana de historia |
+| Autoencoder | `maxN→64→latente→64→maxN` sigmoide | Reconstrucción; su error es la señal de anomalía |
+
+Las dimensiones se reducen respecto al paquete (hidden 128 → 20-24, d_model
+128 → 24, 3 capas → 1) porque el entrenamiento corre en el hilo principal de un
+teléfono; el ciclo cede el hilo entre redes y respeta un presupuesto de tiempo
+configurable.
+
+**Los gradientes están verificados contra diferencias finitas** en las cuatro
+arquitecturas (error relativo ≤ 2·10⁻⁷), y una prueba de sanidad confirma que
+las redes aprenden: sobre una serie con señal temporal inyectada alcanzan
+p = 0.007 y +2.16 aciertos sobre el azar; sobre ruido puro se quedan en Δ ≈ 0.
 
 ## Dónde vive
 
@@ -51,7 +77,12 @@ Grupos disponibles:
    de Monte Carlo.
 5. **Aprendizaje continuo (v8)** — umbral y ventana de deriva, decaimiento del
    Champion, early stopping y topes de presupuesto por familia.
-6. **Inteligencia live (v9)** — z del IC, ventanas móviles, tolerancia de
+6. **Endurecimiento live (v10)** — congelado con SHA-256, monitoreo secuencial,
+   Research Guard y ciclos de Live Trial.
+7. **Cerebro neuronal (v11)** — qué redes entrenan, presupuesto de tiempo,
+   épocas, tasa de aprendizaje, tamaños de cada arquitectura y si el
+   meta-ensemble exige evidencia live para ponderar.
+8. **Inteligencia live (v9)** — z del IC, ventanas móviles, tolerancia de
    regresión, auditoría live y frontera temporal al entrenar con live.
 
 ## Qué pasa al generar predicciones
@@ -73,9 +104,24 @@ Con el protocolo activo, `generatePredictions()` deja de ser un muestreo simple:
    solape.
 6. **Auditoría Monte Carlo**: cada boleto recibe su percentil frente a una
    referencia de boletos aleatorios.
-7. **Registro auditable**: cada boleto guarda `run_id`, semilla, snapshot de
+7. **Meta-ensemble neuronal (v11)**: si alguna red pasó TODAS las compuertas,
+   su distribución se mezcla con la clásica según el peso configurado. Si
+   ninguna califica, la distribución no se toca (regla 57).
+8. **Registro auditable**: cada boleto guarda `run_id`, semilla, snapshot de
    datos y versión del modelo. La trazabilidad viaja con la predicción hasta el
    historial.
+9. **Congelado (v10)**: cada combinación se sella con un hash SHA-256 sobre su
+   payload canónico antes del sorteo, y queda verificable después (reglas 43 y
+   44). El hash aparece en la tarjeta del boleto.
+
+### Sobre el peso de las redes
+
+`v11/meta_ensemble.py` pondera con `validation_score × live_delta`. Mientras no
+exista historial live evaluado el producto es cero, así que **ninguna red
+pondera aunque pase todas las compuertas**: es la exigencia de evidencia live
+antes de dar peso (reglas 48 y 57). El comportamiento por defecto respeta esa
+fórmula; el ajuste *«Exigir evidencia live para ponderar»* permite sustituir ese
+factor por un piso para que una red ya validada pese sin esperar al live.
 
 Los modos Portafolio y Sistémico pasan por la diversificación y la auditoría; el
 agente IA usa exactamente el mismo pipeline.
@@ -87,6 +133,19 @@ pendientes, re-evoluciona y luego corre `mgOnNewDraw()`, que actualiza el track
 record live, el análisis secuencial con ventanas 20/40/60, el score de deriva,
 el decaimiento del Champion, la guardia de regresión y el plan del siguiente
 ciclo (exploración vs. confirmación).
+
+## Estados de la evidencia (v10)
+
+Racha, anomalía y edge son estados distintos (regla 46):
+
+- `RACHA_O_INESTABILIDAD` — el modelo no es estable o no replica.
+- `ANOMALIA_NO_CONFIRMADA` — replica y es estable, pero falla q, permutación o
+  Golden Holdout.
+- `EDGE_CANDIDATE` — pasa todo. Aun así entra a **Live Trial**, que no equivale
+  a Champion (regla 48).
+
+El monitor secuencial gasta alfa en cada mirada al live: mirar muchas veces
+exige una frontera más alta antes de llamar candidato a una diferencia.
 
 ## Invariantes que el código respeta
 
@@ -100,6 +159,14 @@ ciclo (exploración vs. confirmación).
   automáticamente.
 - `NO_EDGE` es un estado válido y no detiene la app: las combinaciones siguen
   siendo **candidatos, nunca garantías**.
+- Las redes sólo reciben features disponibles antes del sorteo objetivo
+  (regla 53) y el Golden Holdout es inaccesible durante el entrenamiento
+  (regla 58).
+- Validation loss nunca basta para declarar edge (regla 56); mayor complejidad
+  no es evidencia de ventaja (regla 62).
+- El Research Guard rechaza cualquier petición de bajar alfa, saltar BH,
+  permutación, Golden Holdout o auto-promover (regla 50).
+- Una predicción congelada no puede editarse retrospectivamente (regla 44).
 
 ## Auditoría
 
