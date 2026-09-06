@@ -3061,6 +3061,12 @@ body.light-mode .mg-strip-meta .tag { background: rgba(0,0,0,0.06); }
         <button class="btn btn-primary" onclick="generatePredictions()">
           ⚡ GENERAR PRO
         </button>
+        <!-- Regeneración trazable: semilla derivada, no aleatoriedad suelta -->
+        <button class="btn btn-ghost" id="btn-regenerate" onclick="regeneratePredictions()"
+                style="margin-top:8px;display:none;">
+          ↻ Regenerar con otra semilla
+        </button>
+        <div id="regen-note" class="mg-help" style="margin-top:6px;display:none;"></div>
       </div>
 
       <!-- Protocolo de investigación v9 — estado en vivo -->
@@ -5864,9 +5870,36 @@ const MG_DEFAULT_SETTINGS = {
   },
   portfolio: {
     enabled: true,
-    overlapLimit: 3,            // números compartidos máximos entre boletos
+    // Números compartidos máximos entre dos boletos del portafolio.
+    //
+    // Era 3 (la mitad de la combinación). La auditoría V9–V12 demostró que ese
+    // límite no frena la concentración: la selección greedy por scoreTicket
+    // premia las mismas bolillas de probabilidad alta en todos los boletos, y
+    // con 3 en común caben 10 boletos dentro de 19 bolillas distintas.
+    //
+    // El backtest cronológico sobre 200 sorteos reales (10 boletos) y 120
+    // sorteos (5 boletos) comparó 3, 2 y 1 con todo lo demás fijo:
+    //   límite 3 → cubre 28.99 bolillas (mín 18), solape 1.394, 4 sorteos en blanco
+    //   límite 2 → cubre 34.95 bolillas (mín 30), solape 0.836, 0 en blanco
+    //   límite 1 → cubre 40.19 bolillas (mín 36), solape 0.529, 0 en blanco
+    // Referencia previa a v9: 39.44 bolillas, solape 0.549, 0 en blanco.
+    //
+    // Se elige 1 por estructura, NO por aciertos: las cuatro configuraciones
+    // son estadísticamente indistinguibles en aciertos por boleto (p ≥ 0.25) y
+    // ninguna se distingue del azar. Sólo el límite 1 devuelve la cobertura al
+    // nivel anterior a la regresión en los dos tamaños de portafolio medidos.
+    overlapLimit: 1,
     poolFactor: 8,              // candidatos generados por boleto pedido
-    enforceDiversity: true
+    enforceDiversity: true,
+    // Diagnóstico de concentración. La cobertura es el número de bolillas
+    // distintas que tocan los boletos del portafolio; un portafolio que
+    // repite las mismas bolillas cubre menos y se va en blanco más seguido.
+    // El piso es DIAGNÓSTICO: enciende una bandera, y nada más. Ninguna ruta
+    // del código regenera, descarta ni altera un portafolio por su cobertura.
+    // Generar un portafolio no es evidencia de ventaja (v12 regla 13), y
+    // tampoco lo es rechazarlo. Fijar un piso que bloquee exigiría evidencia
+    // que hoy no existe, así que viene en 0 (apagado).
+    coverageFloor: 0            // 0 = sin piso; >0 = ratio mínimo cobertura/máx
   },
   evolution: {
     enabled: true,
@@ -5984,6 +6017,7 @@ const MG_STATE = {
   holdoutAccess: {},   // por juego → accesos al Golden Holdout y violaciones
   modelCards: {},      // por juego → ficha y estado de cada modelo
   snapshots: {},       // por juego → snapshots de predicción para el apilado temporal
+  regen: {},           // por juego → linaje de regeneración trazable (semilla derivada)
   busy: false
 };
 
@@ -6815,6 +6849,126 @@ function mgPortfolioDiversify(candidates, size, overlapLimit, maxN, pick) {
   return out;
 }
 
+// ── Diagnóstico de concentración del portafolio ──────────────────────
+//
+// La auditoría retrospectiva V9–V12 encontró que ninguna compuerta miraba la
+// ESTRUCTURA del portafolio, sólo el poder predictivo por modelo. Un pipeline
+// que selecciona greedy por score puede armar 10 boletos sobre 19 bolillas
+// distintas sin violar ningún límite de solape, y en ese caso los 10 boletos
+// se van en blanco juntos. Estas métricas hacen visible esa concentración.
+//
+// Es DIAGNÓSTICO puro: describe el portafolio, no lo modifica ni lo rechaza.
+// La cobertura alta no predice nada y no debe leerse como ventaja (regla 13).
+function mgPortfolioDiagnostics(tickets, maxN, pick) {
+  const rows = (tickets || [])
+    .map(t => (t && t.numbers) ? t.numbers : (t && t.ticket) ? t.ticket : t)
+    .filter(t => Array.isArray(t) && t.length);
+  const n = rows.length;
+  if (!n) {
+    return {
+      available: false, tickets: 0, coverage: 0, coverage_max: 0, coverage_ratio: 0,
+      overlap_mean: 0, overlap_max: 0, overlap_hist: {},
+      freq_mean: 0, freq_max: 0, freq_min: 0,
+      unique_tickets: 0, duplicate_tickets: 0, duplicate_exposure: 0,
+      concentration: 0, coverage_warning: false
+    };
+  }
+
+  const p = pick || rows[0].length;
+  const freq = new Map();
+  rows.forEach(t => t.forEach(x => freq.set(x, (freq.get(x) || 0) + 1)));
+  const counts = Array.from(freq.values());
+  const coverage = freq.size;
+  // Techo real: no puede cubrirse más que las posiciones jugadas ni que maxN.
+  const coverageMax = Math.min(maxN, n * p);
+
+  const pairs = [];
+  const hist = {};
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const o = mgOverlap(rows[i], rows[j]);
+      pairs.push(o);
+      hist[o] = (hist[o] || 0) + 1;
+    }
+  }
+  const uniq = new Set(rows.map(t => t.slice().sort((a, b) => a - b).join(','))).size;
+
+  const ratio = coverageMax ? coverage / coverageMax : 0;
+  const S = mgSettings().portfolio;
+  const floor = Math.max(0, Math.min(1, S.coverageFloor || 0));
+
+  return {
+    available: true,
+    tickets: n,
+    coverage,                                  // bolillas distintas cubiertas
+    coverage_max: coverageMax,                 // techo alcanzable con n boletos
+    coverage_ratio: ratio,
+    overlap_mean: pairs.length ? pairs.reduce((a, b) => a + b, 0) / pairs.length : 0,
+    overlap_max: pairs.length ? Math.max.apply(null, pairs) : 0,
+    overlap_hist: hist,
+    freq_mean: counts.length ? counts.reduce((a, b) => a + b, 0) / counts.length : 0,
+    freq_max: counts.length ? Math.max.apply(null, counts) : 0,
+    freq_min: counts.length ? Math.min.apply(null, counts) : 0,
+    unique_tickets: uniq,
+    duplicate_tickets: n - uniq,
+    // Posiciones jugadas por encima de una sola aparición de cada bolilla.
+    duplicate_exposure: (n * p) - coverage,
+    // 0 = una bolilla distinta por posición; 1 = todas las posiciones repiten.
+    concentration: (n * p) > 0 ? 1 - (coverage / (n * p)) : 0,
+    // Bandera informativa. Con floor = 0 (predeterminado) nunca se enciende.
+    coverage_warning: floor > 0 && ratio < floor
+  };
+}
+
+// ── Regeneración trazable (auditoría V9–V12, hallazgo 2) ─────────────
+//
+// El generador es determinista por diseño: misma semilla, mismos boletos, hoy
+// y mañana. El efecto secundario era que pulsar «Generar» cinco veces devolvía
+// exactamente el mismo portafolio, sin forma de volver a muestrear.
+//
+// La salida NO es volver a Date.now(). Cada regeneración es una ejecución
+// nueva con semilla DERIVADA de la original, registrada con su linaje. Sigue
+// siendo reproducible: (snapshot, configuración, índice) → misma semilla.
+// La clave cubre todo lo que determina la semilla base y la selección: si algo
+// de eso cambia, el linaje ya no aplica y se reinicia en el índice 0 canónico.
+function mgRegenKey(game, snapshotId, count, mode) {
+  const S = mgSettings();
+  return [game, snapshotId, count, mode, mgSettingsFingerprint(),
+    mgHash(JSON.stringify([S.portfolio, S.evolution, S.seed, S.deterministic]))].join('|');
+}
+
+// El linaje se reinicia solo cuando cambia el juego, el snapshot de sorteos, el
+// modo, el número de boletos o la configuración: un sorteo nuevo siempre
+// arranca en el índice 0, que conserva la semilla histórica.
+function mgRegenState(game, snapshotId, count, mode) {
+  const key = mgRegenKey(game, snapshotId, count, mode);
+  const cur = MG_STATE.regen[game];
+  if (!cur || cur.key !== key) {
+    MG_STATE.regen[game] = { key, index: 0, parent_run_id: null, lineage: [] };
+  }
+  return MG_STATE.regen[game];
+}
+
+function mgRegenAdvance(game, snapshotId, count, mode) {
+  const st = mgRegenState(game, snapshotId, count, mode);
+  st.index += 1;
+  return st.index;
+}
+
+function mgRegenReset(game) {
+  if (game) delete MG_STATE.regen[game];
+  else MG_STATE.regen = {};
+}
+
+// Derivación determinista de la semilla a partir del índice de regeneración.
+// El índice 0 conserva EXACTAMENTE la semilla histórica, así que la primera
+// generación de cada sorteo no cambia respecto de la versión anterior.
+function mgDeriveSeed(baseSeed, regenIndex) {
+  const i = Math.max(0, Math.floor(regenIndex || 0));
+  if (i === 0) return baseSeed >>> 0;
+  return ((baseSeed >>> 0) + Math.imul(i, 2654435761)) >>> 0;
+}
+
 // evolution.EvolutionarySearch — nunca accede al Golden Holdout (regla 17)
 function mgEvolutionarySearch(maxN, pick, seed) {
   const rng = mgLcg(seed || mgSettings().seed);
@@ -7458,9 +7612,11 @@ function mgApplyEdgeAdjustment(probs, maxN) {
 
 // Pipeline v7 completo: pool → búsqueda evolutiva → portafolio diversificado
 // → auditoría Monte Carlo → registro live auditable.
-function mgBuildCandidates(probs, draws, maxN, pick, count, mode, seedBase) {
+function mgBuildCandidates(probs, draws, maxN, pick, count, mode, seedBase, regenIndex) {
   const S = mgSettings();
-  const seed = S.deterministic ? (S.seed + count * 7919 + mgHashNum(mode)) : (seedBase || Date.now());
+  const baseSeed = S.deterministic ? (S.seed + count * 7919 + mgHashNum(mode)) : (seedBase || Date.now());
+  // regenIndex 0 (predeterminado) deja la semilla histórica intacta.
+  const seed = S.deterministic ? mgDeriveSeed(baseSeed, regenIndex) : baseSeed;
 
   // 1. Pool inicial sobremuestreado
   const poolSize = Math.max(count, Math.min(120, count * (S.portfolio.poolFactor || 6)));
@@ -7502,7 +7658,7 @@ function mgBuildCandidates(probs, draws, maxN, pick, count, mode, seedBase) {
     : candidates.slice().sort((a, b) => b.score - a.score).slice(0, count);
 
   if (!selected.length) selected = candidates.slice(0, count);
-  return { selected, pool: candidates, seed };
+  return { selected, pool: candidates, seed, base_seed: baseSeed, regen_index: Math.max(0, Math.floor(regenIndex || 0)) };
 }
 
 function mgHashNum(s) {
@@ -7513,7 +7669,7 @@ function mgHashNum(s) {
 }
 
 // Punto único de entrada usado por generatePredictions()
-function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
+function mgGeneratePredictions(probs, draws, maxN, pick, count, mode, regenIndex) {
   const S = mgSettings();
   const _r = mgGetResearch();
   const r = (_r && _r.available) ? _r : null;   // un ciclo incompleto no aporta veredicto
@@ -7527,10 +7683,22 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
       .map(t => Object.assign(t, { research: null }));
   }
 
-  const built = mgBuildCandidates(adjusted, draws, maxN, pick, count, mode, Date.now());
   const snapshot = mgSnapshotId(draws);
-  const runId = mgRunId((r ? r.run_id : 'no-cycle') + mode);
+  const game0 = (typeof state !== 'undefined') ? state.currentGame : 'melate';
+  // Índice de regeneración: 0 = ejecución canónica del sorteo. Se toma del
+  // linaje sólo si quien llama no lo fija explícitamente (backtests, tests).
+  const regenIdx = (regenIndex == null)
+    ? (S.deterministic ? mgRegenState(game0, snapshot, count, mode).index : 0)
+    : Math.max(0, Math.floor(regenIndex));
+
+  const built = mgBuildCandidates(adjusted, draws, maxN, pick, count, mode, Date.now(), regenIdx);
+  // El run_id incorpora la semilla derivada: cada regeneración es una ejecución
+  // NUEVA y auditable, nunca una reescritura de la anterior.
+  const runId = mgRunId((r ? r.run_id : 'no-cycle') + mode + '|r' + regenIdx + '|' + built.seed);
   const championName = (r && r.champion && r.champion.active) ? r.champion.model : null;
+
+  // Diagnóstico de concentración del portafolio (auditoría V9–V12).
+  const diagnostics = mgPortfolioDiagnostics(built.selected, maxN, pick);
 
   // 4. Auditoría Monte Carlo (v7 regla 18)
   const mc = (S.monteCarlo.enabled)
@@ -7576,6 +7744,19 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
       calibration_passed: !!(r && r.calibration && r.calibration.passed),
       // regla 13: generar portafolio NO es evidencia de ventaja
       portfolio_is_not_edge: true
+    },
+    // Estructura del portafolio: diagnóstico, nunca compuerta. Una cobertura
+    // alta describe cómo se repartieron los boletos; no predice nada.
+    portfolio: Object.assign({ overlap_limit: S.portfolio.overlapLimit }, diagnostics),
+    // Linaje de regeneración: cada índice es una ejecución nueva y reproducible.
+    regeneration: {
+      index: regenIdx,
+      seed: built.seed,
+      base_seed: built.base_seed,
+      snapshot_id: snapshot,
+      parent_run_id: (regenIdx > 0 && MG_STATE.regen[game0]) ? MG_STATE.regen[game0].parent_run_id : null,
+      config_hash: mgRegenKey(game0, snapshot, count, mode),
+      deterministic: !!S.deterministic
     }
   };
 
@@ -7629,6 +7810,19 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode) {
   if (frozen.length) {
     MG_STATE.frozen = MG_STATE.frozen.concat(frozen).slice(-200);
     mgSaveResearchState();
+  }
+
+  // Linaje: la ejecución canónica (índice 0) es el padre de las regeneraciones.
+  // Sólo se anota; ninguna predicción congelada previa se reescribe.
+  if (S.deterministic) {
+    try {
+      const st = mgRegenState(game0, snapshot, count, mode);
+      if (regenIdx === 0) st.parent_run_id = runId;
+      st.lineage = (st.lineage || []).concat([{
+        index: regenIdx, run_id: runId, seed: built.seed,
+        coverage: diagnostics.coverage, overlap_mean: diagnostics.overlap_mean
+      }]).slice(-20);
+    } catch (e) { console.warn('MG: linaje de regeneración', e); }
   }
   return out;
 }
@@ -9902,6 +10096,8 @@ const MG_SETTINGS_SCHEMA = [
         help: 'Candidatos generados por cada boleto pedido antes de diversificar.' },
       { path: 'portfolio.enforceDiversity', type: 'bool', label: 'Forzar diversidad',
         help: 'Descarta candidatos que violen el límite de solape.' },
+      { path: 'portfolio.coverageFloor', type: 'float', label: 'Piso de cobertura (diagnóstico)', min: 0, max: 1, step: 0.05,
+        help: 'Ratio mínimo de bolillas distintas sobre el máximo alcanzable. 0 = sin piso. Sólo marca el portafolio; nunca lo regenera ni lo altera.' },
       { path: 'evolution.enabled', type: 'bool', label: 'Búsqueda evolutiva',
         help: 'Mutación + cruce sobre el pool de candidatos usando el score del boleto como fitness.' },
       { path: 'evolution.generations', type: 'int', label: 'Generaciones', min: 2, max: 60,
@@ -10536,6 +10732,15 @@ function mgRenderResearchPanel() {
       const t = nn.evidence.filter(e => e.available).length;
       const el = nn.meta_ensemble.eligible.length;
       return `<span class="tag ${el ? 'warm' : ''}">🧬 ${t} red(es) · ${el ? el + ' aplicada(s)' : 'ninguna califica'}</span>`;
+    })()}
+    ${(() => {
+      // Estructura del portafolio recién generado: diagnóstico, no compuerta.
+      const p = (typeof state !== 'undefined' && state.lastPredictions[0] &&
+        state.lastPredictions[0].research) ? state.lastPredictions[0].research.portfolio : null;
+      if (!p || !p.available) return '';
+      const maxN = (typeof state !== 'undefined') ? state.maxNumber : 56;
+      return `<span class="tag ${p.coverage_warning ? 'warm' : ''}">📦 cubre ${p.coverage}/${maxN}`
+        + ` · solape ${p.overlap_mean.toFixed(2)}</span>`;
     })()}
   </div>`;
 }
@@ -12295,6 +12500,49 @@ function generatePredictions() {
   }, 100);
 }
 
+// ── Regeneración trazable ────────────────────────────────────────────
+//
+// Avanza el índice del linaje y vuelve a generar. La semilla se DERIVA de la
+// canónica, así que el resultado sigue siendo reproducible: el mismo snapshot,
+// la misma configuración y el mismo índice devuelven siempre los mismos
+// boletos. No se usa Date.now() ni ninguna fuente no reproducible.
+//
+// Cada regeneración es una ejecución nueva con su propio run_id, semilla y
+// SHA-256. Las predicciones ya congeladas no se modifican ni se reemplazan.
+function regeneratePredictions() {
+  if (state.currentGame === 'tris' || state.mode === 'portfolio' || state.mode === 'wheel') {
+    return generatePredictions();
+  }
+  try {
+    const snapshot = mgSnapshotId(state.draws);
+    mgRegenAdvance(state.currentGame, snapshot, state.count, state.mode);
+  } catch (e) { console.warn('MG: no se pudo avanzar el linaje', e); }
+  generatePredictions();
+}
+
+// Un sorteo nuevo, otro juego o un cambio de configuración reinician el linaje
+// solos (la clave deja de coincidir); esto es para los cambios manuales.
+function mgResetRegenForGame(game) {
+  try { mgRegenReset(game || (typeof state !== 'undefined' ? state.currentGame : null)); } catch (e) {}
+}
+
+function _renderRegenControls() {
+  const btn = document.getElementById('btn-regenerate');
+  const note = document.getElementById('regen-note');
+  if (!btn || !note) return;
+  const meta = state.lastPredictions[0] && state.lastPredictions[0].research;
+  const reg = meta && meta.regeneration;
+  const show = !!(reg && reg.deterministic) &&
+    state.currentGame !== 'tris' && state.mode !== 'portfolio' && state.mode !== 'wheel';
+  btn.style.display = show ? '' : 'none';
+  note.style.display = show ? '' : 'none';
+  if (!show) return;
+  const p = meta.portfolio || {};
+  note.innerHTML = reg.index === 0
+    ? `Ejecución canónica · semilla <code>${reg.seed}</code> · cubre <strong>${p.coverage || 0}</strong> de ${state.maxNumber} números.`
+    : `Regeneración <strong>#${reg.index}</strong> · semilla derivada <code>${reg.seed}</code> · cubre <strong>${p.coverage || 0}</strong> de ${state.maxNumber} números. La misma semilla devuelve siempre estos boletos.`;
+}
+
 function renderPredictionsView() {
   const cv = document.getElementById('count-value');
   if (cv) cv.textContent = state.count;
@@ -12302,6 +12550,7 @@ function renderPredictionsView() {
   if (cs) cs.value = state.count;
   _renderPredAIPanel(); // AI model leaderboard + top numbers
   try { mgRenderResearchPanel(); } catch (e) {}
+  try { _renderRegenControls(); } catch (e) {}
 
   const c = document.getElementById('pred-results');
   if (!c) return;
