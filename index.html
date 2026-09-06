@@ -6825,28 +6825,86 @@ function mgPortfolioValidate(combo, maxN, pick) {
   return c.length === pick && c.every(x => x >= 1 && x <= maxN);
 }
 
-// portfolio_engine.PortfolioEngine.diversify
-function mgPortfolioDiversify(candidates, size, overlapLimit, maxN, pick) {
-  const S = mgSettings().portfolio;
-  const lim = (overlapLimit == null) ? S.overlapLimit : overlapLimit;
-  const out = [];
-  const sorted = candidates.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+// ── Relajación acotada del solape ────────────────────────────────────
+//
+// Antes existía un relleno que, si la restricción de solape dejaba huecos,
+// completaba el portafolio IGNORANDO el límite. Eso producía portafolios con
+// solape 4 o 5 mientras el sistema seguía diciendo que el límite era 1, sin
+// dejar rastro. Ese camino ya no existe.
+//
+// En su lugar el límite se relaja de a un paso y siempre de forma explícita:
+// se intenta el solicitado, luego uno más, hasta un techo duro de 3. Si con 3
+// tampoco se completa, se devuelve el mejor portafolio VÁLIDO obtenido —con
+// menos boletos de los pedidos— y se marca como no factible. Nunca se emite un
+// boleto que viole el límite efectivo que el propio resultado declara.
+//
+// La relajación depende SÓLO de la factibilidad combinatoria del pool. No mira
+// aciertos, premios, Golden Holdout ni Live Frontier, y no reordena ni
+// re-puntúa a los candidatos.
+const MG_OVERLAP_RELAX_MAX = 3;
+
+// [solicitado, solicitado+1, …, 3]. Si el solicitado ya es 3 o mayor, se
+// intenta únicamente ese: la relajación nunca sube por encima de 3 ni baja.
+function mgOverlapLadder(requested) {
+  const req = Math.max(0, Math.floor(requested));
+  const ladder = [req];
+  for (let l = req + 1; l <= MG_OVERLAP_RELAX_MAX; l++) ladder.push(l);
+  return ladder;
+}
+
+// Selección voraz por score respetando un límite fijo. Sin duplicados: un
+// boleto repetido nunca sirve de relleno.
+function mgGreedyBoundedOverlap(sorted, size, lim, maxN, pick, enforce) {
+  const out = [], seen = new Set();
   for (const c of sorted) {
     if (out.length >= size) break;
     if (!mgPortfolioValidate(c.numbers, maxN, pick)) continue;
-    if (S.enforceDiversity && !out.every(s => mgOverlap(c.numbers, s.numbers) <= lim)) continue;
+    const key = c.numbers.slice().sort((a, b) => a - b).join(',');
+    if (seen.has(key)) continue;
+    if (enforce && !out.every(s => mgOverlap(c.numbers, s.numbers) <= lim)) continue;
+    seen.add(key);
     out.push(c);
   }
-  // Relleno: si la restricción de solape deja huecos, completa por score
-  if (out.length < size) {
-    for (const c of sorted) {
-      if (out.length >= size) break;
-      if (!mgPortfolioValidate(c.numbers, maxN, pick)) continue;
-      if (out.some(s => s.numbers.join(',') === c.numbers.join(','))) continue;
-      out.push(c);
+  return out;
+}
+
+function mgResolvePortfolioWithBoundedOverlap(candidates, size, requestedLimit, maxN, pick) {
+  const S = mgSettings().portfolio;
+  const requested = (requestedLimit == null) ? S.overlapLimit : requestedLimit;
+  const sorted = candidates.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  // Sin exigencia de diversidad no hay restricción que satisfacer: no se
+  // declara ningún límite efectivo, así que tampoco puede violarse.
+  if (!S.enforceDiversity) {
+    const out = mgGreedyBoundedOverlap(sorted, size, requested, maxN, pick, false);
+    return { tickets: out, requested, effective: null, enforced: false,
+      relaxationApplied: false, relaxationLevel: 0,
+      feasible: out.length >= size, requestedSize: size, attempts: [] };
+  }
+
+  const attempts = [];
+  let best = null;
+  for (const eff of mgOverlapLadder(requested)) {
+    const out = mgGreedyBoundedOverlap(sorted, size, eff, maxN, pick, true);
+    attempts.push({ limit: eff, obtained: out.length, needed: size });
+    if (!best || out.length > best.tickets.length) best = { tickets: out, effective: eff };
+    if (out.length >= size) {
+      return { tickets: out, requested, effective: eff, enforced: true,
+        relaxationApplied: eff !== requested, relaxationLevel: eff - requested,
+        feasible: true, requestedSize: size, attempts };
     }
   }
-  return out;
+  // Imposibilidad controlada: menos boletos, nunca boletos que violen.
+  return { tickets: best ? best.tickets : [], requested,
+    effective: best ? best.effective : MG_OVERLAP_RELAX_MAX, enforced: true,
+    relaxationApplied: !!best && best.effective !== requested,
+    relaxationLevel: best ? best.effective - requested : 0,
+    feasible: false, requestedSize: size, attempts };
+}
+
+// portfolio_engine.PortfolioEngine.diversify
+function mgPortfolioDiversify(candidates, size, overlapLimit, maxN, pick) {
+  return mgResolvePortfolioWithBoundedOverlap(candidates, size, overlapLimit, maxN, pick).tickets;
 }
 
 // ── Diagnóstico de concentración del portafolio ──────────────────────
@@ -6859,19 +6917,36 @@ function mgPortfolioDiversify(candidates, size, overlapLimit, maxN, pick) {
 //
 // Es DIAGNÓSTICO puro: describe el portafolio, no lo modifica ni lo rechaza.
 // La cobertura alta no predice nada y no debe leerse como ventaja (regla 13).
-function mgPortfolioDiagnostics(tickets, maxN, pick) {
+function mgPortfolioDiagnostics(tickets, maxN, pick, resolution) {
+  // Resolución del solape: qué límite se pidió, cuál se pudo cumplir y si hubo
+  // relajación. Sin resolución se asume el ajuste vigente sin relajar.
+  const res = resolution || { requested: mgSettings().portfolio.overlapLimit,
+    effective: mgSettings().portfolio.overlapLimit, enforced: !!mgSettings().portfolio.enforceDiversity,
+    relaxationApplied: false, relaxationLevel: 0, feasible: true, requestedSize: null, attempts: [] };
+  const overlapMeta = {
+    requested_overlap_limit: res.requested,
+    effective_overlap_limit: res.effective,
+    overlap_enforced: !!res.enforced,
+    relaxation_applied: !!res.relaxationApplied,
+    relaxation_level: res.relaxationLevel || 0,
+    relaxation_max: MG_OVERLAP_RELAX_MAX,
+    feasible: res.feasible !== false,
+    tickets_requested: res.requestedSize,
+    attempts: res.attempts || []
+  };
+
   const rows = (tickets || [])
     .map(t => (t && t.numbers) ? t.numbers : (t && t.ticket) ? t.ticket : t)
     .filter(t => Array.isArray(t) && t.length);
   const n = rows.length;
   if (!n) {
-    return {
+    return Object.assign({
       available: false, tickets: 0, coverage: 0, coverage_max: 0, coverage_ratio: 0,
       overlap_mean: 0, overlap_max: 0, overlap_hist: {},
       freq_mean: 0, freq_max: 0, freq_min: 0,
       unique_tickets: 0, duplicate_tickets: 0, duplicate_exposure: 0,
-      concentration: 0, coverage_warning: false
-    };
+      concentration: 0, coverage_warning: false, silent_overlap_violation: false
+    }, overlapMeta);
   }
 
   const p = pick || rows[0].length;
@@ -6896,15 +6971,21 @@ function mgPortfolioDiagnostics(tickets, maxN, pick) {
   const ratio = coverageMax ? coverage / coverageMax : 0;
   const S = mgSettings().portfolio;
   const floor = Math.max(0, Math.min(1, S.coverageFloor || 0));
+  const overlapMax = pairs.length ? Math.max.apply(null, pairs) : 0;
 
-  return {
+  return Object.assign({
     available: true,
     tickets: n,
+    // Invariante del portafolio: si se declara un límite efectivo, ningún par
+    // de boletos puede superarlo. Esto SIEMPRE debe ser false.
+    silent_overlap_violation: !!(overlapMeta.overlap_enforced
+      && overlapMeta.effective_overlap_limit != null
+      && overlapMax > overlapMeta.effective_overlap_limit),
     coverage,                                  // bolillas distintas cubiertas
     coverage_max: coverageMax,                 // techo alcanzable con n boletos
     coverage_ratio: ratio,
     overlap_mean: pairs.length ? pairs.reduce((a, b) => a + b, 0) / pairs.length : 0,
-    overlap_max: pairs.length ? Math.max.apply(null, pairs) : 0,
+    overlap_max: overlapMax,
     overlap_hist: hist,
     freq_mean: counts.length ? counts.reduce((a, b) => a + b, 0) / counts.length : 0,
     freq_max: counts.length ? Math.max.apply(null, counts) : 0,
@@ -6917,7 +6998,7 @@ function mgPortfolioDiagnostics(tickets, maxN, pick) {
     concentration: (n * p) > 0 ? 1 - (coverage / (n * p)) : 0,
     // Bandera informativa. Con floor = 0 (predeterminado) nunca se enciende.
     coverage_warning: floor > 0 && ratio < floor
-  };
+  }, overlapMeta);
 }
 
 // ── Regeneración trazable (auditoría V9–V12, hallazgo 2) ─────────────
@@ -7652,13 +7733,22 @@ function mgBuildCandidates(probs, draws, maxN, pick, count, mode, seedBase, rege
     } catch (e) { console.warn('MG: búsqueda evolutiva falló', e); }
   }
 
-  // 3. Portafolio diversificado (v7) con límite de solape
-  let selected = (S.enabled && S.portfolio.enabled)
-    ? mgPortfolioDiversify(candidates, count, S.portfolio.overlapLimit, maxN, pick)
-    : candidates.slice().sort((a, b) => b.score - a.score).slice(0, count);
-
-  if (!selected.length) selected = candidates.slice(0, count);
-  return { selected, pool: candidates, seed, base_seed: baseSeed, regen_index: Math.max(0, Math.floor(regenIndex || 0)) };
+  // 3. Portafolio diversificado (v7) con relajación acotada del solape.
+  //    Si el límite pedido no es factible se sube de a un paso hasta 3; nunca
+  //    se completa el portafolio ignorando el límite.
+  let selected, resolution;
+  if (S.enabled && S.portfolio.enabled) {
+    resolution = mgResolvePortfolioWithBoundedOverlap(candidates, count, S.portfolio.overlapLimit, maxN, pick);
+    selected = resolution.tickets;
+  } else {
+    // Portafolio desactivado por configuración: no se declara límite alguno.
+    selected = candidates.slice().sort((a, b) => b.score - a.score).slice(0, count);
+    resolution = { requested: S.portfolio.overlapLimit, effective: null, enforced: false,
+      relaxationApplied: false, relaxationLevel: 0, feasible: selected.length >= count,
+      requestedSize: count, attempts: [] };
+  }
+  return { selected, pool: candidates, seed, base_seed: baseSeed,
+    regen_index: Math.max(0, Math.floor(regenIndex || 0)), resolution };
 }
 
 function mgHashNum(s) {
@@ -7697,8 +7787,9 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode, regenIndex
   const runId = mgRunId((r ? r.run_id : 'no-cycle') + mode + '|r' + regenIdx + '|' + built.seed);
   const championName = (r && r.champion && r.champion.active) ? r.champion.model : null;
 
-  // Diagnóstico de concentración del portafolio (auditoría V9–V12).
-  const diagnostics = mgPortfolioDiagnostics(built.selected, maxN, pick);
+  // Diagnóstico de concentración del portafolio (auditoría V9–V12) + la
+  // resolución del solape: límite pedido, límite efectivo y si hubo relajación.
+  const diagnostics = mgPortfolioDiagnostics(built.selected, maxN, pick, built.resolution);
 
   // 4. Auditoría Monte Carlo (v7 regla 18)
   const mc = (S.monteCarlo.enabled)
@@ -7827,14 +7918,22 @@ function mgGeneratePredictions(probs, draws, maxN, pick, count, mode, regenIndex
   return out;
 }
 
-// Aplica diversificación de portafolio a una lista ya construida
-// (usada por el modo Portafolio y el modo Sistémico)
+// Reordena una lista ya construida (modo Portafolio y modo Sistémico) para que
+// los boletos con menos solape queden primero. NUNCA descarta ni inventa: si el
+// límite no admite a todos, la lista original pasa intacta y se anota que no se
+// pudo imponer ningún límite, en vez de recortar la jugada del usuario.
 function mgDiversifyTickets(tickets, maxN, pick, limit) {
   const S = mgSettings();
   if (!S.enabled || !S.applyToPredictions || !S.portfolio.enabled) return tickets;
   const cands = tickets.map(t => ({ numbers: t.ticket, score: t.score ? t.score.totalScore : 0, ref: t }));
-  const sel = mgPortfolioDiversify(cands, tickets.length, limit, maxN, pick);
-  return sel.map(s => s.ref);
+  const res = mgResolvePortfolioWithBoundedOverlap(cands, tickets.length, limit, maxN, pick);
+  const out = res.feasible ? res.tickets.map(s => s.ref) : tickets;
+  // La resolución viaja con los boletos para que el meta la pueda declarar.
+  out.forEach(t => {
+    t._mgOverlapResolution = res.feasible ? res : Object.assign({}, res,
+      { effective: null, enforced: false, relaxationApplied: false, relaxationLevel: 0 });
+  });
+  return out;
 }
 
 function mgAttachResearchMeta(tickets, draws) {
@@ -7856,6 +7955,8 @@ function mgAttachResearchMeta(tickets, draws) {
   };
   const audits = [];
   const game = (typeof state !== 'undefined') ? state.currentGame : 'melate';
+  const maxN0 = (typeof state !== 'undefined') ? state.maxNumber : 56;
+  const pick0 = (GAME_CONFIG[game] || {}).pick || 6;
   const generatedAt = new Date().toISOString();
   const frozen = [];
   tickets.forEach(t => {
@@ -7865,8 +7966,10 @@ function mgAttachResearchMeta(tickets, draws) {
       frozen.push(freeze);
     }
     t.research = Object.assign({}, meta, {
-      frozen_hash: freeze ? freeze.payload_hash : null, generated_at: generatedAt
+      frozen_hash: freeze ? freeze.payload_hash : null, generated_at: generatedAt,
+      portfolio: mgPortfolioDiagnostics(tickets, maxN0, pick0, t._mgOverlapResolution)
     });
+    delete t._mgOverlapResolution;
     audits.push(mgCreateAudit(runId, game, championName || 'ensemble',
       MG_VERSION, meta.seed, snapshot, t.ticket));
   });
@@ -10739,8 +10842,18 @@ function mgRenderResearchPanel() {
         state.lastPredictions[0].research) ? state.lastPredictions[0].research.portfolio : null;
       if (!p || !p.available) return '';
       const maxN = (typeof state !== 'undefined') ? state.maxNumber : 56;
-      return `<span class="tag ${p.coverage_warning ? 'warm' : ''}">📦 cubre ${p.coverage}/${maxN}`
+      let t = `<span class="tag ${p.coverage_warning ? 'warm' : ''}">📦 cubre ${p.coverage}/${maxN}`
         + ` · solape ${p.overlap_mean.toFixed(2)}</span>`;
+      // Relajación acotada: se declara, no se esconde.
+      if (p.relaxation_applied) {
+        t += `<span class="tag warm">↔︎ solape ${p.requested_overlap_limit}→${p.effective_overlap_limit}`
+          + ` (no cabían ${p.tickets_requested} boletos con ${p.requested_overlap_limit})</span>`;
+      }
+      if (p.feasible === false) {
+        t += `<span class="tag warm">⚠︎ ${p.tickets} de ${p.tickets_requested} boletos`
+          + ` · imposible con solape ≤ ${MG_OVERLAP_RELAX_MAX}</span>`;
+      }
+      return t;
     })()}
   </div>`;
 }
