@@ -3336,6 +3336,7 @@ body.light-mode .mg-strip-meta .tag { background: rgba(0,0,0,0.06); }
 
       <div id="mg-research-status"></div>
       <div id="mg-settings-body"></div>
+      <div id="mg-discovery-panel"></div>
 
       <button class="btn btn-ghost" onclick="mgUiReset()" style="margin-top:14px;">
         ↺ Restaurar valores por defecto
@@ -10490,6 +10491,7 @@ function mgRenderSettingsView() {
       </div>
     </div>`).join('');
   mgRenderResearchStatus();
+  try { mgRenderDiscoveryPanel(); } catch (e) {}
 }
 
 // ── Estado del protocolo (tarjeta superior de Ajustes) ──
@@ -19049,6 +19051,1068 @@ document.getElementById = function(id) {
   }
   return _origGet(id);
 };
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  DISCOVERY ENGINE v1 — capa de investigación, aislada de producción.
+//  Se añade al final a propósito: nada del resto de la app depende de este
+//  bloque, y quitarlo entero deja el sistema exactamente como estaba.
+// ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════════
+   MELATE GENIUS · DISCOVERY ENGINE v1 — research-only
+   ───────────────────────────────────────────────────────────────────────────
+   DISCOVERY != PREDICTION.
+
+   Esta capa NO escribe en producción. No importa, no llama y no referencia
+   ninguna función de generación, ensemble neuronal, Live Frontier, Golden
+   Holdout, Champion Gate, NO_EDGE, pesos productivos ni Supabase. Su única
+   salida es:  research result → hypothesis → evidence → frozen candidate spec.
+
+   `production_eligible` empieza y termina SIEMPRE en false.
+
+   Script plano (sin módulos ES) para poder vivir dentro de index.html y, a la
+   vez, cargarse en Node para las pruebas.
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function (root) {
+  'use strict';
+
+  var VERSION = 'DDE-1.1.0';
+
+  // ── Configuración PRIMARIA, declarada antes de ejecutar ──────────────────
+  // Ningún parámetro de aquí se elige mirando resultados.
+  var DEFAULTS = {
+    alpha: 0.05,
+    deltaMin: 0.042,        // heredado del preregistro; se documenta como convención
+    permutations: 200,      // resolución mínima de p: 1/(B+1)
+    seed: 20260914,
+    oosFraction: 0.5,       // OOS = segunda mitad del histórico
+    holdoutFraction: 0.25,  // holdout independiente = [25 %, 50 %)
+    blockSize: 100,         // bloques disjuntos para estabilidad
+    minHistory: 300,
+    stabilityMinPositiveFrac: 0.60,   // criterio declarado
+    triplesMaxN: 60         // por encima de esto, la familia de tríos no se registra
+  };
+
+  // ── Utilidades numéricas ────────────────────────────────────────────────
+  function baselineHits(N, k) { return k * k / N; }
+
+  function sdH0(N, k) {
+    // sd exacta por sorteo bajo H0 (hipergeométrica). No se estima de la muestra.
+    var b = baselineHits(N, k), s = 0, h;
+    for (h = 0; h <= k; h++) s += Math.pow(h - b, 2) * hyper(N, k, h);
+    return Math.sqrt(s);
+  }
+  function comb(n, r) {
+    if (r < 0 || r > n) return 0;
+    if (r > n - r) r = n - r;
+    var num = 1, den = 1, i;
+    for (i = 0; i < r; i++) { num *= n - i; den *= i + 1; }
+    return Math.round(num / den);       // exacta para N <= 56
+  }
+  function hyper(N, k, h) {
+    if (h > k || (k - h) > (N - k)) return 0;
+    return comb(k, h) * comb(N - k, k - h) / comb(N, k);
+  }
+  function mean(a) { var s = 0, i; for (i = 0; i < a.length; i++) s += a[i]; return a.length ? s / a.length : NaN; }
+  function sampleSd(a) {
+    if (a.length < 2) return NaN;
+    var m = mean(a), s = 0, i;
+    for (i = 0; i < a.length; i++) s += (a[i] - m) * (a[i] - m);
+    return Math.sqrt(s / (a.length - 1));
+  }
+  function median(a) {
+    var b = a.slice().sort(function (x, y) { return x - y; }), n = b.length;
+    if (!n) return NaN;
+    return n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2;
+  }
+
+  // Φ(x) — algoritmo de Hart (1968). Error absoluto ~1e-15, no ~1e-7: los
+  // p-valores paramétricos entran en Benjamini-Hochberg y no pueden depender
+  // de una aproximación de séptima cifra.
+  var HART_C = [0.0352624965998911, 0.700383064443688, 6.37396220353165,
+    33.912866078383, 112.079291497871, 221.213596169931, 220.206867912376];
+  var HART_D = [0.0883883476483184, 1.75566716318264, 16.064177579207,
+    86.7807322029461, 296.564248779674, 637.333633378831, 793.826512519948,
+    440.413735824752];
+  function normCdf(x) {
+    if (!isFinite(x)) return x > 0 ? 1 : 0;
+    var z = Math.abs(x), e, num, den, i, s;
+    if (z > 37) return x > 0 ? 1 : 0;
+    e = Math.exp(-z * z / 2);
+    if (z < 7.07106781186547) {
+      num = HART_C[0] * z + HART_C[1];
+      for (i = 2; i < 7; i++) num = num * z + HART_C[i];
+      den = HART_D[0] * z + HART_D[1];
+      for (i = 2; i < 8; i++) den = den * z + HART_D[i];
+      s = e * num / den;
+    } else {
+      s = e / (z + 1 / (z + 2 / (z + 3 / (z + 4 / (z + 0.65))))) / 2.5066282746310002;
+    }
+    return x > 0 ? 1 - s : s;
+  }
+  function pOneSidedUpper(z) { return normCdf(-z); }
+
+  // Benjamini–Hochberg step-up. Devuelve q en el orden original.
+  function benjaminiHochberg(p) {
+    var m = p.length, idx = [], i, r, run = 1, q = new Array(m);
+    for (i = 0; i < m; i++) idx.push(i);
+    idx.sort(function (a, b) { return p[a] - p[b]; });
+    for (r = m; r >= 1; r--) {
+      run = Math.min(run, p[idx[r - 1]] * m / r);
+      q[idx[r - 1]] = run;
+    }
+    return q;
+  }
+
+  // Cochran Q e I² sobre estimaciones de bloque con el MISMO error estándar.
+  function heterogeneity(deltas, se) {
+    var m = deltas.length;
+    if (m < 2) return { Q: NaN, df: 0, p_Q: NaN, I2: NaN };
+    var mu = mean(deltas), Q = 0, i;
+    for (i = 0; i < m; i++) Q += Math.pow(deltas[i] - mu, 2) / (se * se);
+    var df = m - 1;
+    return { Q: Q, df: df, p_Q: chiSqUpper(Q, df), I2: Q > df ? 100 * (Q - df) / Q : 0 };
+  }
+  // P(X > q) para chi-cuadrado con df grados de libertad (serie de Wilson–Hilferty
+  // exacta para df par/impar vía función gamma incompleta regularizada).
+  function chiSqUpper(q, df) {
+    if (!(q > 0)) return 1;
+    return 1 - lowerGamma(df / 2, q / 2);
+  }
+  function lowerGamma(s, x) {            // P(s,x) regularizada
+    if (x < 0 || s <= 0) return NaN;
+    if (x === 0) return 0;
+    if (x < s + 1) {
+      var ap = s, sum = 1 / s, del = sum, n;
+      for (n = 0; n < 300; n++) {
+        ap++; del *= x / ap; sum += del;
+        if (Math.abs(del) < Math.abs(sum) * 1e-12) break;
+      }
+      return sum * Math.exp(-x + s * Math.log(x) - lnGamma(s));
+    }
+    var b = x + 1 - s, c = 1e300, d = 1 / b, h = d, i, an;
+    for (i = 1; i < 300; i++) {
+      an = -i * (i - s); b += 2;
+      d = an * d + b; if (Math.abs(d) < 1e-300) d = 1e-300;
+      c = b + an / c; if (Math.abs(c) < 1e-300) c = 1e-300;
+      d = 1 / d; h *= d * c;
+      if (Math.abs(d * c - 1) < 1e-12) break;
+    }
+    return 1 - Math.exp(-x + s * Math.log(x) - lnGamma(s)) * h;
+  }
+  function lnGamma(z) {
+    var g = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+      -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+    var x = z, y = z, tmp = x + 5.5, ser = 1.000000000190015, j;
+    tmp -= (x + 0.5) * Math.log(tmp);
+    for (j = 0; j < 6; j++) ser += g[j] / ++y;
+    return -tmp + Math.log(2.5066282746310005 * ser / x);
+  }
+
+  // PRNG determinista (LCG de Numerical Recipes). Semilla explícita siempre.
+  function rng(seed) {
+    var s = seed >>> 0;
+    return function () { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  }
+  function permutationIndices(n, seed) {
+    var r = rng(seed), a = new Int32Array(n), i, j, t;
+    for (i = 0; i < n; i++) a[i] = i;
+    for (i = n - 1; i > 0; i--) { j = Math.floor(r() * (i + 1)); t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+
+  // ── Selección de k números a partir de un vector de puntajes ────────────
+  // Desempate CONGELADO: índice ascendente. Determinista, sin semilla.
+  function topK(scores, N, k) {
+    var order = [], i;
+    for (i = 0; i < N; i++) order.push(i);
+    order.sort(function (a, b) { return scores[b] - scores[a] || a - b; });
+    return order.slice(0, k);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  REGISTRO DE FAMILIAS   family → feature builder → scorer → evaluator
+  //
+  //  Contrato de cada scorer:
+  //    make(N, k, cfg) -> { score(prevIdx) : Float64Array(N),
+  //                         observe(curIdx, prevIdx) : void }
+  //  El conductor walk-forward llama SIEMPRE score() antes de observe(), de
+  //  modo que la fuga temporal es estructuralmente imposible.
+  // ═══════════════════════════════════════════════════════════════════════
+  var FAMILIES = [];
+  function registerFamily(f) { FAMILIES.push(f); return f; }
+
+  // 1 · Markov orden 1 — transición entre sorteos consecutivos.
+  registerFamily({
+    id: 'markov1', label: 'Markov orden 1', dof: 1, configs: [{}],
+    make: function (N) {
+      var tr = new Float64Array(N * N), sc = new Float64Array(N);
+      return {
+        score: function (prev) {
+          sc.fill(0);
+          for (var a = 0; a < prev.length; a++) {
+            var off = prev[a] * N;
+            for (var b = 0; b < N; b++) sc[b] += tr[off + b];
+          }
+          return sc;
+        },
+        observe: function (cur, prev) {
+          if (!prev) return;
+          for (var a = 0; a < prev.length; a++) {
+            var off = prev[a] * N;
+            for (var b = 0; b < cur.length; b++) tr[off + cur[b]]++;
+          }
+        }
+      };
+    }
+  });
+
+  // 2 · Markov orden 2 con backoff hacia orden 1. Familia de MAYOR libertad:
+  //     se declara dof=3 y sus tres configuraciones entran completas en BH.
+  registerFamily({
+    id: 'markov2', label: 'Markov orden 2 (con backoff)', dof: 3,
+    configs: [{ w: 0 }, { w: 0.25 }, { w: 0.5 }],
+    make: function (N, k, cfg) {
+      var tr2 = new Float64Array(N * N * N), tr1 = new Float64Array(N * N);
+      var sc = new Float64Array(N), prev2 = null, w = cfg.w;
+      return {
+        score: function (prev) {
+          sc.fill(0);
+          var a, b, c, off;
+          if (prev2) {
+            for (a = 0; a < prev2.length; a++) {
+              for (b = 0; b < prev.length; b++) {
+                off = (prev2[a] * N + prev[b]) * N;
+                for (c = 0; c < N; c++) sc[c] += tr2[off + c];
+              }
+            }
+          }
+          if (w > 0) {
+            for (a = 0; a < prev.length; a++) {
+              off = prev[a] * N;
+              for (c = 0; c < N; c++) sc[c] += w * tr1[off + c];
+            }
+          }
+          return sc;
+        },
+        observe: function (cur, prev) {
+          var a, b, c, off;
+          if (prev) {
+            for (a = 0; a < prev.length; a++) {
+              off = prev[a] * N;
+              for (b = 0; b < cur.length; b++) tr1[off + cur[b]]++;
+            }
+            if (prev2) {
+              for (a = 0; a < prev2.length; a++)
+                for (b = 0; b < prev.length; b++) {
+                  off = (prev2[a] * N + prev[b]) * N;
+                  for (c = 0; c < cur.length; c++) tr2[off + cur[c]]++;
+                }
+            }
+          }
+          prev2 = prev;
+        }
+      };
+    }
+  });
+
+  // 3 · Frecuencia móvil. W = 0 significa histórico completo.
+  registerFamily({
+    id: 'frequency', label: 'Frecuencia móvil', dof: 1,
+    configs: [{ W: 50 }, { W: 100 }, { W: 200 }, { W: 300 }, { W: 500 }, { W: 0 }],
+    make: function (N, k, cfg) {
+      var cnt = new Float64Array(N), buf = [], W = cfg.W;
+      return {
+        score: function () { return cnt; },
+        observe: function (cur) {
+          var i;
+          for (i = 0; i < cur.length; i++) cnt[cur[i]]++;
+          if (W > 0) {
+            buf.push(cur);
+            if (buf.length > W) { var old = buf.shift(); for (i = 0; i < old.length; i++) cnt[old[i]]--; }
+          }
+        }
+      };
+    }
+  });
+
+  // 4 · Frecuencia con decaimiento exponencial (recencia continua).
+  //     NOTA: una familia de «recencia» pura —ordenar por sorteos transcurridos
+  //     desde la última aparición— es IDÉNTICA a `repetition`: los k números del
+  //     sorteo anterior están todos a edad 0 y el topK siempre los devuelve, sea
+  //     cual sea la ventana. Sería una hipótesis duplicada que gastaría
+  //     multiplicidad sin aportar nada, así que no se registra.
+  registerFamily({
+    id: 'ewma_frequency', label: 'Frecuencia con decaimiento exponencial', dof: 1,
+    configs: [{ halfLife: 25 }, { halfLife: 50 }, { halfLife: 100 }, { halfLife: 200 }],
+    make: function (N, k, cfg) {
+      var w = new Float64Array(N), decay = Math.pow(0.5, 1 / cfg.halfLife);
+      return {
+        score: function () { return w; },
+        observe: function (cur) {
+          var i;
+          for (i = 0; i < N; i++) w[i] *= decay;
+          for (i = 0; i < cur.length; i++) w[cur[i]] += 1;
+        }
+      };
+    }
+  });
+
+  // 5 · Intervalos (gaps): preferir los que llevan más tiempo sin salir respecto
+  //     a su propio intervalo medio histórico. Familia distinta de recencia.
+  registerFamily({
+    id: 'interval', label: 'Intervalo contra su media acumulada', dof: 1,
+    configs: [{}],
+    make: function (N, k, cfg) {
+      var last = new Float64Array(N), gapSum = new Float64Array(N), gapN = new Float64Array(N);
+      var t = 0, sc = new Float64Array(N);
+      last.fill(-1);
+      return {
+        score: function () {
+          for (var i = 0; i < N; i++) {
+            var age = last[i] < 0 ? t : t - last[i];
+            var m = gapN[i] > 0 ? gapSum[i] / gapN[i] : (N / k);
+            sc[i] = age - m;
+          }
+          return sc;
+        },
+        observe: function (cur) {
+          for (var i = 0; i < cur.length; i++) {
+            var n = cur[i];
+            if (last[n] >= 0) { gapSum[n] += t - last[n]; gapN[n]++; }
+            last[n] = t;
+          }
+          t++;
+        }
+      };
+    }
+  });
+
+  // 6 · Repetición explícita: los k del sorteo anterior.
+  registerFamily({
+    id: 'repetition', label: 'Repetición del sorteo anterior', dof: 1, configs: [{}],
+    make: function (N) {
+      var sc = new Float64Array(N);
+      return {
+        score: function (prev) {
+          sc.fill(0);
+          for (var i = 0; i < prev.length; i++) sc[prev[i]] = 1;
+          return sc;
+        },
+        observe: function () {}
+      };
+    }
+  });
+
+  // 7 · Coocurrencia de PARES, CONDICIONADA al sorteo anterior.
+  //     score(n) = Σ_{a ∈ sorteo t−1} conteo_de_pares_dentro_del_mismo_sorteo(a, n)
+  //     Nota: la versión NO condicionada es matemáticamente idéntica a la
+  //     frecuencia multiplicada por (k−1) — ver 01_KIT_AUDIT. Por eso aquí se
+  //     condiciona: así es una familia realmente distinta.
+  registerFamily({
+    id: 'cooc_pair', label: 'Coocurrencia de pares (condicionada)', dof: 1,
+    configs: [{ W: 300 }, { W: 0 }],
+    make: function (N, k, cfg) {
+      var P = new Float64Array(N * N), buf = [], sc = new Float64Array(N), W = cfg.W;
+      function apply(d, s) {
+        for (var i = 0; i < d.length; i++)
+          for (var j = 0; j < d.length; j++) if (i !== j) P[d[i] * N + d[j]] += s;
+      }
+      return {
+        score: function (prev) {
+          sc.fill(0);
+          for (var a = 0; a < prev.length; a++) {
+            var off = prev[a] * N;
+            for (var b = 0; b < N; b++) sc[b] += P[off + b];
+          }
+          return sc;
+        },
+        observe: function (cur) {
+          apply(cur, 1);
+          if (W > 0) { buf.push(cur); if (buf.length > W) apply(buf.shift(), -1); }
+        }
+      };
+    }
+  });
+
+  // 8 · Coocurrencia de TRÍOS, condicionada a los pares del sorteo anterior.
+  registerFamily({
+    id: 'cooc_triple', label: 'Coocurrencia de tríos (condicionada)', dof: 1,
+    configs: [{ W: 0 }],
+    make: function (N) {
+      // T[min(a,b)][max(a,b)][c] = veces que el trío {a,b,c} salió junto.
+      var T = new Float64Array(N * N * N), sc = new Float64Array(N);
+      function slot(a, b) { return (a < b ? a * N + b : b * N + a) * N; }
+      return {
+        score: function (prev) {
+          sc.fill(0);
+          for (var i = 0; i < prev.length; i++)
+            for (var j = i + 1; j < prev.length; j++) {
+              var off = slot(prev[i], prev[j]);
+              for (var c = 0; c < N; c++) sc[c] += T[off + c];
+            }
+          return sc;
+        },
+        observe: function (cur) {
+          for (var a = 0; a < cur.length; a++)
+            for (var b = a + 1; b < cur.length; b++)
+              for (var c = b + 1; c < cur.length; c++) {
+                T[slot(cur[a], cur[b]) + cur[c]]++;
+                T[slot(cur[a], cur[c]) + cur[b]]++;
+                T[slot(cur[b], cur[c]) + cur[a]]++;
+              }
+        }
+      };
+    }
+  });
+
+  // ── CONTROLES. Deben dar Δ ≈ 0. Si no lo hacen, el motor está roto. ──────
+  registerFamily({
+    id: 'control_uniform', label: 'CONTROL · puntaje fijo sin historia', dof: 0, control: true,
+    configs: [{}],
+    make: function (N, k, cfg, seed) {
+      var r = rng((seed ^ 0x5f3a) >>> 0), sc = new Float64Array(N), i;
+      for (i = 0; i < N; i++) sc[i] = r();
+      return { score: function () { return sc; }, observe: function () {} };
+    }
+  });
+  registerFamily({
+    id: 'control_anti_markov1', label: 'CONTROL · anti-Markov (los de menor puntaje)',
+    dof: 1, control: true, configs: [{}],
+    make: function (N) {
+      var tr = new Float64Array(N * N), sc = new Float64Array(N);
+      return {
+        score: function (prev) {
+          sc.fill(0);
+          for (var a = 0; a < prev.length; a++) {
+            var off = prev[a] * N;
+            for (var b = 0; b < N; b++) sc[b] -= tr[off + b];
+          }
+          return sc;
+        },
+        observe: function (cur, prev) {
+          if (!prev) return;
+          for (var a = 0; a < prev.length; a++) {
+            var off = prev[a] * N;
+            for (var b = 0; b < cur.length; b++) tr[off + cur[b]]++;
+          }
+        }
+      };
+    }
+  });
+  registerFamily({
+    id: 'control_parity', label: 'CONTROL · paridad y suma recientes', dof: 1, control: true,
+    configs: [{ W: 100 }],
+    make: function (N, k, cfg) {
+      var buf = [], sc = new Float64Array(N), W = cfg.W;
+      return {
+        score: function () {
+          // preferir números cuya paridad replique la proporción par/impar reciente
+          var odd = 0, tot = 0, i, j;
+          for (i = 0; i < buf.length; i++) for (j = 0; j < buf[i].length; j++) { tot++; if ((buf[i][j] + 1) % 2) odd++; }
+          var pOdd = tot ? odd / tot : 0.5;
+          for (i = 0; i < N; i++) sc[i] = ((i + 1) % 2 ? pOdd : 1 - pOdd) + (i / (N * 1000));
+          return sc;
+        },
+        observe: function (cur) { buf.push(cur); if (buf.length > W) buf.shift(); }
+      };
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  CONDUCTOR WALK-FORWARD
+  //  Para el objetivo t se usa EXCLUSIVAMENTE [0, t). Garantizado por
+  //  construcción: observe(t) ocurre después de haber puntuado t.
+  // ═══════════════════════════════════════════════════════════════════════
+  function walkForward(hist, N, k, scorer, from, to) {
+    var out = new Float64Array(to - from), t, prev = null, i, pick, h, s;
+    for (t = 0; t < to; t++) {
+      if (t >= from && prev) {
+        s = scorer.score(prev);
+        pick = topK(s, N, k);
+        h = 0;
+        for (i = 0; i < pick.length; i++) if (hist[t].indexOf(pick[i]) >= 0) h++;
+        out[t - from] = h;
+      } else if (t >= from) {
+        out[t - from] = 0;              // t = 0 no tiene sorteo previo
+      }
+      scorer.observe(hist[t], prev);    // ← el objetivo entra al modelo DESPUÉS
+      prev = hist[t];
+    }
+    return out;
+  }
+
+  // ── Construcción de la rejilla completa de hipótesis ────────────────────
+  function buildGrid(N, k, opt) {
+    var grid = [], i, j, f;
+    for (i = 0; i < FAMILIES.length; i++) {
+      f = FAMILIES[i];
+      if (f.id === 'cooc_triple' && N > opt.triplesMaxN) continue;   // coste
+      for (j = 0; j < f.configs.length; j++) {
+        grid.push({
+          family: f.id, label: f.label, dof: f.dof, control: !!f.control,
+          config: f.configs[j],
+          id: f.id + (Object.keys(f.configs[j]).length
+            ? '[' + Object.keys(f.configs[j]).map(function (kk) { return kk + '=' + f.configs[j][kk]; }).join(',') + ']'
+            : ''),
+          _make: f.make
+        });
+      }
+    }
+    return grid;
+  }
+
+  // ── Limpieza y normalización del histórico ──────────────────────────────
+  function cleanHistory(input, N, k) {
+    var src = Array.isArray(input) ? input
+      : (input && Array.isArray(input.history) ? input.history
+        : (input && Array.isArray(input.draws) ? input.draws : null));
+    if (!src) throw new Error('Discovery Engine: se esperaba un array de sorteos, o {history:[...]}, o {draws:[...]}');
+    var out = [], i, d, a, ok, x, seen;
+    for (i = 0; i < src.length; i++) {
+      d = src[i];
+      a = Array.isArray(d) ? d : (d && Array.isArray(d.numbers) ? d.numbers : null);
+      if (!a || a.length !== k) continue;
+      ok = true; seen = {};
+      var idx = new Int32Array(k), q;
+      for (q = 0; q < k; q++) {
+        x = a[q];
+        if (!(typeof x === 'number' && isFinite(x) && Math.floor(x) === x && x >= 1 && x <= N) || seen[x]) { ok = false; break; }
+        seen[x] = 1; idx[q] = x - 1;          // interno: 0..N-1
+      }
+      if (ok) { idx.sort(); out.push(idx); }
+    }
+    return out;
+  }
+
+  function snapshotSha(hist, N, k, shaFn) {
+    var s = 'MGDE|' + VERSION + '|N=' + N + '|k=' + k + '|n=' + hist.length + '|';
+    var parts = [], i, j, row;
+    for (i = 0; i < hist.length; i++) {
+      row = [];
+      for (j = 0; j < hist[i].length; j++) row.push(hist[i][j] + 1);
+      parts.push(row.join('-'));
+    }
+    return shaFn(s + parts.join('|'));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  MOTOR
+  // ═══════════════════════════════════════════════════════════════════════
+  function planRun(input, spec, options) {
+    var o = {}, kk;
+    for (kk in DEFAULTS) if (Object.prototype.hasOwnProperty.call(DEFAULTS, kk)) o[kk] = DEFAULTS[kk];
+    if (options) for (kk in options) if (Object.prototype.hasOwnProperty.call(options, kk)) o[kk] = options[kk];
+
+    var N = spec.N, k = spec.k;
+    var hist = cleanHistory(input, N, k);
+    if (hist.length < o.minHistory)
+      throw new Error('Discovery Engine: historia insuficiente (' + hist.length + ' < ' + o.minHistory + ')');
+
+    var n = hist.length;
+    var oosFrom = Math.floor(n * o.oosFraction);
+    var hoFrom = Math.floor(n * o.holdoutFraction);
+    var grid = buildGrid(N, k, o);
+    var perms = [], b;
+    for (b = 0; b < o.permutations; b++) perms.push(permutationIndices(n, (o.seed + b * 2654435761) >>> 0));
+
+    return {
+      opt: o, N: N, k: k, hist: hist, n: n, grid: grid, perms: perms,
+      oos: [oosFrom, n], holdout: [hoFrom, oosFrom],
+      baseline: baselineHits(N, k), sd: sdH0(N, k),
+      steps: grid.length * (1 + o.permutations)
+    };
+  }
+
+  function evaluateHypothesis(plan, g) {
+    var N = plan.N, k = plan.k, o = plan.opt, base = plan.baseline, sd = plan.sd;
+
+    var hitsOos = walkForward(plan.hist, N, k, g._make(N, k, g.config, o.seed), plan.oos[0], plan.oos[1]);
+    var hitsHo = walkForward(plan.hist, N, k, g._make(N, k, g.config, o.seed), plan.holdout[0], plan.holdout[1]);
+
+    var nOos = hitsOos.length, arr = Array.prototype.slice.call(hitsOos);
+    var delta = mean(arr) - base;
+    var se = sd / Math.sqrt(nOos);
+    var z = delta / se;
+
+    // estabilidad por bloques disjuntos DENTRO del OOS (rejilla fija)
+    var blocks = [], bi, bs = o.blockSize;
+    for (bi = 0; bi + bs <= nOos; bi += bs) {
+      var seg = arr.slice(bi, bi + bs);
+      blocks.push({ a: plan.oos[0] + bi, b: plan.oos[0] + bi + bs, delta: mean(seg) - base });
+    }
+    var bd = blocks.map(function (x) { return x.delta; });
+    var pos = bd.filter(function (x) { return x > 0; }).length;
+    var het = heterogeneity(bd, sd / Math.sqrt(bs));
+
+    var hoArr = Array.prototype.slice.call(hitsHo);
+    var hoDelta = hoArr.length ? mean(hoArr) - base : NaN;
+
+    return {
+      id: g.id, family: g.family, label: g.label, config: g.config, dof: g.dof,
+      control: g.control,
+      n_oos: nOos, oos_window: plan.oos.slice(),
+      mean_hits: mean(arr), baseline_hits: base,
+      delta_hits: delta, se_h0: se, z_h0: z,
+      z_sample: delta / (sampleSd(arr) / Math.sqrt(nOos)),
+      p_norm_one_sided: pOneSidedUpper(z),
+      stability: {
+        blocks: blocks, n_blocks: blocks.length,
+        positive: pos, negative: blocks.length - pos,
+        positive_frac: blocks.length ? pos / blocks.length : NaN,
+        median: median(bd), min: bd.length ? Math.min.apply(null, bd) : NaN,
+        max: bd.length ? Math.max.apply(null, bd) : NaN,
+        Q: het.Q, df: het.df, p_Q: het.p_Q, I2: het.I2
+      },
+      holdout: { window: plan.holdout.slice(), n: hoArr.length, delta_hits: hoDelta },
+      _permGe: 0, _permDone: 0
+    };
+  }
+
+  function permuteHypothesis(plan, g, res, permIdx) {
+    var N = plan.N, k = plan.k, i, sh = new Array(plan.n);
+    for (i = 0; i < plan.n; i++) sh[i] = plan.hist[permIdx[i]];
+    var h = walkForward(sh, N, k, g._make(N, k, g.config, plan.opt.seed), plan.oos[0], plan.oos[1]);
+    var d = mean(Array.prototype.slice.call(h)) - plan.baseline;
+    res._permDone++;
+    if (d >= res.delta_hits) res._permGe++;
+    return d;
+  }
+
+  function finalize(plan, results) {
+    var o = plan.opt, i, r;
+    for (i = 0; i < results.length; i++) {
+      r = results[i];
+      r.permutations = r._permDone;
+      r.p_perm = r._permDone ? (r._permGe + 1) / (r._permDone + 1) : null;
+      r.p_perm_floor = r._permDone ? 1 / (r._permDone + 1) : null;
+      // p primario: permutación cuando hay permutaciones; si no, el paramétrico.
+      // La fuente queda registrada en el resultado, no se elige mirando datos.
+      r.p_primary = r._permDone ? r.p_perm : r.p_norm_one_sided;
+      r.p_primary_source = r._permDone ? 'permutation' : 'normal_approx';
+      delete r._permGe; delete r._permDone;
+    }
+    // BH sobre TODAS las hipótesis probadas, incluidos los controles.
+    var q = benjaminiHochberg(results.map(function (x) { return x.p_primary; }));
+    for (i = 0; i < results.length; i++) {
+      r = results[i]; r.q_bh = q[i];
+      var stable = r.stability.positive_frac >= o.stabilityMinPositiveFrac &&
+                   !(r.stability.p_Q < o.alpha);
+      var hoAgrees = isFinite(r.holdout.delta_hits) && r.holdout.delta_hits > 0;
+      r.criteria = {
+        A_delta_positive: r.delta_hits > 0,
+        B_delta_ge_min: r.delta_hits >= o.deltaMin,
+        C_p_raw: r.p_primary < o.alpha,
+        D_q_bh: r.q_bh < o.alpha,
+        E_stability: !!stable,
+        F_holdout_agrees: !!hoAgrees
+      };
+      if (r.criteria.D_q_bh && r.criteria.B_delta_ge_min && r.criteria.A_delta_positive) {
+        r.status = (stable && hoAgrees) ? 'PROSPECTIVE_CANDIDATE' : 'SURVIVING_DISCOVERY';
+      } else if (r.criteria.C_p_raw && r.criteria.A_delta_positive) {
+        r.status = 'EXPLORATORY_SIGNAL';
+      } else {
+        r.status = 'SCREENED';
+      }
+      r.production_eligible = false;
+    }
+    results.sort(function (a, b) { return a.p_primary - b.p_primary || b.delta_hits - a.delta_hits; });
+
+    var real = results.filter(function (x) { return !x.control; });
+    var surviving = real.filter(function (x) {
+      return x.status === 'SURVIVING_DISCOVERY' || x.status === 'PROSPECTIVE_CANDIDATE';
+    });
+    var exploratory = real.filter(function (x) { return x.status === 'EXPLORATORY_SIGNAL'; });
+    var controlsClean = results.filter(function (x) { return x.control; })
+      .every(function (x) { return x.q_bh >= o.alpha; });
+
+    // El VEREDICTO se decide con el p CORREGIDO, no con el crudo. Con m
+    // hipótesis bajo H0 se espera alpha*m resultados con p crudo < alpha
+    // (aquí ~{expected}), y P(al menos uno) = 1-(1-alpha)^m ronda dos tercios:
+    // ascender eso a veredicto sería fabricar hallazgos sobre ruido puro. Las
+    // señales sin corregir se ETIQUETAN como exploratorias en cada hipótesis,
+    // que es lo que pide la regla 6, pero no mueven el veredicto.
+    var verdict = surviving.length ? 'SURVIVING_DISCOVERY' : 'NO_DISCOVERY';
+
+    return {
+      engine_version: VERSION,
+      timestamp: new Date().toISOString(),
+      spec: { N: plan.N, k: plan.k, game: plan.game },
+      history_n: plan.n,
+      baseline_hits: plan.baseline,
+      sd_h0_per_draw: plan.sd,
+      oos_window: plan.oos.slice(),
+      holdout_window: plan.holdout.slice(),
+      options: { alpha: o.alpha, deltaMin: o.deltaMin, permutations: o.permutations,
+                 seed: o.seed, oosFraction: o.oosFraction, holdoutFraction: o.holdoutFraction,
+                 blockSize: o.blockSize, stabilityMinPositiveFrac: o.stabilityMinPositiveFrac },
+      hypothesis_count: results.length,
+      families: FAMILIES.map(function (f) { return f.id; }),
+      discoveries: results,
+      controls_clean: controlsClean,
+      surviving_count: surviving.length,
+      exploratory_count: exploratory.length,
+      expected_raw_by_chance: o.alpha * results.length,
+      p_any_raw_by_chance: 1 - Math.pow(1 - o.alpha, results.length),
+      verdict: verdict,
+      production_eligible: false,
+      next_action: surviving.length
+        ? 'FREEZE_HYPOTHESIS_AND_PREREGISTER_LIVE_TRIAL'
+        : 'KEEP_PRODUCTION_NO_EDGE'
+    };
+  }
+
+  // Ejecución síncrona completa (para Node y pruebas).
+  function run(input, spec, options) {
+    var plan = planRun(input, spec, options);
+    plan.game = spec.game;
+    var results = [], i, b;
+    for (i = 0; i < plan.grid.length; i++) {
+      var r = evaluateHypothesis(plan, plan.grid[i]);
+      for (b = 0; b < plan.perms.length; b++) permuteHypothesis(plan, plan.grid[i], r, plan.perms[b]);
+      results.push(r);
+    }
+    var out = finalize(plan, results);
+    out.snapshot_sha256 = snapshotSha(plan.hist, plan.N, plan.k, (options && options.sha) || fallbackSha);
+    return out;
+  }
+
+  // Ejecución troceada, para no bloquear la interfaz.
+  function runAsync(input, spec, options, onProgress, onDone, onError) {
+    var plan, results = [], gi = 0, bi = 0, cur = null;
+    try { plan = planRun(input, spec, options); plan.game = spec.game; }
+    catch (e) { if (onError) onError(e); return { cancel: function () {} }; }
+    var done = 0, cancelled = false;
+    function step() {
+      if (cancelled) return;
+      var budget = 0;
+      while (budget < 3 && gi < plan.grid.length) {
+        if (!cur) { cur = evaluateHypothesis(plan, plan.grid[gi]); bi = 0; done++; budget++; continue; }
+        if (bi < plan.perms.length) { permuteHypothesis(plan, plan.grid[gi], cur, plan.perms[bi]); bi++; done++; budget++; }
+        else { results.push(cur); cur = null; gi++; }
+      }
+      if (onProgress) onProgress({ done: done, total: plan.steps, hypothesis: gi, of: plan.grid.length });
+      if (gi < plan.grid.length) { setTimeout(step, 0); return; }
+      var out = finalize(plan, results);
+      out.snapshot_sha256 = snapshotSha(plan.hist, plan.N, plan.k, (options && options.sha) || fallbackSha);
+      if (onDone) onDone(out);
+    }
+    setTimeout(step, 0);
+    return { cancel: function () { cancelled = true; } };
+  }
+
+  // SHA de respaldo si el anfitrión no aporta uno. En index.html se le pasa
+  // `mgSha256`, que es el que ya usa el resto del sistema.
+  function fallbackSha(s) {
+    var h1 = 2166136261 >>> 0, h2 = 5381 >>> 0, i, c;
+    for (i = 0; i < s.length; i++) {
+      c = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+      h2 = (Math.imul(h2, 33) + c) >>> 0;
+    }
+    return ('00000000' + h1.toString(16)).slice(-8) + ('00000000' + h2.toString(16)).slice(-8);
+  }
+
+  root.MG_DISCOVERY = {
+    VERSION: VERSION,
+    DEFAULTS: DEFAULTS,
+    run: run,
+    runAsync: runAsync,
+    planRun: planRun,
+    registerFamily: registerFamily,
+    families: function () { return FAMILIES.map(function (f) {
+      return { id: f.id, label: f.label, dof: f.dof, control: !!f.control, configs: f.configs.length }; }); },
+    // expuesto sólo para las pruebas unitarias
+    _internals: {
+      baselineHits: baselineHits, sdH0: sdH0, hyper: hyper, benjaminiHochberg: benjaminiHochberg,
+      normCdf: normCdf, pOneSidedUpper: pOneSidedUpper, chiSqUpper: chiSqUpper, comb: comb,
+      heterogeneity: heterogeneity, topK: topK, walkForward: walkForward,
+      cleanHistory: cleanHistory, permutationIndices: permutationIndices, rng: rng,
+      snapshotSha: snapshotSha, fallbackSha: fallbackSha, median: median, mean: mean
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DISCOVERY ENGINE v1 · ADAPTADOR DE AISLAMIENTO + PANEL
+//  ───────────────────────────────────────────────────────────────────────────
+//  Frontera entre el motor de investigación y la aplicación.
+//
+//  Lo ÚNICO que este adaptador lee de la app:
+//     state.draws, state.currentGame, state.maxNumber, GAME_CONFIG, mgSha256
+//  Lo ÚNICO que escribe:
+//     MG_STATE.discovery, su propia clave de localStorage y su propio nodo DOM.
+//
+//  NO llama a generatePredictions, mgGeneratePredictions, mgBuildCandidates,
+//  mgPortfolioDiversify, mgApplyNeuralEnsemble, mgRunResearchCycle ni a ninguna
+//  función de Live Frontier, Golden Holdout, Champion Gate o NO_EDGE.
+//  NO escribe pesos, probabilidades, boletos ni Supabase.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_DISCOVERY_LOG_KEY = 'melategenius_discovery_log_v1';
+var MG_DISCOVERY_MAX_LOG = 20;
+var _mgDiscoveryJob = null;
+
+function mgDiscoveryState() {
+  if (typeof MG_STATE === 'undefined') return null;
+  if (!MG_STATE.discovery) MG_STATE.discovery = { byGame: {}, running: null };
+  return MG_STATE.discovery;
+}
+
+// Copia defensiva del histórico: el motor nunca recibe una referencia viva a
+// las estructuras de la app.
+function mgDiscoverySnapshotInput() {
+  if (typeof state === 'undefined' || !state.draws || !state.draws.length) return null;
+  var g = state.currentGame, cfg = (typeof GAME_CONFIG !== 'undefined') ? GAME_CONFIG[g] : null;
+  if (!cfg || cfg.isDigit) return null;          // Tris queda fuera: no es un bombo
+  var out = [], i, j, d;
+  for (i = 0; i < state.draws.length; i++) {
+    d = state.draws[i];
+    if (!d || d.length !== cfg.pick) continue;
+    var row = [];
+    for (j = 0; j < d.length; j++) row.push(d[j]);
+    out.push(row);
+  }
+  return { history: out, spec: { game: g, N: cfg.maxNum, k: cfg.pick }, gameName: cfg.name };
+}
+
+function mgDiscoveryAuditRecord(res, input) {
+  return {
+    discovery_run_id: (typeof mgHash === 'function' ? mgHash(res.snapshot_sha256 + '|' + res.timestamp) : res.timestamp),
+    timestamp: res.timestamp,
+    game: input.spec.game, N: input.spec.N, k: input.spec.k,
+    history_n: res.history_n,
+    snapshot_sha256: res.snapshot_sha256,
+    engine_version: res.engine_version,
+    seed: res.options.seed,
+    permutations: res.options.permutations,
+    families: res.families,
+    hypothesis_count: res.hypothesis_count,
+    oos_window: res.oos_window, holdout_window: res.holdout_window,
+    verdict: res.verdict,
+    surviving_count: res.surviving_count,
+    exploratory_count: res.exploratory_count,
+    controls_clean: res.controls_clean,
+    production_eligible: false,
+    results: res.discoveries.map(function (d) {
+      return { id: d.id, family: d.family, delta: d.delta_hits, z: d.z_h0,
+               p: d.p_primary, q: d.q_bh, status: d.status,
+               holdout_delta: d.holdout.delta_hits,
+               blocks_positive: d.stability.positive, blocks: d.stability.n_blocks };
+    })
+  };
+}
+
+function mgDiscoveryLogAppend(rec) {
+  try {
+    var raw = localStorage.getItem(MG_DISCOVERY_LOG_KEY);
+    var log = raw ? JSON.parse(raw) : [];
+    log.unshift(rec);
+    if (log.length > MG_DISCOVERY_MAX_LOG) log.length = MG_DISCOVERY_MAX_LOG;
+    localStorage.setItem(MG_DISCOVERY_LOG_KEY, JSON.stringify(log));
+  } catch (e) { /* el registro es best-effort: nunca debe romper la app */ }
+}
+function mgDiscoveryLogRead() {
+  try { return JSON.parse(localStorage.getItem(MG_DISCOVERY_LOG_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+
+// ── Ejecución. Troceada, cancelable, sin bloquear la interfaz. ─────────────
+function mgRunDiscovery() {
+  var S = mgDiscoveryState();
+  if (!S || S.running) return;
+  var input = mgDiscoverySnapshotInput();
+  if (!input) { mgRenderDiscoveryPanel(); return; }
+  if (typeof MG_DISCOVERY === 'undefined') { mgRenderDiscoveryPanel(); return; }
+
+  S.running = { game: input.spec.game, done: 0, total: 0, pct: 0 };
+  mgRenderDiscoveryPanel();
+
+  _mgDiscoveryJob = MG_DISCOVERY.runAsync(
+    input.history, input.spec,
+    { sha: (typeof mgSha256 === 'function') ? mgSha256 : undefined },
+    function (p) {
+      S.running.done = p.done; S.running.total = p.total;
+      S.running.pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+      S.running.hypothesis = p.hypothesis; S.running.of = p.of;
+      mgRenderDiscoveryProgress();
+    },
+    function (res) {
+      // Congelado: el resultado es de sólo lectura desde el momento en que sale
+      // del motor. `production_eligible` se refuerza aquí por segunda vez.
+      res.production_eligible = false;
+      res.canModifyProductionWeights = false;
+      res.canModifyLiveFrontier = false;
+      res.canModifyChampion = false;
+      res.canWriteSupabase = false;
+      S.byGame[input.spec.game] = Object.freeze(res);
+      S.running = null;
+      mgDiscoveryLogAppend(mgDiscoveryAuditRecord(res, input));
+      mgRenderDiscoveryPanel();
+    },
+    function (err) {
+      S.running = null;
+      S.byGame[input.spec.game] = { error: String(err && err.message || err) };
+      mgRenderDiscoveryPanel();
+    });
+}
+
+function mgCancelDiscovery() {
+  var S = mgDiscoveryState();
+  if (_mgDiscoveryJob) { try { _mgDiscoveryJob.cancel(); } catch (e) {} }
+  _mgDiscoveryJob = null;
+  if (S) S.running = null;
+  mgRenderDiscoveryPanel();
+}
+
+// ── Panel ─────────────────────────────────────────────────────────────────
+function mgRenderDiscoveryProgress() {
+  var S = mgDiscoveryState(), el = document.getElementById('mg-discovery-progress');
+  if (!el || !S || !S.running) return;
+  el.innerHTML = '<div class="mg-help">Analizando hipótesis ' + (S.running.hypothesis + 1) +
+    ' de ' + S.running.of + ' · ' + S.running.pct + ' %</div>' +
+    '<div style="height:6px;background:rgba(128,128,128,.18);border-radius:3px;overflow:hidden;margin-top:6px;">' +
+    '<div style="height:100%;width:' + S.running.pct + '%;background:var(--accent,#6b8afd);transition:width .2s;"></div></div>';
+}
+
+// Insignias cortas: el estado tiene que leerse sin desplazar la tabla.
+var MG_DISCOVERY_BADGE = {
+  SCREENED: '<span style="opacity:.7;">descartada</span>',
+  EXPLORATORY_SIGNAL: '<span style="color:#b07a20;font-weight:600;">exploratoria</span>',
+  SURVIVING_DISCOVERY: '<span style="color:#1b6f4a;font-weight:700;">sobrevive</span>',
+  PROSPECTIVE_CANDIDATE: '<span style="color:#1b6f4a;font-weight:700;">candidata</span>'
+};
+
+function mgDiscoveryVerdictClass(v) {
+  if (v === 'SURVIVING_DISCOVERY') return 'edge';
+  if (v === 'EXPLORATORY_SIGNAL') return 'pending';
+  return 'noedge';
+}
+
+function mgRenderDiscoveryPanel() {
+  var c = document.getElementById('mg-discovery-panel');
+  if (!c) return;
+  var S = mgDiscoveryState();
+  var game = (typeof state !== 'undefined') ? state.currentGame : null;
+  var cfg = (typeof GAME_CONFIG !== 'undefined' && game) ? GAME_CONFIG[game] : null;
+  var ver = (typeof MG_DISCOVERY !== 'undefined') ? MG_DISCOVERY.VERSION : '—';
+
+  var head = '<div class="glass card"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+    '<span style="font-size:15px;">🔬</span>' +
+    '<strong style="font-size:13px;letter-spacing:.4px;">DISCOVERY ENGINE</strong>' +
+    '<span class="mg-help" style="margin:0;">' + ver + '</span></div>' +
+    '<div class="mg-help" style="margin-top:6px;">Búsqueda sistemática de estructura estadística. ' +
+    '<strong>DISCOVERY ≠ PREDICTION</strong>: nada de lo que encuentre aquí puede mover un boleto, ' +
+    'un peso ni una probabilidad de producción. Su única salida posible es una hipótesis congelable ' +
+    'para preregistro y Live Trial.</div>';
+
+  if (!cfg || cfg.isDigit) {
+    c.innerHTML = head + '<div class="mg-verdict off" style="margin-top:10px;">JUEGO FUERA DEL MOTOR</div>' +
+      '<div class="mg-help">El Discovery Engine trabaja sobre juegos de bombo (Melate, Revancha, Retro, Chispazo). ' +
+      'Tris es posicional y usa otro proceso.</div></div>';
+    return;
+  }
+
+  if (S && S.running) {
+    c.innerHTML = head +
+      '<div class="mg-verdict pending" style="margin-top:10px;">EJECUTANDO</div>' +
+      '<div id="mg-discovery-progress"></div>' +
+      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgCancelDiscovery()">Cancelar</button></div>';
+    mgRenderDiscoveryProgress();
+    return;
+  }
+
+  var r = S && S.byGame ? S.byGame[game] : null;
+
+  if (!r) {
+    c.innerHTML = head +
+      '<div class="mg-verdict off" style="margin-top:10px;">SIN EJECUTAR</div>' +
+      '<div class="mg-help">Es un análisis pesado (del orden de un minuto): recorre todas las hipótesis ' +
+      'con walk-forward y las contrasta contra un nulo de permutación. Se ejecuta sólo cuando lo pides.</div>' +
+      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgRunDiscovery()">▶ Ejecutar búsqueda</button></div>';
+    return;
+  }
+  if (r.error) {
+    c.innerHTML = head + '<div class="mg-verdict off" style="margin-top:10px;">NO EJECUTABLE</div>' +
+      '<div class="mg-help">' + r.error + '</div>' +
+      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgRunDiscovery()">↻ Reintentar</button></div>';
+    return;
+  }
+
+  var label = r.verdict === 'NO_DISCOVERY'
+    ? 'NO_DISCOVERY' : 'SURVIVING_DISCOVERY — SIN IMPACTO EN PRODUCCIÓN';
+  var sub;
+  if (r.verdict === 'NO_DISCOVERY') {
+    sub = 'Ninguna de las ' + r.hypothesis_count + ' hipótesis sobrevive a la corrección por ' +
+      'multiplicidad. Es un resultado científico válido, no un fallo.';
+    if (r.exploratory_count > 0) {
+      sub += ' Hay ' + r.exploratory_count + ' con la p <em>sin corregir</em> por debajo de ' +
+        r.options.alpha + ', etiquetadas como exploratorias: probando ' + r.hypothesis_count +
+        ' hipótesis se esperan ' + (r.expected_raw_by_chance || 0).toFixed(1) +
+        ' de ésas por puro azar, y alguna aparece en el ' +
+        Math.round(100 * (r.p_any_raw_by_chance || 0)) + ' % de las corridas sobre ruido. ' +
+        'Por eso no ascienden a veredicto.';
+    }
+  } else {
+    sub = r.surviving_count + ' hipótesis superan q&lt;' + r.options.alpha + ' y Δ≥' + r.options.deltaMin +
+      '. Eso NO las convierte en predicción: sólo autoriza congelar la especificación y ' +
+      'preregistrar un Live Trial.';
+  }
+
+  var rows = r.discoveries.map(function (d) {
+    var cls = d.status === 'SCREENED' ? 'opacity:.55;' : '';
+    // el estado literal queda en el DOM para auditoría y pruebas
+    var _st = ' data-status="' + d.status + '"';
+    var num = 'text-align:right;padding:3px 5px;font-variant-numeric:tabular-nums;';
+    return '<tr style="' + cls + '"' + _st + '><td style="padding:3px 5px 3px 0;white-space:nowrap;">' +
+      (d.control ? '<span style="opacity:.6;">⊙ </span>' : '') + d.id + '</td>' +
+      '<td style="padding:3px 5px;white-space:nowrap;">' + MG_DISCOVERY_BADGE[d.status] + '</td>' +
+      '<td style="' + num + '">' + (d.delta_hits >= 0 ? '+' : '') + d.delta_hits.toFixed(4) + '</td>' +
+      '<td style="' + num + '">' + d.q_bh.toFixed(4) + '</td>' +
+      '<td style="' + num + '">' + d.p_primary.toFixed(4) + '</td>' +
+      '<td style="' + num + '">' + d.z_h0.toFixed(2) + '</td>' +
+      '<td style="' + num + '">' + d.stability.positive + '/' + d.stability.n_blocks + '</td>' +
+      '<td style="' + num + 'padding-right:0;">' + (d.holdout.delta_hits >= 0 ? '+' : '') + d.holdout.delta_hits.toFixed(4) + '</td></tr>';
+  }).join('');
+
+  var best = r.discoveries.filter(function (d) { return !d.control; })[0];
+
+  c.innerHTML = head +
+    '<div class="mg-verdict ' + mgDiscoveryVerdictClass(r.verdict) + '" style="margin-top:10px;">' + label + '</div>' +
+    '<div class="mg-help">' + sub + '</div>' +
+    '<div class="mg-kv-grid">' +
+      '<div class="mg-kv"><span>Versión</span><b>' + r.engine_version + '</b></div>' +
+      '<div class="mg-kv"><span>Snapshot</span><b>' + String(r.snapshot_sha256).slice(0, 12) + '</b></div>' +
+      '<div class="mg-kv"><span>Sorteos</span><b>' + r.history_n.toLocaleString() + '</b></div>' +
+      '<div class="mg-kv"><span>Hipótesis</span><b>' + r.hypothesis_count + '</b></div>' +
+      '<div class="mg-kv"><span>Familias</span><b>' + r.families.length + '</b></div>' +
+      '<div class="mg-kv"><span>OOS</span><b>' + (r.oos_window[1] - r.oos_window[0]) + '</b></div>' +
+      '<div class="mg-kv"><span>Holdout</span><b>' + (r.holdout_window[1] - r.holdout_window[0]) + '</b></div>' +
+      '<div class="mg-kv"><span>Permutaciones</span><b>' + r.options.permutations + '</b></div>' +
+      '<div class="mg-kv"><span>Semilla</span><b>' + r.options.seed + '</b></div>' +
+      '<div class="mg-kv"><span>Mejor Δ</span><b>' + (best ? (best.delta_hits >= 0 ? '+' : '') + best.delta_hits.toFixed(4) : '—') + '</b></div>' +
+      '<div class="mg-kv"><span>Mejor q</span><b>' + (best ? best.q_bh.toFixed(4) : '—') + '</b></div>' +
+      '<div class="mg-kv"><span>Controles</span><b>' + (r.controls_clean ? 'limpios' : '⚠ CONTAMINADOS') + '</b></div>' +
+    '</div>' +
+    '<div style="overflow-x:auto;margin-top:12px;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+    '<thead><tr style="opacity:.6;text-align:left;">' +
+    '<th style="padding:0 5px 4px 0;">hipótesis</th><th style="padding:0 5px 4px;">estado</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">Δ</th><th style="text-align:right;padding:0 5px 4px;">q<sub>BH</sub></th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">p</th><th style="text-align:right;padding:0 5px 4px;">z</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">bloq+</th>' +
+    '<th style="text-align:right;padding:0 0 4px 5px;">holdout</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div class="mg-help" style="margin-top:10px;">⊙ = control. Deben salir siempre en <code>SCREENED</code>; ' +
+    'si un control sobreviviera, el motor estaría roto y el resultado sería inválido. ' +
+    'Se listan <strong>todas</strong> las hipótesis probadas, incluidas las que no encontraron nada: ' +
+    'ocultar las negativas es lo que fabrica descubrimientos falsos.</div>' +
+    '<div class="mg-help" style="margin-top:8px;">Siguiente acción: <code>' + r.next_action + '</code> · ' +
+    '<code>production_eligible = false</code></div>' +
+    '<button class="btn btn-ghost" style="margin-top:12px;" onclick="mgRunDiscovery()">↻ Volver a ejecutar</button>' +
+    '</div>';
+}
+
 </script>
 
 </body>
