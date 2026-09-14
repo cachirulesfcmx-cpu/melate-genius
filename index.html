@@ -19074,10 +19074,40 @@ document.getElementById = function(id) {
    Script plano (sin módulos ES) para poder vivir dentro de index.html y, a la
    vez, cargarse en Node para las pruebas.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   MELATE GENIUS · DISCOVERY ENGINE v1 — research-only
+   ───────────────────────────────────────────────────────────────────────────
+   DISCOVERY != PREDICTION.
+
+   Esta capa NO escribe en producción. No importa, no llama y no referencia
+   ninguna función de generación, ensemble neuronal, Live Frontier, Golden
+   Holdout, Champion Gate, NO_EDGE, pesos productivos ni Supabase. Su única
+   salida es:  research result → hypothesis → evidence → frozen candidate spec.
+
+   `production_eligible` empieza y termina SIEMPRE en false.
+
+   Script plano (sin módulos ES) para poder vivir dentro de index.html y, a la
+   vez, cargarse en Node para las pruebas.
+   ═══════════════════════════════════════════════════════════════════════════ */
 (function (root) {
   'use strict';
 
-  var VERSION = 'DDE-1.1.0';
+  var VERSION = 'DDE-1.1.1';
+
+  // ── MODOS DE EJECUCIÓN ──────────────────────────────────────────────────
+  // El modo NO se puede declarar: se DERIVA del número de permutaciones. Así no
+  // existe forma de etiquetar como científica una corrida barata, ni de
+  // abaratar una corrida etiquetándola de otro modo.
+  var B_PRIMARY = 200;   // corrida científica. p mínima = 1/201 = 0.004975
+  var B_PREVIEW = 60;    // vistazo rápido. p mínima = 1/61 = 0.016393
+  function runModeFor(B) {
+    if (B === B_PRIMARY) return 'PRIMARY_SCIENTIFIC';
+    if (B === B_PREVIEW) return 'PREVIEW';
+    return 'NON_STANDARD';
+  }
+  // Sólo PRIMARY_SCIENTIFIC puede emitir un veredicto. Los demás modos topan
+  // en EXPLORATORY_SIGNAL y devuelven *_NO_VERDICT.
+  function modeCanConclude(mode) { return mode === 'PRIMARY_SCIENTIFIC'; }
 
   // ── Configuración PRIMARIA, declarada antes de ejecutar ──────────────────
   // Ningún parámetro de aquí se elige mirando resultados.
@@ -19715,6 +19745,15 @@ document.getElementById = function(id) {
       } else {
         r.status = 'SCREENED';
       }
+      // Un modo que no puede concluir tampoco puede ascender hipótesis: con
+      // B=60 la p mínima alcanzable es 0.0164, así que un q<0.05 ahí no tiene
+      // la resolución que aparenta. Se topa en EXPLORATORY_SIGNAL y se marca.
+      r.capped_by_run_mode = false;
+      if (!modeCanConclude(runModeFor(o.permutations)) &&
+          (r.status === 'SURVIVING_DISCOVERY' || r.status === 'PROSPECTIVE_CANDIDATE')) {
+        r.status = 'EXPLORATORY_SIGNAL';
+        r.capped_by_run_mode = true;
+      }
       r.production_eligible = false;
     }
     results.sort(function (a, b) { return a.p_primary - b.p_primary || b.delta_hits - a.delta_hits; });
@@ -19733,13 +19772,34 @@ document.getElementById = function(id) {
     // ascender eso a veredicto sería fabricar hallazgos sobre ruido puro. Las
     // señales sin corregir se ETIQUETAN como exploratorias en cada hipótesis,
     // que es lo que pide la regla 6, pero no mueven el veredicto.
-    var verdict = surviving.length ? 'SURVIVING_DISCOVERY' : 'NO_DISCOVERY';
+    var mode = runModeFor(o.permutations);
+    var canConclude = modeCanConclude(mode);
+
+    // Recuento a nivel de CRITERIO, sin condicionar por el modo. Es una función
+    // matemática de los datos y sirve para calibrar el procedimiento; no es un
+    // veredicto y nunca se muestra como tal.
+    var criteriaSurviving = real.filter(function (x) {
+      return x.criteria.D_q_bh && x.criteria.B_delta_ge_min && x.criteria.A_delta_positive;
+    }).length;
+
+    var verdict;
+    if (!canConclude) {
+      verdict = mode === 'PREVIEW' ? 'PREVIEW_NO_VERDICT' : 'NON_STANDARD_NO_VERDICT';
+    } else {
+      verdict = surviving.length ? 'SURVIVING_DISCOVERY' : 'NO_DISCOVERY';
+    }
 
     return {
       engine_version: VERSION,
       timestamp: new Date().toISOString(),
+      run_mode: mode,
+      scientific_valid: canConclude,
+      permutations: o.permutations,
+      p_perm_floor: 1 / (o.permutations + 1),
       spec: { N: plan.N, k: plan.k, game: plan.game },
       history_n: plan.n,
+      baseline: plan.baseline,
+      delta_min: o.deltaMin,
       baseline_hits: plan.baseline,
       sd_h0_per_draw: plan.sd,
       oos_window: plan.oos.slice(),
@@ -19751,15 +19811,17 @@ document.getElementById = function(id) {
       families: FAMILIES.map(function (f) { return f.id; }),
       discoveries: results,
       controls_clean: controlsClean,
-      surviving_count: surviving.length,
+      surviving_count: canConclude ? surviving.length : 0,
+      criteria_surviving_count: criteriaSurviving,
       exploratory_count: exploratory.length,
       expected_raw_by_chance: o.alpha * results.length,
       p_any_raw_by_chance: 1 - Math.pow(1 - o.alpha, results.length),
       verdict: verdict,
       production_eligible: false,
-      next_action: surviving.length
-        ? 'FREEZE_HYPOTHESIS_AND_PREREGISTER_LIVE_TRIAL'
-        : 'KEEP_PRODUCTION_NO_EDGE'
+      next_action: !canConclude
+        ? 'RUN_PRIMARY_SCIENTIFIC_B200'
+        : (surviving.length ? 'FREEZE_HYPOTHESIS_AND_PREREGISTER_LIVE_TRIAL'
+                            : 'KEEP_PRODUCTION_NO_EDGE')
     };
   }
 
@@ -19817,6 +19879,15 @@ document.getElementById = function(id) {
   root.MG_DISCOVERY = {
     VERSION: VERSION,
     DEFAULTS: DEFAULTS,
+    B_PRIMARY: B_PRIMARY,
+    // Hash de un histórico, con exactamente la misma canonicalización que usa
+    // `run`. Permite comparar datasets entre juegos sin ejecutar el motor.
+    snapshotHash: function (input, spec, shaFn) {
+      var hist = cleanHistory(input, spec.N, spec.k);
+      return snapshotSha(hist, spec.N, spec.k, shaFn || fallbackSha);
+    },
+    B_PREVIEW: B_PREVIEW,
+    runModeFor: runModeFor,
     run: run,
     runAsync: runAsync,
     planRun: planRun,
@@ -19829,7 +19900,8 @@ document.getElementById = function(id) {
       normCdf: normCdf, pOneSidedUpper: pOneSidedUpper, chiSqUpper: chiSqUpper, comb: comb,
       heterogeneity: heterogeneity, topK: topK, walkForward: walkForward,
       cleanHistory: cleanHistory, permutationIndices: permutationIndices, rng: rng,
-      snapshotSha: snapshotSha, fallbackSha: fallbackSha, median: median, mean: mean
+      snapshotSha: snapshotSha, fallbackSha: fallbackSha, median: median, mean: mean,
+      modeCanConclude: modeCanConclude
     }
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -19840,40 +19912,58 @@ document.getElementById = function(id) {
 //  Frontera entre el motor de investigación y la aplicación.
 //
 //  Lo ÚNICO que este adaptador lee de la app:
-//     state.draws, state.currentGame, state.maxNumber, GAME_CONFIG, mgSha256
+//     BASE_DRAWS, state.userDraws, state.currentGame, GAME_CONFIG, mgSha256
 //  Lo ÚNICO que escribe:
 //     MG_STATE.discovery, su propia clave de localStorage y su propio nodo DOM.
 //
-//  NO llama a generatePredictions, mgGeneratePredictions, mgBuildCandidates,
-//  mgPortfolioDiversify, mgApplyNeuralEnsemble, mgRunResearchCycle ni a ninguna
-//  función de Live Frontier, Golden Holdout, Champion Gate o NO_EDGE.
-//  NO escribe pesos, probabilidades, boletos ni Supabase.
+//  NO llama a loadGame, generatePredictions, mgGeneratePredictions,
+//  mgBuildCandidates, mgPortfolioDiversify, mgApplyNeuralEnsemble,
+//  mgRunResearchCycle ni a ninguna función de Live Frontier, Golden Holdout,
+//  Champion Gate o NO_EDGE. NO escribe pesos, probabilidades, boletos ni
+//  Supabase.
+//
+//  Cada juego es una investigación INDEPENDIENTE: su propio histórico, su
+//  propio snapshot, sus propias hipótesis, su propio Benjamini-Hochberg y su
+//  propio veredicto. Nada se comparte ni se transfiere entre juegos.
 // ═══════════════════════════════════════════════════════════════════════════
 var MG_DISCOVERY_LOG_KEY = 'melategenius_discovery_log_v1';
 var MG_DISCOVERY_MAX_LOG = 20;
-var _mgDiscoveryJob = null;
+// Juegos de bombo que el motor investiga. Tris queda fuera: es posicional.
+var MG_DISCOVERY_GAMES = ['melate', 'retro'];
+var _mgDiscoveryJobs = {};
 
 function mgDiscoveryState() {
   if (typeof MG_STATE === 'undefined') return null;
-  if (!MG_STATE.discovery) MG_STATE.discovery = { byGame: {}, running: null };
+  if (!MG_STATE.discovery) MG_STATE.discovery = { byGame: {}, running: {} };
+  if (!MG_STATE.discovery.running) MG_STATE.discovery.running = {};
   return MG_STATE.discovery;
 }
+function mgDiscoverySlot(game) {
+  var S = mgDiscoveryState();
+  if (!S) return null;
+  if (!S.byGame[game]) S.byGame[game] = { primary: null, preview: null, error: null };
+  return S.byGame[game];
+}
 
-// Copia defensiva del histórico: el motor nunca recibe una referencia viva a
-// las estructuras de la app.
-function mgDiscoverySnapshotInput() {
-  if (typeof state === 'undefined' || !state.draws || !state.draws.length) return null;
-  var g = state.currentGame, cfg = (typeof GAME_CONFIG !== 'undefined') ? GAME_CONFIG[g] : null;
-  if (!cfg || cfg.isDigit) return null;          // Tris queda fuera: no es un bombo
-  var out = [], i, j, d;
-  for (i = 0; i < state.draws.length; i++) {
-    d = state.draws[i];
+// Histórico de UN juego, en copia defensiva y SIN tocar el estado de la app.
+// Reproduce lo que hace loadGame (base + sorteos del usuario) pero en modo
+// lectura: no llama a loadGame ni escribe en `state`.
+function mgDiscoveryHistoryFor(game) {
+  var cfg = (typeof GAME_CONFIG !== 'undefined') ? GAME_CONFIG[game] : null;
+  if (!cfg || cfg.isDigit) return null;
+  var base = (typeof BASE_DRAWS !== 'undefined' && BASE_DRAWS[game]) ? BASE_DRAWS[game] : [];
+  var user = (typeof state !== 'undefined' && state.userDraws && state.userDraws[game])
+    ? state.userDraws[game] : [];
+  var src = base.concat(user), out = [], i, j, d, row;
+  for (i = 0; i < src.length; i++) {
+    d = src[i];
     if (!d || d.length !== cfg.pick) continue;
-    var row = [];
+    row = [];
     for (j = 0; j < d.length; j++) row.push(d[j]);
     out.push(row);
   }
-  return { history: out, spec: { game: g, N: cfg.maxNum, k: cfg.pick }, gameName: cfg.name };
+  if (!out.length) return null;
+  return { history: out, spec: { game: game, N: cfg.maxNum, k: cfg.pick }, gameName: cfg.name };
 }
 
 function mgDiscoveryAuditRecord(res, input) {
@@ -19884,8 +19974,11 @@ function mgDiscoveryAuditRecord(res, input) {
     history_n: res.history_n,
     snapshot_sha256: res.snapshot_sha256,
     engine_version: res.engine_version,
+    run_mode: res.run_mode,
     seed: res.options.seed,
-    permutations: res.options.permutations,
+    permutations: res.permutations,
+    baseline: res.baseline,
+    delta_min: res.delta_min,
     families: res.families,
     hypothesis_count: res.hypothesis_count,
     oos_window: res.oos_window, holdout_window: res.holdout_window,
@@ -19897,6 +19990,7 @@ function mgDiscoveryAuditRecord(res, input) {
     results: res.discoveries.map(function (d) {
       return { id: d.id, family: d.family, delta: d.delta_hits, z: d.z_h0,
                p: d.p_primary, q: d.q_bh, status: d.status,
+               capped_by_run_mode: !!d.capped_by_run_mode,
                holdout_delta: d.holdout.delta_hits,
                blocks_positive: d.stability.positive, blocks: d.stability.n_blocks };
     })
@@ -19917,132 +20011,172 @@ function mgDiscoveryLogRead() {
   catch (e) { return []; }
 }
 
-// ── Ejecución. Troceada, cancelable, sin bloquear la interfaz. ─────────────
-function mgRunDiscovery() {
-  var S = mgDiscoveryState();
-  if (!S || S.running) return;
-  var input = mgDiscoverySnapshotInput();
-  if (!input) { mgRenderDiscoveryPanel(); return; }
-  if (typeof MG_DISCOVERY === 'undefined') { mgRenderDiscoveryPanel(); return; }
+// ── Independencia de los datasets ─────────────────────────────────────────
+// Compara el histórico de cada juego con el de los demás, con el MISMO hash que
+// usa el motor, para detectar datasets duplicados aunque no se haya ejecutado.
+function mgDiscoveryDuplicateDatasets() {
+  if (typeof BASE_DRAWS === 'undefined' || typeof MG_DISCOVERY === 'undefined') return [];
+  var all = (typeof GAME_CONFIG !== 'undefined') ? Object.keys(GAME_CONFIG) : [];
+  var byHash = {}, i, g, inp, h, out = [], key;
+  for (i = 0; i < all.length; i++) {
+    g = all[i];
+    inp = mgDiscoveryHistoryFor(g);
+    if (!inp) continue;
+    try {
+      h = MG_DISCOVERY.snapshotHash(inp.history, inp.spec,
+        (typeof mgSha256 === 'function') ? mgSha256 : undefined);
+    } catch (e) { continue; }
+    (byHash[h] = byHash[h] || []).push(g);
+  }
+  for (key in byHash) {
+    if (!Object.prototype.hasOwnProperty.call(byHash, key)) continue;
+    if (byHash[key].length > 1) out.push({ hash: key, games: byHash[key].slice() });
+  }
+  return out;
+}
 
-  S.running = { game: input.spec.game, done: 0, total: 0, pct: 0 };
+// El resultado que MANDA es siempre el científico. El preview nunca lo pisa.
+function mgDiscoveryBestResult(game) {
+  var slot = mgDiscoverySlot(game);
+  if (!slot) return null;
+  return slot.primary || slot.preview || null;
+}
+
+// ── Ejecución ─────────────────────────────────────────────────────────────
+function mgRunDiscovery(game, mode) {
+  var S = mgDiscoveryState();
+  if (!S || S.running[game]) return;
+  if (typeof MG_DISCOVERY === 'undefined') return;
+  var input = mgDiscoveryHistoryFor(game);
+  if (!input) { mgRenderDiscoveryPanel(); return; }
+
+  var B = (mode === 'PREVIEW') ? MG_DISCOVERY.B_PREVIEW : MG_DISCOVERY.B_PRIMARY;
+  S.running[game] = { game: game, mode: MG_DISCOVERY.runModeFor(B), B: B, done: 0, total: 0, pct: 0 };
   mgRenderDiscoveryPanel();
 
-  _mgDiscoveryJob = MG_DISCOVERY.runAsync(
+  _mgDiscoveryJobs[game] = MG_DISCOVERY.runAsync(
     input.history, input.spec,
-    { sha: (typeof mgSha256 === 'function') ? mgSha256 : undefined },
+    { sha: (typeof mgSha256 === 'function') ? mgSha256 : undefined, permutations: B },
     function (p) {
-      S.running.done = p.done; S.running.total = p.total;
-      S.running.pct = p.total ? Math.round(100 * p.done / p.total) : 0;
-      S.running.hypothesis = p.hypothesis; S.running.of = p.of;
-      mgRenderDiscoveryProgress();
+      var r = S.running[game]; if (!r) return;
+      r.done = p.done; r.total = p.total;
+      r.pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+      r.hypothesis = p.hypothesis; r.of = p.of;
+      mgRenderDiscoveryProgress(game);
     },
     function (res) {
-      // Congelado: el resultado es de sólo lectura desde el momento en que sale
-      // del motor. `production_eligible` se refuerza aquí por segunda vez.
       res.production_eligible = false;
       res.canModifyProductionWeights = false;
       res.canModifyLiveFrontier = false;
       res.canModifyChampion = false;
       res.canWriteSupabase = false;
-      S.byGame[input.spec.game] = Object.freeze(res);
-      S.running = null;
+      var slot = mgDiscoverySlot(game);
+      // Un preview NUNCA sobrescribe una corrida científica.
+      if (res.run_mode === 'PRIMARY_SCIENTIFIC') slot.primary = Object.freeze(res);
+      else slot.preview = Object.freeze(res);
+      slot.error = null;
+      S.running[game] = null;
       mgDiscoveryLogAppend(mgDiscoveryAuditRecord(res, input));
       mgRenderDiscoveryPanel();
     },
     function (err) {
-      S.running = null;
-      S.byGame[input.spec.game] = { error: String(err && err.message || err) };
+      S.running[game] = null;
+      mgDiscoverySlot(game).error = String(err && err.message || err);
       mgRenderDiscoveryPanel();
     });
 }
 
-function mgCancelDiscovery() {
+function mgCancelDiscovery(game) {
   var S = mgDiscoveryState();
-  if (_mgDiscoveryJob) { try { _mgDiscoveryJob.cancel(); } catch (e) {} }
-  _mgDiscoveryJob = null;
-  if (S) S.running = null;
+  if (_mgDiscoveryJobs[game]) { try { _mgDiscoveryJobs[game].cancel(); } catch (e) {} }
+  _mgDiscoveryJobs[game] = null;
+  if (S) S.running[game] = null;
   mgRenderDiscoveryPanel();
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────
-function mgRenderDiscoveryProgress() {
-  var S = mgDiscoveryState(), el = document.getElementById('mg-discovery-progress');
-  if (!el || !S || !S.running) return;
-  el.innerHTML = '<div class="mg-help">Analizando hipótesis ' + (S.running.hypothesis + 1) +
-    ' de ' + S.running.of + ' · ' + S.running.pct + ' %</div>' +
+function mgRenderDiscoveryProgress(game) {
+  var S = mgDiscoveryState(), el = document.getElementById('mg-discovery-progress-' + game);
+  if (!el || !S || !S.running[game]) return;
+  var r = S.running[game];
+  el.innerHTML = '<div class="mg-help">' + r.mode + ' · B=' + r.B + ' · hipótesis ' +
+    (r.hypothesis + 1) + ' de ' + r.of + ' · ' + r.pct + ' %</div>' +
     '<div style="height:6px;background:rgba(128,128,128,.18);border-radius:3px;overflow:hidden;margin-top:6px;">' +
-    '<div style="height:100%;width:' + S.running.pct + '%;background:var(--accent,#6b8afd);transition:width .2s;"></div></div>';
+    '<div style="height:100%;width:' + r.pct + '%;background:var(--accent,#6b8afd);transition:width .2s;"></div></div>';
 }
 
-// Insignias cortas: el estado tiene que leerse sin desplazar la tabla.
 var MG_DISCOVERY_BADGE = {
   SCREENED: '<span style="opacity:.7;">descartada</span>',
   EXPLORATORY_SIGNAL: '<span style="color:#b07a20;font-weight:600;">exploratoria</span>',
   SURVIVING_DISCOVERY: '<span style="color:#1b6f4a;font-weight:700;">sobrevive</span>',
   PROSPECTIVE_CANDIDATE: '<span style="color:#1b6f4a;font-weight:700;">candidata</span>'
 };
+var MG_DISCOVERY_VERDICT_CLASS = {
+  SURVIVING_DISCOVERY: 'edge',
+  NO_DISCOVERY: 'noedge',
+  PREVIEW_NO_VERDICT: 'pending',
+  NON_STANDARD_NO_VERDICT: 'pending'
+};
 
-function mgDiscoveryVerdictClass(v) {
-  if (v === 'SURVIVING_DISCOVERY') return 'edge';
-  if (v === 'EXPLORATORY_SIGNAL') return 'pending';
-  return 'noedge';
+function mgDiscoveryEscape(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function mgRenderDiscoveryPanel() {
-  var c = document.getElementById('mg-discovery-panel');
-  if (!c) return;
-  var S = mgDiscoveryState();
-  var game = (typeof state !== 'undefined') ? state.currentGame : null;
-  var cfg = (typeof GAME_CONFIG !== 'undefined' && game) ? GAME_CONFIG[game] : null;
-  var ver = (typeof MG_DISCOVERY !== 'undefined') ? MG_DISCOVERY.VERSION : '—';
+function mgRenderDiscoveryGameCard(game) {
+  var cfg = (typeof GAME_CONFIG !== 'undefined') ? GAME_CONFIG[game] : null;
+  if (!cfg) return '';
+  var S = mgDiscoveryState(), slot = mgDiscoverySlot(game);
+  var title = '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:16px;">' +
+    '<strong style="font-size:12.5px;letter-spacing:.5px;">' + cfg.name.toUpperCase() + '</strong>' +
+    '<span class="mg-help" style="margin:0;">N=' + cfg.maxNum + ' · k=' + cfg.pick + '</span></div>';
 
-  var head = '<div class="glass card"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-    '<span style="font-size:15px;">🔬</span>' +
-    '<strong style="font-size:13px;letter-spacing:.4px;">DISCOVERY ENGINE</strong>' +
-    '<span class="mg-help" style="margin:0;">' + ver + '</span></div>' +
-    '<div class="mg-help" style="margin-top:6px;">Búsqueda sistemática de estructura estadística. ' +
-    '<strong>DISCOVERY ≠ PREDICTION</strong>: nada de lo que encuentre aquí puede mover un boleto, ' +
-    'un peso ni una probabilidad de producción. Su única salida posible es una hipótesis congelable ' +
-    'para preregistro y Live Trial.</div>';
-
-  if (!cfg || cfg.isDigit) {
-    c.innerHTML = head + '<div class="mg-verdict off" style="margin-top:10px;">JUEGO FUERA DEL MOTOR</div>' +
-      '<div class="mg-help">El Discovery Engine trabaja sobre juegos de bombo (Melate, Revancha, Retro, Chispazo). ' +
-      'Tris es posicional y usa otro proceso.</div></div>';
-    return;
+  if (S && S.running[game]) {
+    return title + '<div class="glass card" style="margin-top:8px;">' +
+      '<div class="mg-verdict pending">EJECUTANDO</div>' +
+      '<div id="mg-discovery-progress-' + game + '"></div>' +
+      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgCancelDiscovery(\'' + game + '\')">Cancelar</button></div>';
+  }
+  if (slot && slot.error) {
+    return title + '<div class="glass card" style="margin-top:8px;">' +
+      '<div class="mg-verdict off">NO EJECUTABLE</div><div class="mg-help">' +
+      mgDiscoveryEscape(slot.error) + '</div>' + mgDiscoveryButtons(game) + '</div>';
   }
 
-  if (S && S.running) {
-    c.innerHTML = head +
-      '<div class="mg-verdict pending" style="margin-top:10px;">EJECUTANDO</div>' +
-      '<div id="mg-discovery-progress"></div>' +
-      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgCancelDiscovery()">Cancelar</button></div>';
-    mgRenderDiscoveryProgress();
-    return;
-  }
-
-  var r = S && S.byGame ? S.byGame[game] : null;
-
+  var r = mgDiscoveryBestResult(game);
   if (!r) {
-    c.innerHTML = head +
-      '<div class="mg-verdict off" style="margin-top:10px;">SIN EJECUTAR</div>' +
-      '<div class="mg-help">Es un análisis pesado (del orden de un minuto): recorre todas las hipótesis ' +
-      'con walk-forward y las contrasta contra un nulo de permutación. Se ejecuta sólo cuando lo pides.</div>' +
-      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgRunDiscovery()">▶ Ejecutar búsqueda</button></div>';
-    return;
-  }
-  if (r.error) {
-    c.innerHTML = head + '<div class="mg-verdict off" style="margin-top:10px;">NO EJECUTABLE</div>' +
-      '<div class="mg-help">' + r.error + '</div>' +
-      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgRunDiscovery()">↻ Reintentar</button></div>';
-    return;
+    return title + '<div class="glass card" style="margin-top:8px;">' +
+      '<div class="mg-verdict off">SIN EJECUTAR</div>' +
+      '<div class="mg-help">La corrida científica usa B=200 permutaciones y tarda del orden de ' +
+      'un minuto. El preview (B=60) es sólo para echar un vistazo y <strong>no puede ' +
+      'producir veredicto</strong>.</div>' + mgDiscoveryButtons(game) + '</div>';
   }
 
-  var label = r.verdict === 'NO_DISCOVERY'
-    ? 'NO_DISCOVERY' : 'SURVIVING_DISCOVERY — SIN IMPACTO EN PRODUCCIÓN';
+  var vcls = MG_DISCOVERY_VERDICT_CLASS[r.verdict] || 'off';
+  var banner = '';
+  if (!r.scientific_valid) {
+    banner = '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;' +
+      'background:rgba(176,122,32,.13);border:1px solid rgba(176,122,32,.35);' +
+      'font-size:11px;line-height:1.5;">' +
+      '<strong>' + r.run_mode + '</strong> · B=' + r.permutations + ' · p mínima alcanzable = ' +
+      r.p_perm_floor.toFixed(4) + '<br>' +
+      '<strong>EXPLORATORIO — NO APTO PARA VEREDICTO CIENTÍFICO.</strong> ' +
+      'Ninguna hipótesis puede ascender a <code>SURVIVING_DISCOVERY</code> ni a ' +
+      '<code>PROSPECTIVE_CANDIDATE</code> con este número de permutaciones.</div>';
+  } else {
+    banner = '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;' +
+      'background:rgba(27,111,74,.10);border:1px solid rgba(27,111,74,.30);' +
+      'font-size:11px;line-height:1.5;"><strong>PRIMARY SCIENTIFIC RUN</strong> · B=' +
+      r.permutations + ' · p mínima alcanzable = ' + r.p_perm_floor.toFixed(4) + '</div>';
+  }
+
   var sub;
-  if (r.verdict === 'NO_DISCOVERY') {
+  if (!r.scientific_valid) {
+    sub = 'Vistazo rápido sobre ' + r.hypothesis_count + ' hipótesis. ' +
+      (r.exploratory_count > 0
+        ? r.exploratory_count + ' con la p sin corregir por debajo de ' + r.options.alpha + '. '
+        : 'Ninguna con la p sin corregir por debajo de ' + r.options.alpha + '. ') +
+      'Para obtener un veredicto hay que ejecutar la corrida científica.';
+  } else if (r.verdict === 'NO_DISCOVERY') {
     sub = 'Ninguna de las ' + r.hypothesis_count + ' hipótesis sobrevive a la corrección por ' +
       'multiplicidad. Es un resultado científico válido, no un fallo.';
     if (r.exploratory_count > 0) {
@@ -20054,45 +20188,49 @@ function mgRenderDiscoveryPanel() {
         'Por eso no ascienden a veredicto.';
     }
   } else {
-    sub = r.surviving_count + ' hipótesis superan q&lt;' + r.options.alpha + ' y Δ≥' + r.options.deltaMin +
+    sub = r.surviving_count + ' hipótesis superan q&lt;' + r.options.alpha + ' y Δ≥' + r.delta_min +
       '. Eso NO las convierte en predicción: sólo autoriza congelar la especificación y ' +
       'preregistrar un Live Trial.';
   }
 
   var rows = r.discoveries.map(function (d) {
     var cls = d.status === 'SCREENED' ? 'opacity:.55;' : '';
-    // el estado literal queda en el DOM para auditoría y pruebas
-    var _st = ' data-status="' + d.status + '"';
     var num = 'text-align:right;padding:3px 5px;font-variant-numeric:tabular-nums;';
-    return '<tr style="' + cls + '"' + _st + '><td style="padding:3px 5px 3px 0;white-space:nowrap;">' +
-      (d.control ? '<span style="opacity:.6;">⊙ </span>' : '') + d.id + '</td>' +
+    return '<tr style="' + cls + '" data-status="' + d.status + '" data-game="' + game + '">' +
+      '<td style="padding:3px 5px 3px 0;white-space:nowrap;">' +
+      (d.control ? '<span style="opacity:.6;">⊙ </span>' : '') + d.id +
+      (d.capped_by_run_mode ? '<span title="topada por el modo de ejecución"> ▲</span>' : '') + '</td>' +
       '<td style="padding:3px 5px;white-space:nowrap;">' + MG_DISCOVERY_BADGE[d.status] + '</td>' +
       '<td style="' + num + '">' + (d.delta_hits >= 0 ? '+' : '') + d.delta_hits.toFixed(4) + '</td>' +
       '<td style="' + num + '">' + d.q_bh.toFixed(4) + '</td>' +
       '<td style="' + num + '">' + d.p_primary.toFixed(4) + '</td>' +
       '<td style="' + num + '">' + d.z_h0.toFixed(2) + '</td>' +
       '<td style="' + num + '">' + d.stability.positive + '/' + d.stability.n_blocks + '</td>' +
-      '<td style="' + num + 'padding-right:0;">' + (d.holdout.delta_hits >= 0 ? '+' : '') + d.holdout.delta_hits.toFixed(4) + '</td></tr>';
+      '<td style="' + num + 'padding-right:0;">' + (d.holdout.delta_hits >= 0 ? '+' : '') +
+      d.holdout.delta_hits.toFixed(4) + '</td></tr>';
   }).join('');
 
   var best = r.discoveries.filter(function (d) { return !d.control; })[0];
 
-  c.innerHTML = head +
-    '<div class="mg-verdict ' + mgDiscoveryVerdictClass(r.verdict) + '" style="margin-top:10px;">' + label + '</div>' +
+  return title + '<div class="glass card" style="margin-top:8px;">' +
+    banner +
+    '<div class="mg-verdict ' + vcls + '" style="margin-top:10px;">' + r.verdict + '</div>' +
     '<div class="mg-help">' + sub + '</div>' +
     '<div class="mg-kv-grid">' +
-      '<div class="mg-kv"><span>Versión</span><b>' + r.engine_version + '</b></div>' +
+      '<div class="mg-kv"><span>Run mode</span><b>' + r.run_mode + '</b></div>' +
+      '<div class="mg-kv"><span>Permutaciones</span><b>' + r.permutations + '</b></div>' +
       '<div class="mg-kv"><span>Snapshot</span><b>' + String(r.snapshot_sha256).slice(0, 12) + '</b></div>' +
+      '<div class="mg-kv"><span>Semilla</span><b>' + r.options.seed + '</b></div>' +
+      '<div class="mg-kv"><span>N · k</span><b>' + r.spec.N + ' · ' + r.spec.k + '</b></div>' +
       '<div class="mg-kv"><span>Sorteos</span><b>' + r.history_n.toLocaleString() + '</b></div>' +
+      '<div class="mg-kv"><span>Baseline k²/N</span><b>' + r.baseline.toFixed(6) + '</b></div>' +
+      '<div class="mg-kv"><span>δ mínimo</span><b>' + r.delta_min + '</b></div>' +
       '<div class="mg-kv"><span>Hipótesis</span><b>' + r.hypothesis_count + '</b></div>' +
-      '<div class="mg-kv"><span>Familias</span><b>' + r.families.length + '</b></div>' +
       '<div class="mg-kv"><span>OOS</span><b>' + (r.oos_window[1] - r.oos_window[0]) + '</b></div>' +
       '<div class="mg-kv"><span>Holdout</span><b>' + (r.holdout_window[1] - r.holdout_window[0]) + '</b></div>' +
-      '<div class="mg-kv"><span>Permutaciones</span><b>' + r.options.permutations + '</b></div>' +
-      '<div class="mg-kv"><span>Semilla</span><b>' + r.options.seed + '</b></div>' +
+      '<div class="mg-kv"><span>Controles</span><b>' + (r.controls_clean ? 'limpios' : '⚠ CONTAMINADOS') + '</b></div>' +
       '<div class="mg-kv"><span>Mejor Δ</span><b>' + (best ? (best.delta_hits >= 0 ? '+' : '') + best.delta_hits.toFixed(4) : '—') + '</b></div>' +
       '<div class="mg-kv"><span>Mejor q</span><b>' + (best ? best.q_bh.toFixed(4) : '—') + '</b></div>' +
-      '<div class="mg-kv"><span>Controles</span><b>' + (r.controls_clean ? 'limpios' : '⚠ CONTAMINADOS') + '</b></div>' +
     '</div>' +
     '<div style="overflow-x:auto;margin-top:12px;">' +
     '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
@@ -20103,16 +20241,69 @@ function mgRenderDiscoveryPanel() {
     '<th style="text-align:right;padding:0 5px 4px;">bloq+</th>' +
     '<th style="text-align:right;padding:0 0 4px 5px;">holdout</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-    '<div class="mg-help" style="margin-top:10px;">⊙ = control. Deben salir siempre en <code>SCREENED</code>; ' +
-    'si un control sobreviviera, el motor estaría roto y el resultado sería inválido. ' +
-    'Se listan <strong>todas</strong> las hipótesis probadas, incluidas las que no encontraron nada: ' +
-    'ocultar las negativas es lo que fabrica descubrimientos falsos.</div>' +
-    '<div class="mg-help" style="margin-top:8px;">Siguiente acción: <code>' + r.next_action + '</code> · ' +
+    '<div class="mg-help" style="margin-top:10px;">⊙ = control, deben salir siempre descartados. ' +
+    '▲ = topada por el modo de ejecución. Se listan <strong>todas</strong> las hipótesis, ' +
+    'también las negativas. Siguiente acción: <code>' + r.next_action + '</code> · ' +
     '<code>production_eligible = false</code></div>' +
-    '<button class="btn btn-ghost" style="margin-top:12px;" onclick="mgRunDiscovery()">↻ Volver a ejecutar</button>' +
-    '</div>';
+    (slot.primary && slot.preview
+      ? '<div class="mg-help" style="margin-top:6px;">Hay también un preview guardado (B=' +
+        slot.preview.permutations + '); se muestra la corrida científica, que es la que manda.</div>'
+      : '') +
+    mgDiscoveryButtons(game) + '</div>';
 }
 
+function mgDiscoveryButtons(game) {
+  return '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">' +
+    '<button class="btn btn-ghost" onclick="mgRunDiscovery(\'' + game + '\',\'PRIMARY\')">' +
+    '▶ Corrida científica · B=200</button>' +
+    '<button class="btn btn-ghost" onclick="mgRunDiscovery(\'' + game + '\',\'PREVIEW\')">' +
+    'Preview · B=60</button></div>';
+}
+
+function mgRenderDiscoveryPanel() {
+  var c = document.getElementById('mg-discovery-panel');
+  if (!c) return;
+  var ver = (typeof MG_DISCOVERY !== 'undefined') ? MG_DISCOVERY.VERSION : '—';
+
+  var head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:18px;">' +
+    '<span style="font-size:15px;">🔬</span>' +
+    '<strong style="font-size:13px;letter-spacing:.4px;">DISCOVERY ENGINE</strong>' +
+    '<span class="mg-help" style="margin:0;">' + ver + '</span></div>' +
+    '<div class="mg-help" style="margin-top:6px;">Búsqueda sistemática de estructura estadística. ' +
+    '<strong>DISCOVERY ≠ PREDICTION</strong>: nada de lo que encuentre aquí puede mover un boleto, ' +
+    'un peso ni una probabilidad de producción. Su única salida posible es una hipótesis congelable ' +
+    'para preregistro y Live Trial. <strong>Cada juego es una investigación independiente</strong>: ' +
+    'no comparten snapshot, ni hipótesis, ni p, ni q, ni veredicto.</div>';
+
+  // Aviso de datasets duplicados: dos juegos con el mismo histórico no son dos
+  // evidencias.
+  var dup = [];
+  try { dup = mgDiscoveryDuplicateDatasets(); } catch (e) { dup = []; }
+  var dupHtml = '';
+  if (dup.length) {
+    dupHtml = dup.map(function (d) {
+      var names = d.games.map(function (g) {
+        return (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[g]) ? GAME_CONFIG[g].name : g;
+      });
+      return '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;' +
+        'background:rgba(168,50,50,.11);border:1px solid rgba(168,50,50,.32);font-size:11px;line-height:1.5;">' +
+        '<strong>DATASET_DUPLICATE · NOT_INDEPENDENT_VALIDATION</strong><br>' +
+        names.join(' y ') + ' comparten exactamente el mismo snapshot histórico ' +
+        '(<code>' + String(d.hash).slice(0, 16) + '…</code>), así que <strong>no constituyen ' +
+        'evidencia independiente</strong>: un resultado en uno no valida al otro. ' +
+        'No se elimina ninguno ni se sustituyen datos; sólo queda marcada la falta de ' +
+        'independencia.</div>';
+    }).join('');
+  }
+
+  var cards = MG_DISCOVERY_GAMES.map(mgRenderDiscoveryGameCard).join('');
+  c.innerHTML = head + dupHtml + cards;
+
+  var S = mgDiscoveryState();
+  if (S) for (var i = 0; i < MG_DISCOVERY_GAMES.length; i++) {
+    if (S.running[MG_DISCOVERY_GAMES[i]]) mgRenderDiscoveryProgress(MG_DISCOVERY_GAMES[i]);
+  }
+}
 </script>
 
 </body>
