@@ -3337,6 +3337,7 @@ body.light-mode .mg-strip-meta .tag { background: rgba(0,0,0,0.06); }
       <div id="mg-research-status"></div>
       <div id="mg-settings-body"></div>
       <div id="mg-discovery-panel"></div>
+      <div id="mg-ale-panel"></div>
 
       <button class="btn btn-ghost" onclick="mgUiReset()" style="margin-top:14px;">
         ↺ Restaurar valores por defecto
@@ -10492,6 +10493,7 @@ function mgRenderSettingsView() {
     </div>`).join('');
   mgRenderResearchStatus();
   try { mgRenderDiscoveryPanel(); } catch (e) {}
+  try { mgRenderAlePanel(); } catch (e) {}
 }
 
 // ── Estado del protocolo (tarjeta superior de Ajustes) ──
@@ -20302,6 +20304,957 @@ function mgRenderDiscoveryPanel() {
   var S = mgDiscoveryState();
   if (S) for (var i = 0; i < MG_DISCOVERY_GAMES.length; i++) {
     if (S.running[MG_DISCOVERY_GAMES[i]]) mgRenderDiscoveryProgress(MG_DISCOVERY_GAMES[i]);
+  }
+}
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADAPTIVE LEARNING ENGINE v1 — capa de aprendizaje, aislada de producción.
+//  Se añade al final a propósito: nada del resto de la app depende de este
+//  bloque, y quitarlo entero deja el sistema exactamente como estaba.
+// ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════════
+   MELATE GENIUS · ADAPTIVE LEARNING ENGINE v1 — research-only
+   ───────────────────────────────────────────────────────────────────────────
+   LEARN → TEST → UPDATE → LEARN AGAIN.   Nunca FIT → PICK WINNER → DECLARE EDGE.
+
+   Esta capa aprende CUÁNTA CONFIANZA merece cada modelo del pool. No predice
+   números: predice fiabilidad. No escribe en producción, no genera boletos y
+   `production_eligible` empieza y termina SIEMPRE en false.
+
+   Garantía estructural contra la fuga: `recordFeedback` sólo acepta una
+   predicción CONGELADA cuyo hash se recalcula aquí, y RECHAZA cualquier
+   predicción cuyo snapshot alcance o supere el sorteo objetivo. El resultado
+   del sorteo t no puede alterar la predicción de t porque la predicción de t
+   está sellada antes de que t exista.
+
+   Un motor queda ligado a UN juego. Melate y Retro no comparten memoria,
+   pesos, snapshots ni diagnósticos: son dos motores distintos.
+
+   Script plano (sin módulos ES) para vivir dentro de index.html y cargarse
+   igual en Node para las pruebas.
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function (root) {
+  'use strict';
+
+  var VERSION = 'ALE-1.1.0';
+
+  // ── CONSTANTES DECLARADAS ANTES DE VER NINGÚN DATO REAL ─────────────────
+  // Ninguna se elige mirando resultados. Las tres primeras son las del kit
+  // original; el resto son la corrección conservadora que el kit no tenía.
+  var HORIZON_SHORT = 20;
+  var HORIZON_MEDIUM = 100;
+  var HORIZON_WEIGHTS = { short: 0.45, medium: 0.30, long: 0.25 };
+  var SHRINK_N0 = 40;        // n/(n+40): con 1 observación la evidencia pesa 2.4 %
+  // Temperatura EN UNIDADES INTERPRETABLES: una ventaja sostenida de Δ aciertos
+  // por sorteo multiplica el peso de un modelo por exp(Δ / (k·T)). Con T=0.08 y
+  // k=6: Δ=1 acierto → ×8.0 ; Δ=0.1 aciertos → ×1.23. Conservador y legible.
+  var TEMPERATURE = 0.08;
+  var W_MIN = 0.02;          // un modelo NUNCA se borra
+  var W_MAX = 0.35;          // tope real, verificado (el kit lo violaba)
+
+  var SOURCE_LIVE = 'LIVE';
+  var SOURCE_RECONSTRUCTED = 'RECONSTRUCTED';
+  var NA = 'NOT_AVAILABLE';
+
+  // ── utilidades ──────────────────────────────────────────────────────────
+  function mean(a) { var s = 0, i; if (!a.length) return NaN; for (i = 0; i < a.length; i++) s += a[i]; return s / a.length; }
+  function sd(a) {
+    if (a.length < 2) return NaN;
+    var m = mean(a), s = 0, i;
+    for (i = 0; i < a.length; i++) s += (a[i] - m) * (a[i] - m);
+    return Math.sqrt(s / (a.length - 1));
+  }
+  function tail(a, n) { return a.slice(Math.max(0, a.length - n)); }
+  function clamp(x, lo, hi) { return x < lo ? lo : (x > hi ? hi : x); }
+  function sortedCopy(a) { return Array.prototype.slice.call(a).map(Number).sort(function (x, y) { return x - y; }); }
+  function intersect(a, b) {
+    var s = {}, i, c = 0;
+    for (i = 0; i < a.length; i++) s[a[i]] = 1;
+    for (i = 0; i < b.length; i++) if (s[b[i]]) c++;
+    return c;
+  }
+
+  // Hash de respaldo si el anfitrión no aporta uno. En index.html se le pasa
+  // `mgSha256`, el mismo que sella las predicciones de producción.
+  function fallbackSha(s) {
+    var h1 = 2166136261 >>> 0, h2 = 5381 >>> 0, i, c;
+    for (i = 0; i < s.length; i++) {
+      c = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+      h2 = (Math.imul(h2, 33) + c) >>> 0;
+    }
+    return ('00000000' + h1.toString(16)).slice(-8) + ('00000000' + h2.toString(16)).slice(-8);
+  }
+
+  // ── CONGELADO ───────────────────────────────────────────────────────────
+  // Forma canónica de una predicción. El hash sella QUÉ se predijo, PARA QUÉ
+  // sorteo y CON CUÁNTA historia. Cambiar cualquiera de los tres rompe el sello.
+  function canonical(spec, modelId, targetIndex, snapshotUpto, numbers) {
+    return 'ALE|' + VERSION + '|' + spec.game + '|N=' + spec.N + '|k=' + spec.k +
+      '|model=' + modelId + '|target=' + targetIndex + '|snapshot_upto=' + snapshotUpto +
+      '|nums=' + sortedCopy(numbers).join('-');
+  }
+
+  function freezePrediction(spec, modelId, targetIndex, snapshotUpto, numbers, probabilities, shaFn) {
+    var sha = shaFn || fallbackSha;
+    var nums = sortedCopy(numbers);
+    return {
+      engine_version: VERSION,
+      game: spec.game, model_id: String(modelId),
+      target_index: targetIndex | 0,
+      snapshot_upto: snapshotUpto | 0,     // último índice de sorteo usado para entrenar
+      numbers: nums,
+      probabilities: probabilities ? Array.prototype.slice.call(probabilities).map(Number) : null,
+      freeze_hash: sha(canonical(spec, modelId, targetIndex, snapshotUpto, nums)),
+      frozen_at: new Date().toISOString()
+    };
+  }
+
+  // ── MOTOR, LIGADO A UN SOLO JUEGO ───────────────────────────────────────
+  function createEngine(spec, opts) {
+    if (!spec || !spec.game || !(spec.N > 0) || !(spec.k > 0)) throw new Error('ALE: gameSpec inválido');
+    var GAME = String(spec.game), N = spec.N | 0, K = spec.k | 0;
+    var o = opts || {};
+    var sha = o.sha || fallbackSha;
+    var cfg = {
+      horizonShort: o.horizonShort || HORIZON_SHORT,
+      horizonMedium: o.horizonMedium || HORIZON_MEDIUM,
+      shrinkN0: (o.shrinkN0 === undefined) ? SHRINK_N0 : o.shrinkN0,
+      temperature: (o.temperature === undefined) ? TEMPERATURE : o.temperature,
+      wMin: (o.wMin === undefined) ? W_MIN : o.wMin,
+      wMax: (o.wMax === undefined) ? W_MAX : o.wMax
+    };
+
+    var models = {};          // model_id → { observations: [], weight, weight_history }
+    var byTarget = {};        // target_index → { model_id → observation }
+    var rejected = [];        // registro de rechazos: nada se descarta en silencio
+    var nObs = 0;
+
+    function M(id) {
+      return models[id] || (models[id] = { model_id: String(id), observations: [], weight: null, weight_history: [] });
+    }
+
+    // Tasa de acierto esperada por puro azar, como fracción de k: (k²/N)/k = k/N.
+    var CHANCE = K / N;
+
+    // ── feedback: la única puerta de entrada, y está cerrada con llave ─────
+    function recordFeedback(frozen, actual, meta) {
+      var m = meta || {};
+      function reject(code, detail) {
+        var r = { code: code, detail: detail || '', model_id: frozen && frozen.model_id,
+                  target_index: frozen && frozen.target_index };
+        rejected.push(r);
+        var e = new Error(code + (detail ? ': ' + detail : ''));
+        e.ale_code = code; e.ale_rejection = r;
+        throw e;
+      }
+      if (!frozen || typeof frozen !== 'object') reject('MISSING_FROZEN_PREDICTION');
+      if (frozen.game !== GAME) reject('GAME_MISMATCH', frozen.game + ' != ' + GAME);
+      if (!frozen.freeze_hash) reject('UNFROZEN_PREDICTION', 'sin freeze_hash');
+
+      // 1 · el sello debe ser auténtico
+      var expect = sha(canonical({ game: GAME, N: N, k: K }, frozen.model_id,
+        frozen.target_index, frozen.snapshot_upto, frozen.numbers));
+      if (expect !== frozen.freeze_hash) reject('FREEZE_HASH_MISMATCH');
+
+      // 2 · GARANTÍA ANTI-FUGA: el sorteo objetivo no puede estar dentro de la
+      //     historia con la que se generó la predicción.
+      if (!(frozen.snapshot_upto <= frozen.target_index - 1))
+        reject('TEMPORAL_LEAK', 'snapshot_upto=' + frozen.snapshot_upto +
+          ' debe ser <= target_index-1 = ' + (frozen.target_index - 1));
+
+      // 3 · una predicción por modelo y sorteo
+      if (byTarget[frozen.target_index] && byTarget[frozen.target_index][frozen.model_id])
+        reject('DUPLICATE_FEEDBACK', frozen.model_id + '@' + frozen.target_index);
+
+      var act = sortedCopy(actual);
+      if (act.length !== K) reject('BAD_ACTUAL_DRAW', act.length + ' != ' + K);
+      if (frozen.numbers.length !== K) reject('BAD_PREDICTION_SIZE');
+
+      var hits = intersect(frozen.numbers, act);
+      var obs = {
+        model_id: frozen.model_id,
+        target_index: frozen.target_index,
+        snapshot_upto: frozen.snapshot_upto,
+        freeze_hash: frozen.freeze_hash,
+        source: m.source === SOURCE_LIVE ? SOURCE_LIVE : SOURCE_RECONSTRUCTED,
+        picks: frozen.numbers.slice(),
+        hits: hits,
+        errors: K - hits,
+        brier: null, log_loss: null, expected_hits: null,
+        sample_index: nObs
+      };
+      // Brier y log-loss SÓLO si se congelaron probabilidades. Si no, quedan
+      // como NOT_AVAILABLE: no se fabrican.
+      if (frozen.probabilities && frozen.probabilities.length >= N + 1) {
+        var isOut = {}, i, p, b = 0, ll = 0, cnt = 0;
+        for (i = 0; i < act.length; i++) isOut[act[i]] = 1;
+        for (i = 1; i <= N; i++) {
+          p = clamp(Number(frozen.probabilities[i]) || 0, 1e-12, 1);
+          var y = isOut[i] ? 1 : 0;
+          b += (p - y) * (p - y);
+          ll += y ? Math.log(p) : 0;
+          cnt++;
+        }
+        obs.brier = b / cnt;
+        obs.log_loss = -ll / K;
+        // aciertos ESPERADOS según la propia probabilidad congelada, sobre los
+        // k números elegidos. Permite calibrar observado contra esperado.
+        var eh = 0;
+        for (i = 0; i < frozen.numbers.length; i++)
+          eh += clamp(Number(frozen.probabilities[frozen.numbers[i]]) || 0, 0, 1);
+        obs.expected_hits = eh;
+      }
+      M(frozen.model_id).observations.push(obs);
+      (byTarget[frozen.target_index] = byTarget[frozen.target_index] || {})[frozen.model_id] = obs;
+      nObs++;
+      return obs;
+    }
+
+    // ── diagnósticos por modelo ───────────────────────────────────────────
+    function modelDiagnostics(id, weightsForEnsemble) {
+      var m = models[id];
+      if (!m || !m.observations.length) return null;
+      var obs = m.observations;
+      var h = obs.map(function (x) { return x.hits; });
+      var s = tail(h, cfg.horizonShort), md = tail(h, cfg.horizonMedium);
+      var sdS = sd(s);
+
+      // Brier / log-loss / calibración: sólo con las observaciones que los tienen.
+      var withP = obs.filter(function (x) { return x.brier !== null; });
+      var brier = withP.length ? mean(withP.map(function (x) { return x.brier; })) : NA;
+      var logLoss = withP.length ? mean(withP.map(function (x) { return x.log_loss; })) : NA;
+      // Calibración: aciertos observados contra los esperados por la propia
+      // probabilidad congelada. 1.0 = perfectamente calibrado; >1 pesimista;
+      // <1 optimista. NOT_AVAILABLE si no se congelaron probabilidades.
+      var calib = NA, calibN = 0;
+      var withE = obs.filter(function (x) { return x.expected_hits !== null && x.expected_hits !== undefined; });
+      if (withE.length >= 10) {
+        var expM = mean(withE.map(function (x) { return x.expected_hits; }));
+        var obsM = mean(withE.map(function (x) { return x.hits; }));
+        if (expM > 1e-9) { calib = obsM / expM; calibN = withE.length; }
+      }
+
+      // Desacuerdo: distancia media con el resto de modelos en los mismos sorteos.
+      var dis = [], t, other, tot, cntO;
+      for (var oi = 0; oi < obs.length; oi++) {
+        t = obs[oi].target_index; other = byTarget[t]; tot = 0; cntO = 0;
+        for (var oid in other) {
+          if (!Object.prototype.hasOwnProperty.call(other, oid) || oid === id) continue;
+          tot += 1 - intersect(obs[oi].picks, other[oid].picks) / K; cntO++;
+        }
+        if (cntO) dis.push(tot / cntO);
+      }
+      var disagreement = dis.length ? mean(dis) : NA;
+
+      // Contribución incremental: aciertos del ensemble CON el modelo menos
+      // aciertos del ensemble SIN él, promediado sobre los sorteos comunes.
+      var inc = NA;
+      if (weightsForEnsemble) {
+        var diffs = [];
+        for (var t2 in byTarget) {
+          if (!Object.prototype.hasOwnProperty.call(byTarget, t2)) continue;
+          if (!byTarget[t2][id]) continue;
+          var withM = ensemblePickHits(byTarget[t2], weightsForEnsemble, null);
+          var without = ensemblePickHits(byTarget[t2], weightsForEnsemble, id);
+          if (withM === null || without === null) continue;
+          diffs.push(withM - without);
+        }
+        if (diffs.length) inc = mean(diffs);
+      }
+
+      var n = h.length;
+      return {
+        n: n,
+        n_live: obs.filter(function (x) { return x.source === SOURCE_LIVE; }).length,
+        n_reconstructed: obs.filter(function (x) { return x.source === SOURCE_RECONSTRUCTED; }).length,
+        hits_total: h.reduce(function (a, b2) { return a + b2; }, 0),
+        errors_total: obs.reduce(function (a, x) { return a + x.errors; }, 0),
+        short_mean_hits: mean(s), medium_mean_hits: mean(md), long_mean_hits: mean(h),
+        short_score: mean(s) / K, medium_score: mean(md) / K, long_score: mean(h) / K,
+        chance_score: CHANCE,
+        short_sd: isFinite(sdS) ? sdS : NA,
+        volatility: isFinite(sdS) ? sdS / K : NA,
+        stability: isFinite(sdS) ? 1 / (1 + sdS) : NA,
+        brier: brier, log_loss: logLoss, calibration: calib, calibration_n: calibN,
+        disagreement: disagreement,
+        incremental_contribution: inc,
+        shrinkage: n / (n + cfg.shrinkN0),
+        weight: m.weight, weight_history: m.weight_history.slice()
+      };
+    }
+
+    // Ensemble de VOTO ponderado: score(n) = Σ w_m · [n ∈ pick_m]. No necesita
+    // probabilidades y no produce ninguna predicción futura: sólo se evalúa
+    // sobre sorteos YA ocurridos, para medir contribución.
+    function ensemblePickHits(atTarget, w, excludeId) {
+      var score = {}, id, i, used = 0;
+      for (id in atTarget) {
+        if (!Object.prototype.hasOwnProperty.call(atTarget, id) || id === excludeId) continue;
+        var wi = Number(w[id] || 0); if (!wi) continue;
+        used++;
+        for (i = 0; i < atTarget[id].picks.length; i++) {
+          var nn = atTarget[id].picks[i];
+          score[nn] = (score[nn] || 0) + wi;
+        }
+      }
+      if (!used) return null;
+      var arr = [];
+      for (var kk in score) if (Object.prototype.hasOwnProperty.call(score, kk)) arr.push([Number(kk), score[kk]]);
+      arr.sort(function (a, b) { return b[1] - a[1] || a[0] - b[0]; });
+      var pick = arr.slice(0, K).map(function (x) { return x[0]; });
+      // los aciertos reales del sorteo: se reconstruyen desde cualquier
+      // observación de ese sorteo (todas comparten el mismo resultado)
+      var anyId = null;
+      for (id in atTarget) { if (Object.prototype.hasOwnProperty.call(atTarget, id)) { anyId = id; break; } }
+      if (anyId === null) return null;
+      var ob = atTarget[anyId];
+      if (!ob._actual) return null;
+      return intersect(pick, ob._actual);
+    }
+
+    // ── PESOS ADAPTATIVOS ────────────────────────────────────────────────
+    // Proyección sobre el símplex con tope Y suelo REALES. El kit topaba y
+    // luego renormalizaba, lo que devolvía el valor topado por encima del tope.
+    // Límites EFECTIVOS: el tope y el suelo configurados sólo son factibles para
+    // un pool suficientemente grande. Con m modelos:
+    //   · suelo  = min(wMin, 1/m)          → siempre factible, nunca se borra nadie
+    //   · tope   = max(wMax, 2/m)          → un modelo puede llegar al doble de su
+    //                                        cuota uniforme aunque el pool sea diminuto
+    //              acotado por 1-(m-1)·suelo para que el símplex tenga solución.
+    // Se DEVUELVEN en el resultado: nunca se aplica un límite distinto del que
+    // se reporta, y nunca se salta la proyección en silencio.
+    function effectiveBounds(m) {
+      var lo = Math.min(cfg.wMin, 1 / m);
+      var hi = Math.max(cfg.wMax, 2 / m);
+      hi = Math.min(hi, 1 - (m - 1) * lo);
+      if (hi < lo) hi = lo;
+      return { lo: lo, hi: hi };
+    }
+
+    function projectCapFloor(w, lo, hi) {
+      var m = w.length, i, it, s, free, delta;
+      var v = w.slice();
+      for (it = 0; it < 200; it++) {
+        for (i = 0; i < m; i++) v[i] = clamp(v[i], lo, hi);
+        s = 0; for (i = 0; i < m; i++) s += v[i];
+        if (Math.abs(s - 1) < 1e-13) break;
+        free = [];
+        for (i = 0; i < m; i++) if ((s > 1 && v[i] > lo + 1e-15) || (s < 1 && v[i] < hi - 1e-15)) free.push(i);
+        if (!free.length) break;
+        delta = (1 - s) / free.length;
+        for (i = 0; i < free.length; i++) v[free[i]] += delta;
+      }
+      return v;
+    }
+
+    function computeWeights(opt) {
+      var op = opt || {};
+      var ids = Object.keys(models).sort();
+      if (!ids.length) {
+        return { engine_version: VERSION, game: GAME, weights: {}, diagnostics: {},
+                 learning_status: 'NO_MODELS', production_eligible: false, tickets: null };
+      }
+      var diag = {}, i, raw = [];
+      for (i = 0; i < ids.length; i++) {
+        var d0 = modelDiagnostics(ids[i], null);
+        diag[ids[i]] = d0;
+        // Evidencia = exceso sobre el azar, ENCOGIDO por tamaño de muestra.
+        var comb = HORIZON_WEIGHTS.short * d0.short_score +
+                   HORIZON_WEIGHTS.medium * d0.medium_score +
+                   HORIZON_WEIGHTS.long * d0.long_score;
+        var evidence = (comb - CHANCE) * d0.shrinkage;
+        raw.push(evidence);
+      }
+      // softmax sobre la evidencia encogida
+      var mx = Math.max.apply(null, raw), ex = [], z = 0;
+      for (i = 0; i < raw.length; i++) { ex.push(Math.exp((raw[i] - mx) / Math.max(1e-12, cfg.temperature))); z += ex[i]; }
+      var w = ex.map(function (x) { return x / (z || 1); });
+      // tope y suelo REALES, con los límites efectivos del tamaño del pool
+      var B = effectiveBounds(ids.length);
+      w = projectCapFloor(w, B.lo, B.hi);
+
+      var out = {};
+      for (i = 0; i < ids.length; i++) {
+        out[ids[i]] = w[i];
+        models[ids[i]].weight = w[i];
+        // El historial sólo crece cuando algo CAMBIA. Recalcular con la misma
+        // evidencia devuelve el mismo peso y no debe dejar rastro: el panel
+        // llama a esta función en cada repintado.
+        var hh = models[ids[i]].weight_history;
+        var lastH = hh.length ? hh[hh.length - 1] : null;
+        if (!lastH || lastH.sample_index !== nObs || Math.abs(lastH.weight - w[i]) > 1e-15)
+          hh.push({ sample_index: nObs, weight: w[i] });
+      }
+      // segunda pasada: contribución incremental con los pesos ya calculados
+      for (i = 0; i < ids.length; i++) diag[ids[i]] = modelDiagnostics(ids[i], out);
+
+      var mn = Math.min.apply(null, w), mxw = Math.max.apply(null, w);
+      return {
+        engine_version: VERSION, game: GAME, N: N, k: K,
+        weights: out, diagnostics: diag,
+        learning_status: 'ADAPTIVE_WEIGHTS_UPDATED',
+        model_count: ids.length,
+        observed_draws: Object.keys(byTarget).length,
+        observations: nObs,
+        min_weight: mn, max_weight: mxw,
+        cap_configured: cfg.wMax, floor_configured: cfg.wMin,
+        cap_effective: B.hi, floor_effective: B.lo,
+        cap_binds: Math.abs(B.hi - cfg.wMax) < 1e-12,
+        chance_score: CHANCE,
+        config: { horizonShort: cfg.horizonShort, horizonMedium: cfg.horizonMedium,
+                  horizonWeights: HORIZON_WEIGHTS, shrinkN0: cfg.shrinkN0,
+                  temperature: cfg.temperature },
+        rejected_count: rejected.length,
+        production_eligible: false, tickets: null
+      };
+    }
+
+    // ── diagnóstico del ensemble: SÓLO sobre sorteos ya ocurridos ─────────
+    function ensembleDiagnostics(w) {
+      var ws = w || computeWeights().weights;
+      var eh = [], bh = [], mh = [], t, at, id, best, tot, cnt, hh;
+      var keys = Object.keys(byTarget).map(Number).sort(function (a, b) { return a - b; });
+      for (var i = 0; i < keys.length; i++) {
+        t = keys[i]; at = byTarget[t];
+        hh = ensemblePickHits(at, ws, null);
+        if (hh === null) continue;
+        eh.push(hh);
+        best = -1; tot = 0; cnt = 0;
+        for (id in at) {
+          if (!Object.prototype.hasOwnProperty.call(at, id)) continue;
+          if (at[id].hits > best) best = at[id].hits;
+          tot += at[id].hits; cnt++;
+        }
+        bh.push(best); mh.push(cnt ? tot / cnt : 0);
+      }
+      if (!eh.length) return { available: false, reason: 'sin sorteos evaluables' };
+      // El MEJOR MODELO de verdad: el mayor promedio individual. Distinto del
+      // promedio del máximo por sorteo, que es una cota que ninguna estrategia
+      // puede alcanzar porque exige saber de antemano cuál acertará hoy.
+      var bestModelMean = -Infinity, bestModelId = null, mid;
+      for (mid in models) {
+        if (!Object.prototype.hasOwnProperty.call(models, mid)) continue;
+        if (!models[mid].observations.length) continue;
+        var mm = mean(models[mid].observations.map(function (x) { return x.hits; }));
+        if (mm > bestModelMean) { bestModelMean = mm; bestModelId = mid; }
+      }
+      return {
+        available: true, n: eh.length,
+        ensemble_mean_hits: mean(eh),
+        best_model_id: bestModelId,
+        best_model_mean_hits: isFinite(bestModelMean) ? bestModelMean : NA,
+        oracle_per_draw_mean_hits: mean(bh),   // cota inalcanzable: el máximo de cada sorteo
+        pool_mean_hits: mean(mh),
+        chance_mean_hits: K * K / N,
+        production_eligible: false, tickets: null
+      };
+    }
+
+    function snapshot() {
+      var ids = Object.keys(models).sort(), w = {}, i;
+      for (i = 0; i < ids.length; i++) w[ids[i]] = models[ids[i]].weight;
+      var srcLive = 0, srcRec = 0;
+      for (i = 0; i < ids.length; i++) {
+        models[ids[i]].observations.forEach(function (x) {
+          if (x.source === SOURCE_LIVE) srcLive++; else srcRec++;
+        });
+      }
+      return {
+        engine_version: VERSION, game: GAME, N: N, k: K,
+        model_count: ids.length, observed_draws: Object.keys(byTarget).length,
+        observations: nObs, observations_live: srcLive, observations_reconstructed: srcRec,
+        weights: w, rejected: rejected.slice(),
+        production_eligible: false, tickets: null, numbers: null, picks: null
+      };
+    }
+
+    // ── persistencia: la memoria debe sobrevivir a una recarga ────────────
+    function exportMemory() {
+      var ids = Object.keys(models).sort();
+      // El resultado de cada sorteo se guarda UNA vez, no una por modelo, y del
+      // sello se conserva un prefijo: la verificación criptográfica ya ocurrió
+      // al registrar el feedback; lo persistido es rastro de auditoría.
+      var actuals = {}, t;
+      for (t in byTarget) {
+        if (!Object.prototype.hasOwnProperty.call(byTarget, t)) continue;
+        for (var mid in byTarget[t]) {
+          if (!Object.prototype.hasOwnProperty.call(byTarget[t], mid)) continue;
+          if (byTarget[t][mid]._actual) { actuals[t] = byTarget[t][mid]._actual.slice(); break; }
+        }
+      }
+      var out = { engine_version: VERSION, game: GAME, N: N, k: K, actuals: actuals, models: {} }, i;
+      for (i = 0; i < ids.length; i++) {
+        out.models[ids[i]] = {
+          weight: models[ids[i]].weight,
+          weight_history: models[ids[i]].weight_history.slice(-200),
+          // Compacto a propósito: `localStorage` es un recurso compartido con
+          // el resto del estado de la app. Los flotantes se redondean a 6
+          // cifras (irrelevante para un Brier o un log-loss agregados), los
+          // errores no se guardan porque son k menos aciertos, y la fuente se
+          // codifica con una letra.
+          observations: models[ids[i]].observations.map(function (x) {
+            var r6 = function (v) { return (v === null || v === undefined) ? null : Math.round(v * 1e6) / 1e6; };
+            return { t: x.target_index, s: x.snapshot_upto,
+                     fh: String(x.freeze_hash).slice(0, 16),
+                     src: x.source === SOURCE_LIVE ? 'L' : 'R',
+                     p: x.picks.slice(), h: x.hits,
+                     b: r6(x.brier), l: r6(x.log_loss), xh: r6(x.expected_hits) };
+          })
+        };
+      }
+      return out;
+    }
+    function importMemory(obj) {
+      if (!obj || obj.game !== GAME) throw new Error('ALE: memoria de otro juego');
+      models = {}; byTarget = {}; nObs = 0;
+      var ids = Object.keys(obj.models || {}), i, j;
+      for (i = 0; i < ids.length; i++) {
+        var src = obj.models[ids[i]], m = M(ids[i]);
+        m.weight = src.weight; m.weight_history = (src.weight_history || []).slice();
+        for (j = 0; j < (src.observations || []).length; j++) {
+          var r = src.observations[j];
+          var x = { model_id: ids[i], target_index: r.t, snapshot_upto: r.s,
+                    freeze_hash: r.fh,
+                    source: (r.src === 'L' || r.src === SOURCE_LIVE) ? SOURCE_LIVE : SOURCE_RECONSTRUCTED,
+                    picks: (r.p || []).slice(),
+                    hits: r.h, errors: K - r.h, brier: r.b === undefined ? null : r.b,
+                    log_loss: r.l === undefined ? null : r.l,
+                    expected_hits: r.xh === undefined ? null : r.xh,
+                    sample_index: nObs,
+                    _actual: (obj.actuals && obj.actuals[r.t]) ? obj.actuals[r.t].slice() : null };
+          m.observations.push(x);
+          (byTarget[x.target_index] = byTarget[x.target_index] || {})[ids[i]] = x;
+          nObs++;
+        }
+      }
+      return snapshot();
+    }
+
+    return {
+      version: VERSION, game: GAME, N: N, k: K, config: cfg,
+      freeze: function (modelId, targetIndex, snapshotUpto, numbers, probabilities) {
+        return freezePrediction({ game: GAME, N: N, k: K }, modelId, targetIndex, snapshotUpto,
+          numbers, probabilities, sha);
+      },
+      recordFeedback: function (frozen, actual, meta) {
+        var ob = recordFeedback(frozen, actual, meta);
+        ob._actual = sortedCopy(actual);          // necesario para el ensemble
+        return ob;
+      },
+      computeWeights: computeWeights,
+      modelDiagnostics: modelDiagnostics,
+      ensembleDiagnostics: ensembleDiagnostics,
+      snapshot: snapshot,
+      exportMemory: exportMemory, importMemory: importMemory,
+      rejections: function () { return rejected.slice(); },
+      _internals: { projectCapFloor: projectCapFloor, effectiveBounds: effectiveBounds,
+                    canonical: canonical, mean: mean, sd: sd }
+    };
+  }
+
+  root.MG_ALE = {
+    VERSION: VERSION,
+    SOURCE_LIVE: SOURCE_LIVE, SOURCE_RECONSTRUCTED: SOURCE_RECONSTRUCTED,
+    NOT_AVAILABLE: NA,
+    DEFAULTS: { HORIZON_SHORT: HORIZON_SHORT, HORIZON_MEDIUM: HORIZON_MEDIUM,
+                HORIZON_WEIGHTS: HORIZON_WEIGHTS, SHRINK_N0: SHRINK_N0,
+                TEMPERATURE: TEMPERATURE, W_MIN: W_MIN, W_MAX: W_MAX },
+    createEngine: createEngine,
+    freezePrediction: freezePrediction,
+    fallbackSha: fallbackSha
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+//  ADAPTIVE LEARNING ENGINE v1 · ADAPTADOR + PANEL
+//  ───────────────────────────────────────────────────────────────────────────
+//  Frontera entre la capa de aprendizaje y la aplicación.
+//
+//  Lo ÚNICO que lee de la app:
+//     BASE_DRAWS, state.userDraws, state.currentGame, GAME_CONFIG, mgSha256,
+//     y las 13 funciones de modelo (computeAllModels), que son PURAS: ninguna
+//     escribe en state, MG_STATE, localStorage ni en el DOM. Verificado.
+//  Lo ÚNICO que escribe:
+//     MG_STATE.ale, sus propias claves de localStorage y su propio nodo DOM.
+//
+//  NO llama a loadGame, generatePredictions, mgGeneratePredictions,
+//  mgBuildCandidates, mgPortfolioDiversify, mgApplyNeuralEnsemble,
+//  mgRunResearchCycle, runEvolution, evolveEnsemble ni evolveWeights.
+//  NO escribe state.weights, state.fusedProbs, state.metaProbs ni ningún peso
+//  productivo. NO toca V12, NO_EDGE, Live Frontier, Golden Holdout,
+//  Champion Gate, overlapLimit ni Supabase.
+//
+//  Un motor por juego. Melate y Retro no comparten memoria, pesos ni feedback.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_ALE_GAMES = ['melate', 'retro'];
+var MG_ALE_MEM_KEY = 'melategenius_ale_memory_v1';
+var MG_ALE_PENDING_KEY = 'melategenius_ale_pending_v1';
+var MG_ALE_BACKFILL_DRAWS = 300;     // declarado antes de ejecutar
+var MG_ALE_CHUNK = 8;                // sorteos por tick, para no bloquear la UI
+var _mgAleEngines = {};
+var _mgAleJobs = {};
+
+function mgAleState() {
+  if (typeof MG_STATE === 'undefined') return null;
+  if (!MG_STATE.ale) MG_STATE.ale = { running: {}, lastUpdate: {}, error: {} };
+  return MG_STATE.ale;
+}
+
+function mgAleSpec(game) {
+  var cfg = (typeof GAME_CONFIG !== 'undefined') ? GAME_CONFIG[game] : null;
+  if (!cfg || cfg.isDigit) return null;
+  return { game: game, N: cfg.maxNum, k: cfg.pick, name: cfg.name };
+}
+
+// Histórico de UN juego, copia defensiva, SIN tocar el estado de la app.
+function mgAleHistoryFor(game) {
+  var sp = mgAleSpec(game); if (!sp) return null;
+  var base = (typeof BASE_DRAWS !== 'undefined' && BASE_DRAWS[game]) ? BASE_DRAWS[game] : [];
+  var user = (typeof state !== 'undefined' && state.userDraws && state.userDraws[game])
+    ? state.userDraws[game] : [];
+  var src = base.concat(user), out = [], i, j, d, row;
+  for (i = 0; i < src.length; i++) {
+    d = src[i]; if (!d || d.length !== sp.k) continue;
+    row = []; for (j = 0; j < d.length; j++) row.push(d[j]);
+    out.push(row);
+  }
+  return out.length ? out : null;
+}
+
+function mgAleEngine(game) {
+  if (_mgAleEngines[game]) return _mgAleEngines[game];
+  var sp = mgAleSpec(game); if (!sp || typeof MG_ALE === 'undefined') return null;
+  var e = MG_ALE.createEngine({ game: game, N: sp.N, k: sp.k },
+    { sha: (typeof mgSha256 === 'function') ? mgSha256 : undefined });
+  _mgAleEngines[game] = e;
+  mgAleMemoryLoad(game);
+  return e;
+}
+
+// ── persistencia propia ───────────────────────────────────────────────────
+var _mgAlePersistError = {};
+function mgAleMemorySave(game) {
+  try {
+    var all = JSON.parse(localStorage.getItem(MG_ALE_MEM_KEY) || '{}');
+    all[game] = _mgAleEngines[game].exportMemory();
+    var payload = JSON.stringify(all);
+    localStorage.setItem(MG_ALE_MEM_KEY, payload);
+    _mgAlePersistError[game] = null;
+    return { ok: true, bytes: payload.length };
+  } catch (e) {
+    // Un fallo de cuota NO se traga: se muestra en el panel. El aprendizaje
+    // sigue en memoria, pero el usuario tiene que saber que no persistirá.
+    _mgAlePersistError[game] = String(e && e.name || e);
+    return { ok: false, error: _mgAlePersistError[game] };
+  }
+}
+function mgAleMemoryLoad(game) {
+  try {
+    var all = JSON.parse(localStorage.getItem(MG_ALE_MEM_KEY) || '{}');
+    if (all[game] && _mgAleEngines[game]) _mgAleEngines[game].importMemory(all[game]);
+  } catch (e) { /* memoria corrupta: se empieza de cero, nunca se rompe la app */ }
+}
+function mgAleMemoryReset(game) {
+  try {
+    var all = JSON.parse(localStorage.getItem(MG_ALE_MEM_KEY) || '{}');
+    delete all[game]; localStorage.setItem(MG_ALE_MEM_KEY, JSON.stringify(all));
+    var p = JSON.parse(localStorage.getItem(MG_ALE_PENDING_KEY) || '{}');
+    delete p[game]; localStorage.setItem(MG_ALE_PENDING_KEY, JSON.stringify(p));
+  } catch (e) {}
+  delete _mgAleEngines[game];
+  var S = mgAleState(); if (S) { delete S.lastUpdate[game]; delete S.error[game]; }
+  mgRenderAlePanel();
+}
+
+// ── el pool de modelos, leído tal cual de producción ──────────────────────
+// `computeAllModels` es una función pura de (sorteos, N). No se modifica.
+function mgAleModelPicks(train, sp) {
+  var models = computeAllModels(train, sp.N);
+  var out = {}, name, probs, arr, n, i;
+  for (name in models) {
+    if (!Object.prototype.hasOwnProperty.call(models, name)) continue;
+    probs = models[name]; if (!probs) continue;
+    arr = [];
+    for (n = 1; n <= sp.N; n++) arr.push([n, Number(probs[n]) || 0]);
+    arr.sort(function (a, b) { return b[1] - a[1] || a[0] - b[0]; });
+    // Probabilidad MARGINAL de que el número salga en un sorteo de k bolillas.
+    // Los modelos devuelven una distribución sobre UNA bolilla (Σp = 1); la
+    // marginal de aparición en k extracciones es 1-(1-p)^k. Es una aproximación
+    // por independencia, se declara como tal y sólo se usa para Brier,
+    // log-loss y calibración, nunca para elegir números.
+    var marg = new Array(sp.N + 1).fill(0);
+    for (n = 1; n <= sp.N; n++) marg[n] = 1 - Math.pow(1 - Math.min(1, Number(probs[n]) || 0), sp.k);
+    out[name] = { picks: arr.slice(0, sp.k).map(function (x) { return x[0]; }).sort(function (a, b) { return a - b; }),
+                  marginals: marg };
+  }
+  return out;
+}
+
+// ── BACKFILL: reconstrucción walk-forward del protocolo ───────────────────
+// Los 13 modelos son deterministas y función exclusiva del pasado, así que
+// reproducir qué habrían congelado en el sorteo t usando sólo [0,t) es una
+// RECONSTRUCCIÓN fiel, no una simulación optimista. Se etiqueta
+// RECONSTRUCTED para no confundirla nunca con un registro prospectivo real.
+function mgAleBackfill(game, nDraws) {
+  var S = mgAleState(); if (!S || S.running[game]) return;
+  var sp = mgAleSpec(game), hist = mgAleHistoryFor(game), e = mgAleEngine(game);
+  if (!sp || !hist || !e) return;
+  var total = Math.min(nDraws || MG_ALE_BACKFILL_DRAWS, hist.length - 100);
+  if (total < 10) return;
+  var from = hist.length - total, t = from, done = 0;
+  S.running[game] = { phase: 'BACKFILL', done: 0, total: total, pct: 0 };
+  mgRenderAlePanel();
+
+  function step() {
+    var S2 = mgAleState(); if (!S2 || !S2.running[game]) return;   // cancelado
+    var end = Math.min(t + MG_ALE_CHUNK, hist.length), added = 0;
+    for (; t < end; t++) {
+      var picks = mgAleModelPicks(hist.slice(0, t), sp);
+      for (var name in picks) {
+        if (!Object.prototype.hasOwnProperty.call(picks, name)) continue;
+        try {
+          var f = e.freeze(name, t, t - 1, picks[name].picks, picks[name].marginals);
+          e.recordFeedback(f, hist[t], { source: MG_ALE.SOURCE_RECONSTRUCTED });
+          added++;
+        } catch (err) { /* DUPLICATE_FEEDBACK al reconstruir dos veces: queda registrado */ }
+      }
+      done++;
+    }
+    S2.running[game].done = done;
+    S2.running[game].pct = Math.round(100 * done / total);
+    mgRenderAleProgress(game);
+    if (t < hist.length) { setTimeout(step, 0); return; }
+    e.computeWeights();
+    mgAleMemorySave(game);
+    S2.running[game] = null;
+    S2.lastUpdate[game] = new Date().toISOString();
+    mgRenderAlePanel();
+  }
+  setTimeout(step, 0);
+}
+
+function mgAleCancel(game) {
+  var S = mgAleState(); if (S) S.running[game] = null;
+  mgRenderAlePanel();
+}
+
+// ── BUCLE ONLINE REAL: congelar antes, liquidar después ───────────────────
+// Congela la predicción de cada modelo para el sorteo que TODAVÍA NO EXISTE.
+// Queda sellada en localStorage. Cuando el sorteo aparezca, se liquida.
+function mgAlePendingRead() {
+  try { return JSON.parse(localStorage.getItem(MG_ALE_PENDING_KEY) || '{}'); } catch (e) { return {}; }
+}
+function mgAlePendingWrite(p) {
+  try { localStorage.setItem(MG_ALE_PENDING_KEY, JSON.stringify(p)); } catch (e) {}
+}
+
+function mgAleFreezeNext(game) {
+  var sp = mgAleSpec(game), hist = mgAleHistoryFor(game), e = mgAleEngine(game);
+  if (!sp || !hist || !e) return null;
+  var target = hist.length;                 // el próximo sorteo, aún inexistente
+  var picks = mgAleModelPicks(hist, sp);    // entrenado con TODO lo conocido: [0, target)
+  var frozen = [], name;
+  for (name in picks) {
+    if (!Object.prototype.hasOwnProperty.call(picks, name)) continue;
+    frozen.push(e.freeze(name, target, target - 1, picks[name].picks, picks[name].marginals));
+  }
+  var p = mgAlePendingRead();
+  p[game] = { target_index: target, frozen_at: new Date().toISOString(), predictions: frozen };
+  mgAlePendingWrite(p);
+  var S = mgAleState(); if (S) S.lastUpdate[game] = new Date().toISOString();
+  mgRenderAlePanel();
+  return p[game];
+}
+
+// Liquida las predicciones congeladas cuyo sorteo objetivo ya existe.
+function mgAleSettleLive(game) {
+  var hist = mgAleHistoryFor(game), e = mgAleEngine(game);
+  if (!hist || !e) return 0;
+  var p = mgAlePendingRead(), pend = p[game];
+  if (!pend || pend.target_index >= hist.length) return 0;
+  var actual = hist[pend.target_index], settled = 0, i;
+  for (i = 0; i < pend.predictions.length; i++) {
+    try { e.recordFeedback(pend.predictions[i], actual, { source: MG_ALE.SOURCE_LIVE }); settled++; }
+    catch (err) { /* el rechazo queda en el registro del motor */ }
+  }
+  delete p[game]; mgAlePendingWrite(p);
+  if (settled) { e.computeWeights(); mgAleMemorySave(game); }
+  var S = mgAleState(); if (S) S.lastUpdate[game] = new Date().toISOString();
+  return settled;
+}
+
+// ── duplicado de dataset, reutilizando el hash del Discovery Engine ───────
+function mgAleDuplicateDatasets() {
+  if (typeof mgDiscoveryDuplicateDatasets === 'function') {
+    try { return mgDiscoveryDuplicateDatasets(); } catch (e) { return []; }
+  }
+  return [];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PANEL
+// ═══════════════════════════════════════════════════════════════════════════
+function mgRenderAleProgress(game) {
+  var S = mgAleState(), el = document.getElementById('mg-ale-progress-' + game);
+  if (!el || !S || !S.running[game]) return;
+  var r = S.running[game];
+  el.innerHTML = '<div class="mg-help">' + r.phase + ' · ' + r.done + ' de ' + r.total +
+    ' sorteos · ' + r.pct + ' %</div>' +
+    '<div style="height:6px;background:rgba(128,128,128,.18);border-radius:3px;overflow:hidden;margin-top:6px;">' +
+    '<div style="height:100%;width:' + r.pct + '%;background:var(--accent,#6b8afd);transition:width .2s;"></div></div>';
+}
+
+function mgAleNum(x, dec) {
+  if (x === MG_ALE.NOT_AVAILABLE || x === null || x === undefined) return '—';
+  if (typeof x !== 'number' || !isFinite(x)) return '—';
+  return x.toFixed(dec === undefined ? 3 : dec);
+}
+
+function mgRenderAleGameCard(game) {
+  var sp = mgAleSpec(game); if (!sp) return '';
+  var S = mgAleState(), e = _mgAleEngines[game];
+  var title = '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:16px;">' +
+    '<strong style="font-size:12.5px;letter-spacing:.5px;">' + sp.name.toUpperCase() + '</strong>' +
+    '<span class="mg-help" style="margin:0;">N=' + sp.N + ' · k=' + sp.k + '</span></div>';
+
+  if (S && S.running[game]) {
+    return title + '<div class="glass card" style="margin-top:8px;">' +
+      '<div class="mg-verdict pending">APRENDIENDO</div>' +
+      '<div id="mg-ale-progress-' + game + '"></div>' +
+      '<button class="btn btn-ghost" style="margin-top:10px;" onclick="mgAleCancel(\'' + game + '\')">Cancelar</button></div>';
+  }
+
+  var snap = e ? e.snapshot() : null;
+  var pend = mgAlePendingRead()[game] || null;
+  var buttons = '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">' +
+    '<button class="btn btn-ghost" onclick="mgAleBackfill(\'' + game + '\')">' +
+    '↻ Reconstruir memoria · ' + MG_ALE_BACKFILL_DRAWS + ' sorteos</button>' +
+    '<button class="btn btn-ghost" onclick="mgAleFreezeNext(\'' + game + '\')">' +
+    '🔒 Congelar el próximo sorteo</button>' +
+    (snap && snap.observations ? '<button class="btn btn-ghost" onclick="mgAleMemoryReset(\'' + game + '\')">Borrar memoria</button>' : '') +
+    '</div>';
+
+  if (!snap || !snap.observations) {
+    return title + '<div class="glass card" style="margin-top:8px;">' +
+      '<div class="mg-verdict off">SIN MEMORIA</div>' +
+      '<div class="mg-help">Todavía no ha aprendido nada de este juego. La reconstrucción recorre ' +
+      'los últimos ' + MG_ALE_BACKFILL_DRAWS + ' sorteos en walk-forward: para cada sorteo <em>t</em> ' +
+      'congela lo que cada modelo habría predicho con la historia hasta <em>t−1</em> y lo evalúa ' +
+      'contra el resultado real de <em>t</em>.</div>' + buttons + '</div>';
+  }
+
+  var w = e.computeWeights(), ed = e.ensembleDiagnostics(w.weights);
+  var ids = Object.keys(w.weights).sort(function (a, b) { return w.weights[b] - w.weights[a]; });
+  var rows = ids.map(function (id) {
+    var d = w.diagnostics[id], num = 'text-align:right;padding:3px 5px;font-variant-numeric:tabular-nums;';
+    var bar = Math.round(100 * d.weight / Math.max(1e-9, w.max_weight));
+    return '<tr data-game="' + game + '" data-model="' + id + '">' +
+      '<td style="padding:3px 5px 3px 0;white-space:nowrap;">' + id + '</td>' +
+      '<td style="' + num + 'width:64px;"><span style="display:inline-block;height:4px;width:' +
+        Math.max(2, bar * 0.34) + 'px;background:var(--accent,#6b8afd);opacity:.45;border-radius:2px;' +
+        'vertical-align:middle;margin-right:5px;"></span><b>' + (100 * d.weight).toFixed(1) + '%</b></td>' +
+      '<td style="' + num + '">' + mgAleNum(d.short_mean_hits, 2) + '</td>' +
+      '<td style="' + num + '">' + mgAleNum(d.medium_mean_hits, 2) + '</td>' +
+      '<td style="' + num + '">' + mgAleNum(d.long_mean_hits, 2) + '</td>' +
+      '<td style="' + num + '">' + d.n + '</td>' +
+      '<td style="' + num + '">' + mgAleNum(d.stability, 3) + '</td>' +
+      '<td style="' + num + '">' + mgAleNum(d.disagreement, 3) + '</td>' +
+      '<td style="' + num + 'padding-right:0;">' + mgAleNum(d.incremental_contribution, 3) + '</td></tr>';
+  }).join('');
+
+  var last = S && S.lastUpdate[game] ? new Date(S.lastUpdate[game]).toLocaleString() : '—';
+
+  return title + '<div class="glass card" style="margin-top:8px;">' +
+    '<div class="mg-verdict pending">' + w.learning_status + '</div>' +
+    '<div class="mg-help">El peso es <strong>cuánta confianza merece cada modelo</strong> según su ' +
+    'historial contra el azar, no una probabilidad de acertar. Ningún modelo se elimina (suelo ' +
+    (100 * w.floor_effective).toFixed(0) + ' %) y ninguno puede dominar (tope ' +
+    (100 * w.cap_effective).toFixed(0) + ' %' + (w.cap_binds ? '' : ', ampliado porque el pool es pequeño') + ').</div>' +
+    '<div class="mg-kv-grid">' +
+      '<div class="mg-kv"><span>Estado</span><b>' + w.learning_status + '</b></div>' +
+      '<div class="mg-kv"><span>Última actualización</span><b>' + last + '</b></div>' +
+      '<div class="mg-kv"><span>Sorteos aprendidos</span><b>' + snap.observed_draws + '</b></div>' +
+      '<div class="mg-kv"><span>Observaciones</span><b>' + snap.observations + '</b></div>' +
+      '<div class="mg-kv"><span>En vivo</span><b>' + snap.observations_live + '</b></div>' +
+      '<div class="mg-kv"><span>Reconstruidas</span><b>' + snap.observations_reconstructed + '</b></div>' +
+      '<div class="mg-kv"><span>Modelos</span><b>' + w.model_count + '</b></div>' +
+      '<div class="mg-kv"><span>Azar (k/N)</span><b>' + w.chance_score.toFixed(4) + '</b></div>' +
+      '<div class="mg-kv"><span>Peso máximo</span><b>' + (100 * w.max_weight).toFixed(1) + ' %</b></div>' +
+      '<div class="mg-kv"><span>Peso mínimo</span><b>' + (100 * w.min_weight).toFixed(1) + ' %</b></div>' +
+      '<div class="mg-kv"><span>Rechazos</span><b>' + w.rejected_count + '</b></div>' +
+      '<div class="mg-kv"><span>Congelado pendiente</span><b>' +
+        (pend ? 'sorteo ' + pend.target_index : 'ninguno') + '</b></div>' +
+      '<div class="mg-kv"><span>Persistencia</span><b>' +
+        (_mgAlePersistError[game] ? '⚠ ' + _mgAlePersistError[game] : 'ok') + '</b></div>' +
+    '</div>' +
+    (ed.available
+      ? '<div class="mg-help" style="margin-top:10px;">Ensemble ponderado sobre los sorteos ya ' +
+        'ocurridos: <b>' + ed.ensemble_mean_hits.toFixed(3) + '</b> aciertos/sorteo · mejor modelo ' +
+        'individual (<code>' + ed.best_model_id + '</code>) <b>' + (+ed.best_model_mean_hits).toFixed(3) +
+        '</b> · media del pool <b>' + ed.pool_mean_hits.toFixed(3) + '</b> · azar <b>' +
+        ed.chance_mean_hits.toFixed(3) + '</b>. Es una evaluación del pasado, no una predicción. ' +
+        '(El máximo por sorteo, <b>' + ed.oracle_per_draw_mean_hits.toFixed(3) + '</b>, es una cota ' +
+        'inalcanzable: exigiría saber de antemano qué modelo acertará hoy.)</div>'
+      : '') +
+    '<div style="overflow-x:auto;margin-top:12px;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+    '<thead><tr style="opacity:.6;text-align:left;">' +
+    '<th style="padding:0 5px 4px 0;">modelo</th><th style="text-align:right;padding:0 5px 4px;">peso</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">reciente</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">medio</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">largo</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">n</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">estab.</th>' +
+    '<th style="text-align:right;padding:0 5px 4px;">desac.</th>' +
+    '<th style="text-align:right;padding:0 0 4px 5px;">contrib.</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div class="mg-help" style="margin-top:10px;">reciente / medio / largo = aciertos medios en los ' +
+    'últimos ' + w.config.horizonShort + ', ' + w.config.horizonMedium + ' y todos los sorteos. ' +
+    'desac. = cuánto se aparta de los demás modelos. contrib. = aciertos que el ensemble gana o ' +
+    'pierde al incluir ese modelo. <code>production_eligible = false</code></div>' +
+    buttons + '</div>';
+}
+
+function mgRenderAlePanel() {
+  var c = document.getElementById('mg-ale-panel');
+  if (!c) return;
+  var ver = (typeof MG_ALE !== 'undefined') ? MG_ALE.VERSION : '—';
+
+  var head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:18px;">' +
+    '<span style="font-size:15px;">🧠</span>' +
+    '<strong style="font-size:13px;letter-spacing:.4px;">ADAPTIVE LEARNING</strong>' +
+    '<span class="mg-help" style="margin:0;">' + ver + '</span></div>' +
+    '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;' +
+    'background:rgba(176,122,32,.13);border:1px solid rgba(176,122,32,.35);' +
+    'font-size:11px;line-height:1.5;"><strong>Capa de investigación experimental. ' +
+    'No modifica producción.</strong> Aprende cuánta confianza merece cada modelo del pool a partir ' +
+    'de predicciones <em>congeladas antes</em> de cada sorteo. No predice números, no genera boletos ' +
+    'y no altera pesos, V12, NO_EDGE, Live Frontier, Golden Holdout ni Champion Gate.</div>' +
+    '<div class="mg-help" style="margin-top:6px;">Secuencia: historia hasta t−1 → salidas de los ' +
+    'modelos → pesos adaptativos → ensemble → <strong>predicción CONGELADA de t</strong> → resultado ' +
+    'de t → evaluación → memoria → t+1. El resultado de t no puede alterar la predicción de t: el ' +
+    'motor rechaza cualquier feedback cuyo snapshot alcance al sorteo objetivo.</div>';
+
+  var dup = mgAleDuplicateDatasets(), dupHtml = '';
+  if (dup.length) {
+    dupHtml = dup.map(function (d) {
+      var names = d.games.map(function (g) {
+        return (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[g]) ? GAME_CONFIG[g].name : g;
+      });
+      return '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;' +
+        'background:rgba(168,50,50,.11);border:1px solid rgba(168,50,50,.32);font-size:11px;line-height:1.5;">' +
+        '<strong>NOT_INDEPENDENT_VALIDATION</strong><br>' + names.join(' y ') +
+        ' comparten el mismo snapshot histórico (<code>' + String(d.hash).slice(0, 16) + '…</code>): ' +
+        'lo que aprenda de uno no vale como evidencia independiente sobre el otro.</div>';
+    }).join('');
+  }
+
+  c.innerHTML = head + dupHtml + MG_ALE_GAMES.map(mgRenderAleGameCard).join('');
+  var S = mgAleState();
+  if (S) for (var i = 0; i < MG_ALE_GAMES.length; i++) {
+    if (S.running[MG_ALE_GAMES[i]]) mgRenderAleProgress(MG_ALE_GAMES[i]);
   }
 }
 </script>
