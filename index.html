@@ -3045,10 +3045,14 @@ body.light-mode .mg-strip-meta .tag { background: rgba(0,0,0,0.06); }
           <button class="mode-btn" data-mode="contrarian" onclick="setMode('contrarian')">Contrarian</button>
           <button class="mode-btn" data-mode="genetic" onclick="setMode('genetic')">Genético</button>
         </div>
-        <div class="glass mode-picker" style="margin-bottom:14px;">
+        <div class="glass mode-picker">
           <button class="mode-btn" data-mode="portfolio" onclick="setMode('portfolio')">📦 Portafolio</button>
           <button class="mode-btn" data-mode="wheel" onclick="setMode('wheel')">🎯 Sistémico</button>
         </div>
+        <div class="glass mode-picker" style="margin-bottom:14px;">
+          <button class="mode-btn" data-mode="collective" onclick="setMode('collective')" style="flex:1;">🧠 Ensamble Colectivo</button>
+        </div>
+        <div id="collective-panel" style="display:none;"></div>
         
         <div class="slider-wrap">
           <div class="slider-head">
@@ -5025,7 +5029,8 @@ function deepBacktest(draws, maxN, options = {}) {
 
 // Necesitamos applyModeBias accesible aquí (definida en app.js); replicamos versión simplificada
 function applyModeBiasInternal(fusedProbs, mode, maxN, allModels) {
-  if (mode === 'balanced' || !mode) return fusedProbs;
+  // 'collective' ya entrega una distribución colectiva normalizada: se usa tal cual.
+  if (mode === 'balanced' || mode === 'collective' || !mode) return fusedProbs;
   const adjusted = [...fusedProbs];
   if (mode === 'aggressive') {
     const mean = fusedProbs.reduce((a, b) => a + b, 0) / maxN;
@@ -12519,6 +12524,7 @@ async function selectGame(game) {
 function setMode(m) {
   state.mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+  try { mgRenderCollectivePanel(); } catch (e) {}
 }
 
 function setCount(c) {
@@ -12529,7 +12535,8 @@ function setCount(c) {
 
 function applyModeBias(fusedProbs, mode, maxN) {
   // Different modes adjust the fused probabilities
-  if (mode === 'balanced') return fusedProbs;
+  // 'collective' ya entrega una distribución colectiva normalizada: se usa tal cual.
+  if (mode === 'balanced' || mode === 'collective') return fusedProbs;
   
   const adjusted = [...fusedProbs];
   
@@ -12587,7 +12594,18 @@ function generatePredictions() {
   }
   
   // Use metaProbs (error-aware) if available, otherwise fall back to fusedProbs
-  const baseProbs = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
+  let baseProbs = (state.metaProbs && state.currentGame !== 'tris') ? state.metaProbs : state.fusedProbs;
+
+  // 🧠 ENSAMBLE COLECTIVO: los 13 modelos se funden con los pesos aprendidos
+  // de resultados YA ocurridos de ESTE juego. Si la preparación falla (por
+  // ejemplo, el candado de datos de Revancha) no se genera nada.
+  let _collectivePrep = null;
+  if (state.mode === 'collective') {
+    _collectivePrep = mgCollectivePrepare();
+    if (!_collectivePrep) return;
+    baseProbs = _collectivePrep.probs;
+  }
+
   const probs = applyModeBias(baseProbs, state.mode, state.maxNumber);
   const _pick = (GAME_CONFIG[state.currentGame] || {}).pick || 6;
 
@@ -12602,7 +12620,15 @@ function generatePredictions() {
     tickets = generateTickets(probs, state.draws, state.maxNumber, state.count, state.mode, Date.now(), _pick);
   }
   state.lastPredictions = tickets;
+
+  // Congelado colectivo: sello inmutable con SHA antes de que el usuario pueda
+  // guardar nada. Reutiliza mgSha256/mgCanonicalJson de producción.
+  if (state.mode === 'collective' && _collectivePrep) {
+    mgCollectiveFreeze(_collectivePrep, tickets);
+  }
+
   renderPredictionsView();
+  try { mgRenderCollectivePanel(); } catch (e) {}
   const _r = tickets[0] && tickets[0].research;
   showToast(_r
     ? `${tickets.length} candidatos · ${_r.mode === 'EDGE_CANDIDATE' ? 'evidencia validada' : 'NO_EDGE'}`
@@ -13072,6 +13098,14 @@ function submitRealResult() {
     }
   });
   
+  // 🧠 Feedback del Ensamble Colectivo. El sorteo recién cerrado es el que
+  // ocupaba el índice state.draws.length ANTES de añadirlo, que es justo el
+  // target_draw con el que se congelaron las predicciones colectivas.
+  let _collectiveFb = null;
+  try {
+    _collectiveFb = mgCollectiveOnResult(state.currentGame, state.draws.length, nums);
+  } catch (e) { console.warn('MG-COL: feedback falló', e); }
+
   // Capture state BEFORE evolution to show deltas later
   const _weightsBefore = state.weights ? Object.assign({}, state.weights) : null;
   const _fusedProbsBefore = state.fusedProbs ? state.fusedProbs.slice() : null;
@@ -21256,6 +21290,527 @@ function mgRenderAlePanel() {
   if (S) for (var i = 0; i < MG_ALE_GAMES.length; i++) {
     if (S.running[MG_ALE_GAMES[i]]) mgRenderAleProgress(MG_ALE_GAMES[i]);
   }
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════
+     🧠 ENSAMBLE COLECTIVO · collective-live-v1.0.0
+     ───────────────────────────────────────────────────────────
+     Estrategia LIVE dentro de "Generar predicciones". Los 13 modelos del
+     pool trabajan juntos; el motor aprende de resultados REALES ya ocurridos
+     y aplica ese aprendizaje al sorteo SIGUIENTE.
+
+     No toca NO_EDGE, Live Frontier, Golden Holdout, Champion Gate, el
+     preregistro Markov, LeakageGuard ni ninguna otra metodología. No crea un
+     generador de boletos nuevo: reutiliza mgGeneratePredictions, que a su vez
+     usa mgBuildCandidates y mgResolvePortfolioWithBoundedOverlap.
+
+     Regla temporal, sin excepciones: la predicción del sorteo T se construye
+     con historia <= T-1 y con memoria de sorteos <= T-1. RESULTADO(T) nunca
+     puede tocar PREDICCIÓN(T).
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  var VERSION = 'collective-live-v1.0.0';
+  var FLOOR = 0.02, CAP = 0.35, SHRINK_N0 = 40;
+  var MODEL_IDS = ['bayesian', 'gapHazard', 'cooccurrence', 'frequency', 'momentum',
+    'markov', 'fourier', 'positional', 'gaussian', 'delta', 'hotStreak',
+    'zonePressure', 'pairLift'];
+
+  // ── errores del protocolo ────────────────────────────────────────────────
+  function reject(code, detail) {
+    var e = new Error(code + (detail ? ': ' + detail : ''));
+    e.mg_code = code;
+    throw e;
+  }
+
+  // ── persistencia (independiente POR JUEGO) ───────────────────────────────
+  function memKey(game) { return 'mg_collective_mem_' + game; }
+  function snapKey(game) { return 'mg_collective_snaps_' + game; }
+
+  function readJson(key, dflt) {
+    try {
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : dflt;
+    } catch (e) { return dflt; }
+  }
+  function writeJson(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
+    catch (e) { console.warn('MG-COL: no se pudo persistir ' + key, e); return false; }
+  }
+
+  function emptyMemory(game) {
+    return { version: VERSION, game: game, observations: [], weight_history: [], seen: {} };
+  }
+  function loadMemory(game) {
+    var m = readJson(memKey(game), null);
+    if (!m || m.game !== game || !Array.isArray(m.observations)) return emptyMemory(game);
+    if (!m.seen) m.seen = {};
+    if (!Array.isArray(m.weight_history)) m.weight_history = [];
+    return m;
+  }
+  function saveMemory(game, m) { return writeJson(memKey(game), m); }
+
+  function loadSnaps(game) {
+    var s = readJson(snapKey(game), []);
+    return Array.isArray(s) ? s : [];
+  }
+  function saveSnaps(game, arr) {
+    // Se conservan los 400 más recientes: los FROZEN no se reescriben nunca,
+    // sólo se recorta la cola más antigua para no agotar el almacenamiento.
+    return writeJson(snapKey(game), arr.slice(-400));
+  }
+
+  // ── numérico ─────────────────────────────────────────────────────────────
+  function mean(a) { var s = 0, i; for (i = 0; i < a.length; i++) s += a[i]; return a.length ? s / a.length : 0; }
+  function sd(a) {
+    if (a.length < 2) return 0;
+    var m = mean(a), s = 0, i;
+    for (i = 0; i < a.length; i++) s += (a[i] - m) * (a[i] - m);
+    return Math.sqrt(s / (a.length - 1));
+  }
+
+  // Proyección al símplex con suelo y tope REALES. Recortar y renormalizar
+  // violaría el tope; esto no. Si los límites fueran infactibles se relajan de
+  // forma explícita en vez de lanzar en mitad de una generación.
+  function projectCapFloor(w, lo, hi) {
+    var m = w.length, i, it, s;
+    if (!m) return [];
+    if (m * lo > 1) lo = 1 / m;
+    if (m * hi < 1) hi = 1 / m;
+    var x = w.slice();
+    for (i = 0; i < m; i++) if (!isFinite(x[i]) || x[i] < 0) x[i] = 0;
+    for (it = 0; it < 200; it++) {
+      s = 0; for (i = 0; i < m; i++) s += x[i];
+      if (s <= 0) { for (i = 0; i < m; i++) x[i] = 1 / m; break; }
+      for (i = 0; i < m; i++) x[i] /= s;
+      var excess = 0, deficit = 0, free = 0, changed = false;
+      for (i = 0; i < m; i++) {
+        if (x[i] > hi) { excess += x[i] - hi; x[i] = hi; changed = true; }
+        else if (x[i] < lo) { deficit += lo - x[i]; x[i] = lo; changed = true; }
+        else free++;
+      }
+      if (!changed) break;
+      if (!free) break;
+      var d = (excess - deficit) / free;
+      for (i = 0; i < m; i++) if (x[i] < hi && x[i] > lo) x[i] += d;
+    }
+    s = 0; for (i = 0; i < m; i++) s += x[i];
+    for (i = 0; i < m; i++) x[i] /= (s || 1);
+    return x;
+  }
+
+  function topK(vec, N, k) {
+    var idx = [], n;
+    for (n = 1; n <= N; n++) idx.push(n);
+    idx.sort(function (a, b) {
+      var d = (vec[b] || 0) - (vec[a] || 0);
+      return d !== 0 ? d : a - b;                 // empate: gana el menor
+    });
+    return idx.slice(0, k).sort(function (a, b) { return a - b; });
+  }
+  function overlapCount(a, b) {
+    var s = {}, i, c = 0;
+    for (i = 0; i < b.length; i++) s[b[i]] = 1;
+    for (i = 0; i < a.length; i++) if (s[a[i]]) c++;
+    return c;
+  }
+
+  // ── señales ESTRUCTURALES (del estado actual de los modelos, sin feedback)
+  // Desacuerdo y redundancia se leen de los propios vectores del sorteo que se
+  // va a predecir: no requieren resultados y por tanto no pueden filtrar nada.
+  function structuralSignals(models, N, k) {
+    var picks = {}, i, j;
+    for (i = 0; i < MODEL_IDS.length; i++) {
+      var id = MODEL_IDS[i];
+      picks[id] = models && models[id] ? topK(models[id], N, k) : [];
+    }
+    var dis = {}, red = {};
+    for (i = 0; i < MODEL_IDS.length; i++) {
+      var a = MODEL_IDS[i], ov = [], mx = 0;
+      for (j = 0; j < MODEL_IDS.length; j++) {
+        if (i === j) continue;
+        var b = MODEL_IDS[j];
+        if (!picks[a].length || !picks[b].length) continue;
+        var o = overlapCount(picks[a], picks[b]) / k;
+        ov.push(o);
+        if (o > mx) mx = o;
+      }
+      dis[a] = ov.length ? 1 - mean(ov) : 0.5;   // desacuerdo medio
+      red[a] = mx;                               // redundancia = peor solape
+    }
+    return { picks: picks, disagreement: dis, redundancy: red };
+  }
+
+  // ── señales de MEMORIA (sólo de sorteos ya ocurridos y evaluados) ─────────
+  function memorySignals(mem, k, chance) {
+    var out = {}, i, id;
+    for (i = 0; i < MODEL_IDS.length; i++) {
+      id = MODEL_IDS[i];
+      var h = [];
+      for (var o = 0; o < mem.observations.length; o++) {
+        var rec = mem.observations[o];
+        if (rec && rec.hits_by_model && typeof rec.hits_by_model[id] === 'number')
+          h.push(rec.hits_by_model[id]);
+      }
+      var n = h.length;
+      var perf = n ? mean(h) / k : 0;                       // tasa de acierto
+      var s = n > 1 ? sd(h) : 0;
+      var stab = n > 1 ? 1 / (1 + s) : 0;                   // estabilidad
+      // Calibración: acierto observado contra el esperado por azar (k²/N)/k.
+      var calib = (n && chance > 0) ? Math.min(2, (mean(h) / k) / chance) : 0;
+      out[id] = { n: n, perf: perf, stability: stab, calibration: calib, hits: h };
+    }
+    // Contribución incremental: media de (aciertos del ensemble CON el modelo
+    // en su top-k) menos (sin él), sobre los sorteos comunes ya evaluados.
+    for (i = 0; i < MODEL_IDS.length; i++) {
+      id = MODEL_IDS[i];
+      var d = [];
+      for (var q = 0; q < mem.observations.length; q++) {
+        var r = mem.observations[q];
+        if (!r || typeof r.ensemble_hits_with !== 'object') continue;
+        if (typeof r.ensemble_hits_with[id] !== 'number' || typeof r.ensemble_hits_without !== 'object') continue;
+        if (typeof r.ensemble_hits_without[id] !== 'number') continue;
+        d.push(r.ensemble_hits_with[id] - r.ensemble_hits_without[id]);
+      }
+      out[id].contribution = d.length ? mean(d) / k : 0;
+    }
+    return out;
+  }
+
+  // ── pesos colectivos ─────────────────────────────────────────────────────
+  // NO winner-take-all: encogimiento hacia uniforme por n/(n+40), suelo 2 % y
+  // tope 35 % reales. Una sola observación no puede mover el reparto.
+  function computeWeights(mem, models, N, k) {
+    var m = MODEL_IDS.length, uniform = 1 / m;
+    var chance = k / N;                            // (k²/N)/k
+    var struct = structuralSignals(models, N, k);
+    var msig = memorySignals(mem, k, chance);
+
+    var raw = [], i, id, detail = {};
+    for (i = 0; i < m; i++) {
+      id = MODEL_IDS[i];
+      var ms = msig[id];
+      // Señal compuesta. Los pesos de los términos son constantes del motor,
+      // declaradas aquí y no ajustadas a ningún resultado observado.
+      var signal =
+        0.40 * ms.perf +
+        0.15 * ms.stability +
+        0.15 * (ms.calibration ? ms.calibration / 2 : 0) +
+        0.20 * ms.contribution +
+        0.10 * struct.disagreement[id] -
+        0.20 * struct.redundancy[id];
+      // Encogimiento hacia el reparto uniforme según cuántas observaciones
+      // respaldan al modelo. Con memoria vacía el resultado es exactamente 1/m.
+      var n = ms.n;
+      var lam = n / (n + SHRINK_N0);
+      var w = lam * Math.max(0, uniform + signal) + (1 - lam) * uniform;
+      raw.push(Math.max(1e-9, w));
+      detail[id] = {
+        observations: n, performance: ms.perf, stability: ms.stability,
+        calibration: ms.calibration, contribution: ms.contribution,
+        disagreement: struct.disagreement[id], redundancy: struct.redundancy[id],
+        signal: signal, shrinkage: lam
+      };
+    }
+    var w = projectCapFloor(raw, FLOOR, CAP);
+    var out = {};
+    for (i = 0; i < m; i++) out[MODEL_IDS[i]] = w[i];
+    return { weights: out, detail: detail, picks: struct.picks,
+             observations: mem.observations.length };
+  }
+
+  // ── fusión ───────────────────────────────────────────────────────────────
+  function fuse(models, weights, N) {
+    var out = new Array(N + 1).fill(0), i, n, z = 0;
+    for (i = 0; i < MODEL_IDS.length; i++) {
+      var id = MODEL_IDS[i], wi = weights[id] || 0, p = models[id];
+      if (!wi || !p) continue;
+      for (n = 1; n <= N; n++) out[n] += wi * (p[n] || 0);
+    }
+    for (n = 1; n <= N; n++) z += out[n];
+    if (z > 0) for (n = 1; n <= N; n++) out[n] /= z;
+    return out;
+  }
+
+  // ═══ PREPARACIÓN (antes de generar) ═══════════════════════════════════════
+  function prepare() {
+    var game = state.currentGame;
+    var N = state.maxNumber;
+    var k = (GAME_CONFIG[game] || {}).pick || 6;
+    if (!state.models) reject('MODELS_NOT_READY', 'el pool aún no está calculado');
+
+    // Candado de datos: Revancha debe usar SU histórico real.
+    if (game === 'revancha') {
+      var rev = (BASE_DRAWS.revancha || []).length;
+      var mel = (BASE_DRAWS.melate || []).length;
+      if (rev !== 2179)
+        reject('REVANCHA_HISTORY_MISMATCH', 'se esperaban 2179 sorteos y hay ' + rev);
+      if (PACKED_DRAWS.revancha === PACKED_DRAWS.melate)
+        reject('REVANCHA_IS_MELATE', 'el histórico de Revancha es el de Melate');
+      if (rev === mel)
+        reject('REVANCHA_LENGTH_EQUALS_MELATE', 'longitudes idénticas: ' + rev);
+    }
+
+    var mem = loadMemory(game);
+    var cw = computeWeights(mem, state.models, N, k);
+    var probs = fuse(state.models, cw.weights, N);
+
+    // target = el sorteo que AÚN no ocurre; snapshot = todo lo ya ocurrido.
+    var targetDraw = state.draws.length;
+    var snapshotUpto = targetDraw - 1;
+    if (!(snapshotUpto < targetDraw)) reject('TEMPORAL_LEAK', 'snapshot >= target');
+
+    return {
+      engine_version: VERSION, game: game, N: N, k: k,
+      target_draw: targetDraw, snapshot_upto: snapshotUpto,
+      weights: cw.weights, detail: cw.detail, model_picks: cw.picks,
+      observations: cw.observations, probs: probs, memory: mem
+    };
+  }
+
+  // ═══ CONGELADO ════════════════════════════════════════════════════════════
+  function freeze(prep, tickets) {
+    if (!prep) reject('INVALID_SNAPSHOT', 'sin preparación');
+    if (!Array.isArray(tickets) || !tickets.length) reject('NO_TICKETS');
+    if (!(prep.snapshot_upto < prep.target_draw)) reject('TEMPORAL_LEAK');
+
+    var nums = tickets.map(function (t) {
+      return (t.ticket || t.numbers || t).slice().sort(function (a, b) { return a - b; });
+    });
+    var wRounded = {};
+    Object.keys(prep.weights).forEach(function (id) {
+      wRounded[id] = Math.round(prep.weights[id] * 1e6) / 1e6;
+    });
+
+    var payload = {
+      engine_version: VERSION,
+      game: prep.game,
+      target_draw: prep.target_draw,
+      snapshot_upto: prep.snapshot_upto,
+      model_ids: MODEL_IDS.slice(),
+      model_weights: wRounded,
+      model_picks: prep.model_picks,
+      seed: (tickets[0] && tickets[0].research && tickets[0].research.seed) || null,
+      run_id: (tickets[0] && tickets[0].research && tickets[0].research.run_id) || null,
+      tickets: nums
+    };
+    // Se reutiliza el mismo sellado que el resto de producción.
+    var sha = mgSha256(mgCanonicalJson(payload));
+    var snap = Object.assign({}, payload, {
+      prediction_sha256: sha,
+      generated_at: new Date().toISOString(),
+      state: 'FROZEN'
+    });
+
+    var snaps = loadSnaps(prep.game);
+    // Inmutabilidad: si ya existe un FROZEN con este SHA no se reescribe.
+    for (var i = 0; i < snaps.length; i++)
+      if (snaps[i].prediction_sha256 === sha) return snaps[i];
+    snaps.push(snap);
+    saveSnaps(prep.game, snaps);
+    return snap;
+  }
+
+  function verify(snap) {
+    if (!snap || snap.state !== 'FROZEN' || !snap.prediction_sha256) return false;
+    var payload = {
+      engine_version: snap.engine_version, game: snap.game,
+      target_draw: snap.target_draw, snapshot_upto: snap.snapshot_upto,
+      model_ids: snap.model_ids, model_weights: snap.model_weights,
+      model_picks: snap.model_picks, seed: snap.seed, run_id: snap.run_id,
+      tickets: snap.tickets
+    };
+    return mgSha256(mgCanonicalJson(payload)) === snap.prediction_sha256;
+  }
+
+  // ═══ FEEDBACK ═════════════════════════════════════════════════════════════
+  // Se llama DESPUÉS de que el resultado real ya entró. Evalúa los snapshots
+  // cuyo target es el sorteo recién cerrado y actualiza la memoria. El
+  // aprendizaje resultante sólo puede afectar a generaciones POSTERIORES.
+  function onResult(game, targetDraw, actual) {
+    var mem = loadMemory(game);
+    var snaps = loadSnaps(game);
+    var evaluated = [], rejected = [];
+    var N = (GAME_CONFIG[game] || {}).maxNum || 56;
+    var k = (GAME_CONFIG[game] || {}).pick || 6;
+    var actualSet = {};
+    actual.forEach(function (x) { actualSet[x] = 1; });
+
+    for (var i = 0; i < snaps.length; i++) {
+      var s = snaps[i];
+      try {
+        if (s.game !== game) reject('GAME_MISMATCH', s.game + ' != ' + game);
+        if (s.target_draw !== targetDraw) continue;          // no es este sorteo
+        if (s.state !== 'FROZEN') reject('UNFROZEN_PREDICTION');
+        if (!verify(s)) reject('FREEZE_HASH_MISMATCH');
+        if (!(s.snapshot_upto < s.target_draw)) reject('TEMPORAL_LEAK');
+        if (mem.seen[s.prediction_sha256]) reject('DUPLICATE_FEEDBACK', s.prediction_sha256);
+
+        // aciertos por boleto
+        var hitsByTicket = s.tickets.map(function (t) {
+          return t.filter(function (x) { return actualSet[x]; }).length;
+        });
+        // aciertos de cada modelo con SU top-k congelado
+        var hitsByModel = {}, id, j;
+        for (j = 0; j < MODEL_IDS.length; j++) {
+          id = MODEL_IDS[j];
+          var pk = (s.model_picks && s.model_picks[id]) || [];
+          hitsByModel[id] = pk.filter(function (x) { return actualSet[x]; }).length;
+        }
+        // contribución incremental: ensemble de picks CON y SIN cada modelo,
+        // por voto ponderado con los pesos congelados
+        var withM = {}, withoutM = {};
+        for (j = 0; j < MODEL_IDS.length; j++) {
+          id = MODEL_IDS[j];
+          withM[id] = voteHits(s, null, actualSet, N, k);
+          withoutM[id] = voteHits(s, id, actualSet, N, k);
+        }
+
+        mem.observations.push({
+          target_draw: targetDraw, snapshot_upto: s.snapshot_upto,
+          freeze_sha: s.prediction_sha256,
+          hits_by_model: hitsByModel,
+          ensemble_hits_with: withM, ensemble_hits_without: withoutM,
+          hits_by_ticket: hitsByTicket,
+          evaluated_at: new Date().toISOString()
+        });
+        mem.seen[s.prediction_sha256] = 1;
+        evaluated.push({ sha: s.prediction_sha256, hits_by_ticket: hitsByTicket,
+                         hits_by_model: hitsByModel, weights: s.model_weights });
+      } catch (e) {
+        rejected.push({ sha: s.prediction_sha256, code: e.mg_code || 'ERROR', detail: e.message });
+      }
+    }
+
+    if (evaluated.length) {
+      // Los pesos nuevos quedan registrados pero NO se aplican a nada ya
+      // congelado: entran en juego en la siguiente preparación.
+      mem.weight_history.push({ after_target_draw: targetDraw, at: Date.now() });
+      if (mem.weight_history.length > 200) mem.weight_history = mem.weight_history.slice(-200);
+      if (mem.observations.length > 500) mem.observations = mem.observations.slice(-500);
+      saveMemory(game, mem);
+    }
+    return { game: game, target_draw: targetDraw,
+             evaluated: evaluated, rejected: rejected,
+             total_observations: mem.observations.length };
+  }
+
+  // aciertos del voto ponderado sobre los picks congelados, excluyendo `skip`
+  function voteHits(snap, skip, actualSet, N, k) {
+    var score = new Array(N + 1).fill(0), i, j;
+    for (i = 0; i < MODEL_IDS.length; i++) {
+      var id = MODEL_IDS[i];
+      if (id === skip) continue;
+      var w = (snap.model_weights && snap.model_weights[id]) || 0;
+      var pk = (snap.model_picks && snap.model_picks[id]) || [];
+      for (j = 0; j < pk.length; j++) score[pk[j]] += w;
+    }
+    var pick = topK(score, N, k);
+    return pick.filter(function (x) { return actualSet[x]; }).length;
+  }
+
+  // ═══ API pública ══════════════════════════════════════════════════════════
+  window.MG_COLLECTIVE = {
+    VERSION: VERSION, MODEL_IDS: MODEL_IDS, FLOOR: FLOOR, CAP: CAP, SHRINK_N0: SHRINK_N0,
+    prepare: prepare, freeze: freeze, verify: verify, onResult: onResult,
+    computeWeights: computeWeights, fuse: fuse, projectCapFloor: projectCapFloor,
+    topK: topK, structuralSignals: structuralSignals, memorySignals: memorySignals,
+    loadMemory: loadMemory, saveMemory: saveMemory, emptyMemory: emptyMemory,
+    loadSnaps: loadSnaps, saveSnaps: saveSnaps, memKey: memKey, snapKey: snapKey,
+    _lastPrep: null
+  };
+})();
+
+// ── enganche de generación ───────────────────────────────────────────────────
+// Devuelve las probabilidades colectivas, o null si no aplica. No altera
+// ninguna otra estrategia.
+function mgCollectivePrepare() {
+  try {
+    var prep = MG_COLLECTIVE.prepare();
+    MG_COLLECTIVE._lastPrep = prep;
+    return prep;
+  } catch (e) {
+    MG_COLLECTIVE._lastPrep = null;
+    console.warn('MG-COL: preparación falló —', e.message);
+    showToast('Ensamble Colectivo: ' + (e.mg_code || 'error') + ' — se detuvo la generación', 'error');
+    return null;
+  }
+}
+
+function mgCollectiveFreeze(prep, tickets) {
+  try {
+    var snap = MG_COLLECTIVE.freeze(prep, tickets);
+    MG_COLLECTIVE._lastSnap = snap;
+    return snap;
+  } catch (e) {
+    console.warn('MG-COL: congelado falló —', e.message);
+    return null;
+  }
+}
+
+function mgCollectiveOnResult(game, targetDraw, actual) {
+  try { return MG_COLLECTIVE.onResult(game, targetDraw, actual); }
+  catch (e) { console.warn('MG-COL: feedback falló —', e.message); return null; }
+}
+
+// ── panel de la estrategia ───────────────────────────────────────────────────
+function mgRenderCollectivePanel() {
+  var el = document.getElementById('collective-panel');
+  if (!el) return;
+  if (state.mode !== 'collective') { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = 'block';
+
+  var game = state.currentGame;
+  var mem = MG_COLLECTIVE.loadMemory(game);
+  var snaps = MG_COLLECTIVE.loadSnaps(game);
+  var pend = snaps.filter(function (s) { return !mem.seen[s.prediction_sha256]; }).length;
+  var last = MG_COLLECTIVE._lastSnap;
+
+  var rows = '';
+  if (mem.observations.length) {
+    var k = (GAME_CONFIG[game] || {}).pick || 6;
+    var sig = MG_COLLECTIVE.memorySignals(mem, k, k / state.maxNumber);
+    var ord = MG_COLLECTIVE.MODEL_IDS.slice().sort(function (a, b) { return sig[b].perf - sig[a].perf; });
+    rows = ord.slice(0, 5).map(function (id) {
+      return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;">' +
+        '<span>' + id + '</span><span style="color:var(--text-3);">' +
+        (sig[id].perf * k).toFixed(2) + ' aciertos · n=' + sig[id].n + '</span></div>';
+    }).join('');
+  }
+
+  el.innerHTML =
+    '<div class="glass card" style="margin-bottom:12px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+        '<span style="font-size:18px;">🧠</span>' +
+        '<strong style="font-size:13px;">ENSAMBLE COLECTIVO</strong>' +
+        '<span style="font-size:9.5px;font-weight:700;letter-spacing:.4px;padding:2px 6px;border-radius:4px;' +
+        'background:rgba(255,176,32,.16);color:#ffb020;">EXPERIMENTAL · LIVE</span>' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-3);line-height:1.5;margin-bottom:10px;">' +
+        'Todos los modelos trabajan juntos y el motor aprende de los resultados reales.' +
+      '</div>' +
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">' +
+        '<span>Sorteos evaluados: <strong>' + mem.observations.length + '</strong></span>' +
+        '<span>Modelos participantes: <strong>' + MG_COLLECTIVE.MODEL_IDS.length + '</strong></span>' +
+        '<span>Pendientes de resultado: <strong>' + pend + '</strong></span>' +
+      '</div>' +
+      (mem.observations.length === 0
+        ? '<div style="font-size:11px;color:var(--text-3);">Memoria vacía: los 13 modelos arrancan con peso idéntico (1/13). ' +
+          'Cada resultado real que agregues ajusta el reparto para el sorteo siguiente.</div>'
+        : '<div style="font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Mejores por acierto medio</div>' + rows) +
+      (last
+        ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;">' +
+          'Último congelado · sorteo objetivo <strong>' + last.target_draw + '</strong> · ' +
+          'SHA <code style="font-size:10px;">' + String(last.prediction_sha256).slice(0, 12) + '…</code> · ' +
+          '<span style="color:#22c55e;font-weight:600;">FROZEN</span></div>'
+        : '') +
+      '<div style="margin-top:10px;font-size:10.5px;color:var(--text-3);">' +
+        'No es una ventaja demostrada: NO_EDGE sigue activo y esta estrategia no participa en Champion Gate ni en el preregistro.' +
+      '</div>' +
+    '</div>';
 }
 </script>
 
