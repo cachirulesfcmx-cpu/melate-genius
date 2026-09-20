@@ -11476,6 +11476,12 @@ async function enterApp() {
   
   // Init app (sync from here on, base data is in BASE_DRAWS)
   initApp();
+
+  // Repara en silencio el feedback colectivo que quedó sin aplicar en
+  // versiones anteriores. Idempotente y sin efectos si no hay nada pendiente.
+  try {
+    ['melate', 'revancha', 'retro'].forEach(function (g) { mgCollectiveReconcile(g); });
+  } catch (e) { console.warn('MG-COL: reconciliación inicial falló', e); }
 }
 
 
@@ -12809,6 +12815,8 @@ function savePrediction(idx, btn) {
     actual: null,
     matchedNumbers: null
   };
+  // Enlace duradero predicción guardada <-> snapshot colectivo congelado.
+  try { mgCollectiveLinkSaved(entry); } catch (e) {}
   
   state.history.unshift(entry);
   savePredictionToDB(entry).catch(e => console.warn('Error guardando predicción:', e));
@@ -12848,6 +12856,7 @@ function saveAllPredictions() {
       actual: null,
       matchedNumbers: null
     };
+    try { mgCollectiveLinkSaved(entry); } catch (e) {}
     state.history.unshift(entry);
     toSave.push(entry);
     added++;
@@ -13104,6 +13113,11 @@ function submitRealResult() {
   let _collectiveFb = null;
   try {
     _collectiveFb = mgCollectiveOnResult(state.currentGame, state.draws.length, nums);
+    // Red de seguridad: si el contador de sorteos divergió entre generar y
+    // registrar, el feedback por target no encuentra nada. La reconciliación
+    // recupera esos snapshots a partir del historial ya evaluado, y es
+    // idempotente: no puede aprender dos veces lo mismo.
+    mgCollectiveReconcile(state.currentGame);
   } catch (e) { console.warn('MG-COL: feedback falló', e); }
 
   // Capture state BEFORE evolution to show deltas later
@@ -21639,11 +21653,13 @@ function mgRenderAlePanel() {
     var actualSet = {};
     actual.forEach(function (x) { actualSet[x] = 1; });
 
+    var matched = 0;
     for (var i = 0; i < snaps.length; i++) {
       var s = snaps[i];
       try {
         if (s.game !== game) reject('GAME_MISMATCH', s.game + ' != ' + game);
         if (s.target_draw !== targetDraw) continue;          // no es este sorteo
+        matched++;
         if (s.state !== 'FROZEN') reject('UNFROZEN_PREDICTION');
         if (!verify(s)) reject('FREEZE_HASH_MISMATCH');
         if (!(s.snapshot_upto < s.target_draw)) reject('TEMPORAL_LEAK');
@@ -21685,6 +21701,16 @@ function mgRenderAlePanel() {
       }
     }
 
+    // Si ningún snapshot tenía este target, antes era un no-op mudo. Ahora
+    // queda constancia para que la reconciliación pueda recuperarlo después.
+    // Sólo cuando NADA ocurrió: si ya hubo un rechazo concreto (GAME_MISMATCH,
+    // hash, etc.) ese rechazo ya explica el porqué y añadir esto sería ruido.
+    if (!matched && !rejected.length && snaps.length) {
+      rejected.push({ sha: null, code: 'NO_SNAPSHOT_FOR_TARGET',
+        detail: 'target ' + targetDraw + ' · disponibles: ' +
+          snaps.map(function (x) { return x.target_draw; }).join(',') });
+    }
+
     if (evaluated.length) {
       // Los pesos nuevos quedan registrados pero NO se aplican a nada ya
       // congelado: entran en juego en la siguiente preparación.
@@ -21712,8 +21738,137 @@ function mgRenderAlePanel() {
     return pick.filter(function (x) { return actualSet[x]; }).length;
   }
 
+  // ═══ ESTADO SEMÁNTICO Y RECONCILIACIÓN ════════════════════════════════════
+  // FROZEN sigue significando inmutable. `saved` es metadato EXTERNO al payload
+  // sellado: no entra en el SHA y por tanto no altera ningún snapshot histórico.
+  function markSaved(game, sha) {
+    var snaps = loadSnaps(game), changed = false;
+    for (var i = 0; i < snaps.length; i++) {
+      if (snaps[i].prediction_sha256 === sha && !snaps[i].saved) {
+        snaps[i].saved = true;
+        snaps[i].saved_at = new Date().toISOString();
+        changed = true;
+      }
+    }
+    if (changed) saveSnaps(game, snaps);
+    return changed;
+  }
+
+  function statusOf(snap, mem) {
+    if (mem.seen[snap.prediction_sha256]) return 'EVALUATED';
+    return snap.saved ? 'SAVED_PENDING_RESULT' : 'FROZEN_UNSAVED';
+  }
+
+  function stats(game) {
+    var mem = loadMemory(game), snaps = loadSnaps(game);
+    var evaluated = 0, savedPending = 0, frozenUnsaved = 0;
+    for (var i = 0; i < snaps.length; i++) {
+      var st = statusOf(snaps[i], mem);
+      if (st === 'EVALUATED') evaluated++;
+      else if (st === 'SAVED_PENDING_RESULT') savedPending++;
+      else frozenUnsaved++;
+    }
+    // "Sorteos evaluados" cuenta SORTEOS, no boletos ni snapshots: si dos
+    // predicciones congeladas apuntan al mismo sorteo, es un solo sorteo.
+    var draws = {};
+    for (i = 0; i < mem.observations.length; i++) draws[mem.observations[i].target_draw] = 1;
+    return { game: game, drawsEvaluated: Object.keys(draws).length,
+             observations: mem.observations.length,
+             evaluatedSnapshots: evaluated, savedPending: savedPending,
+             frozenUnsaved: frozenUnsaved, snapshots: snaps.length };
+  }
+
+  // Reconciliación IDEMPOTENTE: recupera feedback de snapshots cuyo sorteo ya
+  // fue evaluado en state.history pero que nunca llegaron a la memoria (por
+  // ejemplo, porque el contador de sorteos divergió entre generar y registrar).
+  // Sólo aprende cuando el emparejamiento es INEQUÍVOCO. Ante cualquier duda:
+  // RECONCILIATION_SKIPPED con motivo, y no se aprende.
+  function reconcile(game, history) {
+    var hist = history || (typeof state !== 'undefined' && state.history) || [];
+    var mem = loadMemory(game), snaps = loadSnaps(game);
+    var applied = [], skipped = [];
+
+    for (var i = 0; i < snaps.length; i++) {
+      var s = snaps[i];
+      if (mem.seen[s.prediction_sha256]) continue;              // ya aprendido
+      function skip(reason, detail) {
+        skipped.push({ sha: s.prediction_sha256, code: 'RECONCILIATION_SKIPPED',
+                       reason: reason, detail: detail || '' });
+      }
+      if (s.game !== game) { skip('GAME_MISMATCH', s.game); continue; }
+      if (s.state !== 'FROZEN') { skip('UNFROZEN_PREDICTION'); continue; }
+      if (!verify(s)) { skip('FREEZE_HASH_MISMATCH'); continue; }
+      if (!(s.snapshot_upto < s.target_draw)) { skip('TEMPORAL_LEAK'); continue; }
+
+      // Entradas de historial YA evaluadas que corresponden a este snapshot.
+      var keys = {}, kOrder = [];
+      for (var q = 0; q < s.tickets.length; q++) {
+        var kk = s.tickets[q].slice().sort(function (a, b) { return a - b; }).join(',');
+        keys[kk] = 1; kOrder.push(kk);
+      }
+      var cands = [];
+      for (q = 0; q < hist.length; q++) {
+        var h = hist[q];
+        if (!h || h.game !== game || h.status !== 'checked') continue;
+        if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
+        // El enlace fuerte es el SHA estampado al guardar; si no está, se
+        // acepta la coincidencia EXACTA del billete.
+        var byLink = h.collective_sha && h.collective_sha === s.prediction_sha256;
+        var byTicket = !h.collective_sha && h.mode === 'collective' &&
+          keys[h.ticket.slice().sort(function (a, b) { return a - b; }).join(',')];
+        if (byLink || byTicket) cands.push(h);
+      }
+      if (!cands.length) { skip('NO_EVALUATED_HISTORY'); continue; }
+
+      // Todas deben apuntar al MISMO resultado: si hay dos distintos, el
+      // sorteo es ambiguo y no se aprende.
+      var actuals = {};
+      for (q = 0; q < cands.length; q++)
+        actuals[cands[q].actual.slice().sort(function (a, b) { return a - b; }).join(',')] = 1;
+      var uniq = Object.keys(actuals);
+      if (uniq.length !== 1) { skip('AMBIGUOUS_RESULT', uniq.length + ' resultados distintos'); continue; }
+
+      var actual = uniq[0].split(',').map(Number);
+      var spec = (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[game]) || {};
+      if (actual.length !== ((spec.pick) || 6)) { skip('INVALID_RESULT', actual.length + ' números'); continue; }
+
+      // Se aplica por la MISMA puerta que el flujo normal: onResult valida de
+      // nuevo SHA, temporalidad y duplicado. Exactamente una vez.
+      var r = onResult(game, s.target_draw, actual);
+      if (r.evaluated.length) {
+        applied.push({ sha: s.prediction_sha256, target_draw: s.target_draw,
+                       hits_by_ticket: r.evaluated[0].hits_by_ticket, source: 'reconciliation' });
+        mem = loadMemory(game);                                  // releer memoria
+      } else {
+        var code = (r.rejected[0] && r.rejected[0].code) || 'UNKNOWN';
+        if (code !== 'DUPLICATE_FEEDBACK') skip(code, 'onResult lo rechazó');
+      }
+    }
+    return { game: game, applied: applied, skipped: skipped, stats: stats(game) };
+  }
+
+  // Diagnóstico local del propio navegador. No expone nada que el usuario no
+  // tenga ya en su dispositivo.
+  function diagnose(game) {
+    var mem = loadMemory(game), snaps = loadSnaps(game);
+    return {
+      game: game, engine: VERSION, stats: stats(game),
+      snapshots: snaps.map(function (s) {
+        return { sha: String(s.prediction_sha256).slice(0, 12), target_draw: s.target_draw,
+                 snapshot_upto: s.snapshot_upto, state: s.state,
+                 saved: !!s.saved, status: statusOf(s, mem), verified: verify(s),
+                 tickets: s.tickets.length };
+      }),
+      memory: { observations: mem.observations.length,
+                targets: mem.observations.map(function (o) { return o.target_draw; }),
+                seen: Object.keys(mem.seen || {}).length }
+    };
+  }
+
   // ═══ API pública ══════════════════════════════════════════════════════════
   window.MG_COLLECTIVE = {
+    markSaved: markSaved, statusOf: statusOf, stats: stats,
+    reconcile: reconcile, diagnose: diagnose,
     VERSION: VERSION, MODEL_IDS: MODEL_IDS, FLOOR: FLOOR, CAP: CAP, SHRINK_N0: SHRINK_N0,
     prepare: prepare, freeze: freeze, verify: verify, onResult: onResult,
     computeWeights: computeWeights, fuse: fuse, projectCapFloor: projectCapFloor,
@@ -21751,6 +21906,40 @@ function mgCollectiveFreeze(prep, tickets) {
   }
 }
 
+// Estampa el SHA del snapshot colectivo en la entrada de historial y marca el
+// snapshot como GUARDADO. El payload sellado no se toca: `saved` es metadato
+// externo, así que el SHA sigue verificando igual.
+function mgCollectiveLinkSaved(entry) {
+  if (!entry || entry.mode !== 'collective') return;
+  var snap = MG_COLLECTIVE._lastSnap;
+  if (!snap || snap.game !== entry.game) {
+    var snaps = MG_COLLECTIVE.loadSnaps(entry.game);
+    snap = snaps.length ? snaps[snaps.length - 1] : null;
+  }
+  if (!snap) return;
+  var key = entry.ticket.slice().sort(function (a, b) { return a - b; }).join(',');
+  var belongs = snap.tickets.some(function (t) {
+    return t.slice().sort(function (a, b) { return a - b; }).join(',') === key;
+  });
+  if (!belongs) return;
+  entry.collective_sha = snap.prediction_sha256;
+  entry.collective_target_draw = snap.target_draw;
+  MG_COLLECTIVE.markSaved(entry.game, snap.prediction_sha256);
+}
+
+function mgCollectiveReconcile(game) {
+  try {
+    var r = MG_COLLECTIVE.reconcile(game, (typeof state !== 'undefined') ? state.history : []);
+    if (r.applied.length) console.info('MG-COL: reconciliados ' + r.applied.length + ' sorteos');
+    return r;
+  } catch (e) { console.warn('MG-COL: reconciliación falló —', e.message); return null; }
+}
+
+// Diagnóstico a mano desde la consola del propio navegador del usuario.
+function mgCollectiveDiagnose(game) {
+  return MG_COLLECTIVE.diagnose(game || (typeof state !== 'undefined' ? state.currentGame : 'melate'));
+}
+
 function mgCollectiveOnResult(game, targetDraw, actual) {
   try { return MG_COLLECTIVE.onResult(game, targetDraw, actual); }
   catch (e) { console.warn('MG-COL: feedback falló —', e.message); return null; }
@@ -21764,9 +21953,13 @@ function mgRenderCollectivePanel() {
   el.style.display = 'block';
 
   var game = state.currentGame;
+  // Al abrir el panel se intenta recuperar cualquier feedback pendiente que ya
+  // tenga resultado en el historial. Idempotente: si no hay nada que reparar,
+  // no cambia nada.
+  try { mgCollectiveReconcile(game); } catch (e) {}
   var mem = MG_COLLECTIVE.loadMemory(game);
   var snaps = MG_COLLECTIVE.loadSnaps(game);
-  var pend = snaps.filter(function (s) { return !mem.seen[s.prediction_sha256]; }).length;
+  var st = MG_COLLECTIVE.stats(game);
   var last = MG_COLLECTIVE._lastSnap;
 
   var rows = '';
@@ -21793,10 +21986,17 @@ function mgRenderCollectivePanel() {
         'Todos los modelos trabajan juntos y el motor aprende de los resultados reales.' +
       '</div>' +
       '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">' +
-        '<span>Sorteos evaluados: <strong>' + mem.observations.length + '</strong></span>' +
+        '<span>Sorteos evaluados: <strong>' + st.drawsEvaluated + '</strong></span>' +
+        '<span>Guardadas pendientes de resultado: <strong>' + st.savedPending + '</strong></span>' +
         '<span>Modelos participantes: <strong>' + MG_COLLECTIVE.MODEL_IDS.length + '</strong></span>' +
-        '<span>Pendientes de resultado: <strong>' + pend + '</strong></span>' +
+        (st.frozenUnsaved
+          ? '<span style="color:var(--text-3);">Congeladas sin guardar: <strong>' + st.frozenUnsaved + '</strong></span>'
+          : '') +
       '</div>' +
+      (st.drawsEvaluated > 0
+        ? '<div style="font-size:11px;color:#22c55e;font-weight:600;margin-bottom:6px;">Memoria activa · ' +
+          st.drawsEvaluated + (st.drawsEvaluated === 1 ? ' sorteo evaluado' : ' sorteos evaluados') + '</div>'
+        : '') +
       (mem.observations.length === 0
         ? '<div style="font-size:11px;color:var(--text-3);">Memoria vacía: los 13 modelos arrancan con peso idéntico (1/13). ' +
           'Cada resultado real que agregues ajusta el reparto para el sorteo siguiente.</div>'
