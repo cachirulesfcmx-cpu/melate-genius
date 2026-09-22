@@ -10870,6 +10870,265 @@ function mgRenderResearchPanel() {
 function mgRenderAjustesView() {
   mgRenderSettingsView();
   mgRenderResearchStatus();
+  try { mgRenderMigrationTools(); } catch (e) { console.warn('MG-MIG: render', e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  §19/§35 · MIGRACIÓN DE MEMORIA LOCAL → GLOBAL
+//  Exportar es SOLO LECTURA. Importar valida y muestra un preview; nunca
+//  importa sin que lo confirmes.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_MIGRATION_ID = 'MG-COLLECTIVE-MIGRATION-LOCAL-TO-GLOBAL-v1';
+
+// Backup lógico completo. No borra ni modifica nada (§3, §34).
+function mgCollectiveExportLocal() {
+  var JUEGOS = ['melate', 'revancha', 'retro', 'chispazo', 'tris'];
+  var out = { migration_id: MG_MIGRATION_ID, exportado_en: new Date().toISOString(),
+              engine: MG_COLLECTIVE.VERSION, juegos: {}, historial_resumen: {} };
+  var K = function (t) { return t.slice().sort(function (a, b) { return a - b; }).join(','); };
+
+  JUEGOS.forEach(function (g) {
+    var memRaw = null, snapRaw = null, err = [];
+    try { memRaw = localStorage.getItem(MG_COLLECTIVE.memKey(g)); } catch (e) { err.push('memoria: ' + e.message); }
+    try { snapRaw = localStorage.getItem(MG_COLLECTIVE.snapKey(g)); } catch (e) { err.push('snapshots: ' + e.message); }
+    var mem = null, snaps = null;
+    try { mem = memRaw ? JSON.parse(memRaw) : null; } catch (e) { err.push('memoria ilegible'); }
+    try { snaps = snapRaw ? JSON.parse(snapRaw) : null; } catch (e) { err.push('snapshots ilegibles'); }
+
+    out.juegos[g] = {
+      errores: err, memoria: mem,
+      snapshots: (snaps || []).map(function (x) {
+        return { prediction_sha256: x.prediction_sha256, engine_version: x.engine_version,
+                 game: x.game, target_draw: x.target_draw, snapshot_upto: x.snapshot_upto,
+                 state: x.state, saved: !!x.saved, saved_at: x.saved_at || null,
+                 generated_at: x.generated_at, seed: x.seed || null, run_id: x.run_id || null,
+                 model_ids: x.model_ids, model_weights: x.model_weights,
+                 model_picks: x.model_picks, tickets: x.tickets,
+                 sello_valido: (function () { try { return MG_COLLECTIVE.verify(x); } catch (e) { return null; } })(),
+                 estado_actual: (function () {
+                   try { return MG_COLLECTIVE.statusOf(x, MG_COLLECTIVE.loadMemory(g)); } catch (e) { return null; }
+                 })() };
+      }),
+      estado: (function () { try { return MG_COLLECTIVE.stats(g); } catch (e) { return null; } })(),
+      global: (function () { try { return MG_GLOBAL.status(g); } catch (e) { return null; } })()
+    };
+
+    var col = (state.history || []).filter(function (h) {
+      return h && h.game === g && h.mode === 'collective';
+    });
+    var grupos = {};
+    col.forEach(function (h) {
+      if (h.status !== 'checked' || !Array.isArray(h.actual)) return;
+      var rk = K(h.actual);
+      grupos[rk] = grupos[rk] || { resultado: h.actual, boletos: 0, con_sello: 0, tickets: [] };
+      grupos[rk].boletos++; grupos[rk].tickets.push(h.ticket);
+      if (h.collective_sha) grupos[rk].con_sello++;
+    });
+    out.historial_resumen[g] = {
+      colectivas: col.length,
+      evaluadas: col.filter(function (h) { return h.status === 'checked'; }).length,
+      pendientes: col.filter(function (h) { return h.status === 'pending'; }).length,
+      con_collective_sha: col.filter(function (h) { return !!h.collective_sha; }).length,
+      sorteos_distintos: Object.keys(grupos).length,
+      grupos: Object.keys(grupos).map(function (kk) { return grupos[kk]; })
+    };
+  });
+
+  out.hash = (function () {
+    var t = JSON.stringify(out), h = 0;
+    for (var i = 0; i < t.length; i++) h = ((h << 5) - h + t.charCodeAt(i)) | 0;
+    return 'x' + (h >>> 0).toString(16) + '-' + t.length;
+  })();
+  return out;
+}
+
+function mgCollectiveDownloadExport() {
+  var data;
+  try { data = mgCollectiveExportLocal(); }
+  catch (e) { showToast('No se pudo exportar: ' + e.message, 'error'); return; }
+  try {
+    var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'melate-memoria-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+    showToast('Memoria exportada · ' + data.hash, 'success');
+  } catch (e) {
+    window.MG_EXPORT = data;
+    showToast('Descarga bloqueada; queda en window.MG_EXPORT', 'info');
+  }
+}
+
+// Valida un export y devuelve la clasificación de la §4/§21. NO importa nada.
+function mgCollectiveValidateExport(data) {
+  var IDS = MG_COLLECTIVE.MODEL_IDS;
+  var res = { migration_id: MG_MIGRATION_ID, por_juego: {}, total: {
+    found: 0, verified: 0, unverified: 0, ambiguous: 0, invalid: 0, duplicates: 0, importable: 0 } };
+
+  MG_GLOBAL.GAMES.forEach(function (g) {
+    var j = (data && data.juegos && data.juegos[g]) || null;
+    var fila = { found: 0, verified: 0, unverified: 0, ambiguous: 0, invalid: 0,
+                 duplicates: 0, importable: 0, motivos: {}, casos: [] };
+    var snaps = (j && j.snapshots) || [];
+    var gl = MG_GLOBAL.readCache(g);
+    var yaGlobal = (gl && gl.memory && gl.memory.seen) || {};
+
+    snaps.forEach(function (x) {
+      fila.found++;
+      var motivo = null;
+      // A · snapshot presente (lo es por construcción)  B · sello válido
+      if (x.state !== 'FROZEN') motivo = 'INVALID:UNFROZEN';
+      else if (x.sello_valido !== true) motivo = 'INVALID:FREEZE_HASH_MISMATCH';
+      // E · temporalidad
+      else if (!(x.snapshot_upto < x.target_draw)) motivo = 'INVALID:TEMPORAL_LEAK';
+      // H · model_picks disponibles (§22)
+      else if (!x.model_picks || IDS.some(function (id) { return !Array.isArray(x.model_picks[id]); }))
+        motivo = 'INVALID:MODEL_PICKS_MISSING';
+      // F · evaluación consistente: ¿la memoria local ya la aprendió?
+      else if (!(j.memoria && j.memoria.seen && j.memoria.seen[x.prediction_sha256]))
+        motivo = 'UNVERIFIED:SIN_EVALUACION_LOCAL';
+      // C · concurso oficial conocido  ← el bloqueo real hoy
+      else motivo = 'UNVERIFIED:SIN_CONCURSO_OFICIAL';
+
+      // G · ¿ya existe en el cerebro global?
+      if (motivo.indexOf('INVALID') !== 0) {
+        var dup = Object.keys(yaGlobal).some(function (kk) { return kk.indexOf(g + ':') === 0; });
+        if (dup && Object.keys(yaGlobal).length && x.__yaGlobal) motivo = 'DUPLICATE';
+      }
+
+      var clase = motivo.split(':')[0].toLowerCase();
+      if (clase === 'invalid') fila.invalid++;
+      else if (clase === 'duplicate') fila.duplicates++;
+      else if (clase === 'unverified') fila.unverified++;
+      else if (clase === 'ambiguous') fila.ambiguous++;
+      else { fila.verified++; fila.importable++; }
+      fila.motivos[motivo] = (fila.motivos[motivo] || 0) + 1;
+      fila.casos.push({ sha: String(x.prediction_sha256).slice(0, 12),
+                        target_draw: x.target_draw, motivo: motivo });
+    });
+
+    res.por_juego[g] = fila;
+    ['found', 'verified', 'unverified', 'ambiguous', 'invalid', 'duplicates', 'importable']
+      .forEach(function (kk) { res.total[kk] += fila[kk]; });
+  });
+  return res;
+}
+
+function mgCollectiveHandleImportFile(input) {
+  var f = input && input.files && input.files[0];
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function () {
+    var data;
+    try { data = JSON.parse(r.result); }
+    catch (e) { showToast('El archivo no es un JSON válido', 'error'); return; }
+    if (!data || !data.juegos) { showToast('No parece un export de memoria', 'error'); return; }
+    var val;
+    try { val = mgCollectiveValidateExport(data); }
+    catch (e) { showToast('No se pudo validar: ' + e.message, 'error'); return; }
+    window.MG_IMPORT_PREVIEW = { data: data, validation: val };
+    mgRenderMigrationTools(val);
+    showToast('Validado. Revisa el preview antes de importar.', 'info');
+  };
+  r.readAsText(f);
+}
+
+function mgRenderMigrationTools(preview) {
+  var host = document.getElementById('mg-settings-body');
+  if (!host) return;
+  var prev = document.getElementById('mg-migration-card');
+  if (prev) prev.remove();
+
+  var estados = MG_GLOBAL.GAMES.map(function (g) {
+    var st = MG_GLOBAL.status(g);
+    return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;">' +
+      '<span>' + g + '</span><span style="color:var(--text-3);">' +
+      (st.version === null ? 'sin memoria global' : 'v' + st.version + ' · ' + st.observations + ' obs') +
+      '</span></div>';
+  }).join('');
+
+  var tabla = '';
+  if (preview) {
+    var t = preview.total;
+    tabla =
+      '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">' +
+      '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3);margin-bottom:4px;">Preview de la migración</div>' +
+      '<div style="font-size:11px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;">' +
+      '<tr style="color:var(--text-3);text-align:right;"><th style="text-align:left;">juego</th>' +
+      '<th>found</th><th>verif.</th><th>unverif.</th><th>ambig.</th><th>inval.</th><th>dup.</th><th>import.</th></tr>' +
+      MG_GLOBAL.GAMES.map(function (g) {
+        var f = preview.por_juego[g];
+        return '<tr style="text-align:right;"><td style="text-align:left;">' + g + '</td><td>' +
+          f.found + '</td><td>' + f.verified + '</td><td>' + f.unverified + '</td><td>' +
+          f.ambiguous + '</td><td>' + f.invalid + '</td><td>' + f.duplicates + '</td><td><strong>' +
+          f.importable + '</strong></td></tr>';
+      }).join('') +
+      '<tr style="text-align:right;border-top:1px solid var(--border);font-weight:600;">' +
+      '<td style="text-align:left;">total</td><td>' + t.found + '</td><td>' + t.verified +
+      '</td><td>' + t.unverified + '</td><td>' + t.ambiguous + '</td><td>' + t.invalid +
+      '</td><td>' + t.duplicates + '</td><td>' + t.importable + '</td></tr>' +
+      '</table></div>' +
+      (function () {
+        var m = {};
+        MG_GLOBAL.GAMES.forEach(function (g) {
+          Object.keys(preview.por_juego[g].motivos).forEach(function (kk) {
+            m[kk] = (m[kk] || 0) + preview.por_juego[g].motivos[kk];
+          });
+        });
+        var ks = Object.keys(m);
+        return ks.length
+          ? '<div style="margin-top:6px;font-size:10px;color:var(--text-3);">' +
+            ks.map(function (kk) { return kk + ' ×' + m[kk]; }).join(' · ') + '</div>'
+          : '';
+      })() +
+      '<button ' + (t.importable ? '' : 'disabled ') +
+        'onclick="mgCollectiveImportConfirm()" style="margin-top:8px;padding:6px 12px;border-radius:6px;' +
+        'font-size:11px;font-weight:600;cursor:' + (t.importable ? 'pointer' : 'not-allowed') + ';' +
+        'background:' + (t.importable ? 'rgba(34,197,94,.18)' : 'rgba(128,128,128,.12)') + ';' +
+        'border:1px solid ' + (t.importable ? 'rgba(34,197,94,.42)' : 'var(--border)') + ';' +
+        'color:' + (t.importable ? '#22c55e' : 'var(--text-3)') + ';">' +
+        'Importar ' + t.importable + ' observación(es) al cerebro global</button>' +
+      (t.importable ? '' :
+        '<div style="margin-top:6px;font-size:10px;color:#ffb020;">Nada es importable todavía: ' +
+        'el cerebro global se identifica por número de CONCURSO OFICIAL y esos números no ' +
+        'están en el proyecto. Nada se inventa.</div>') +
+      '</div>';
+  }
+
+  var card = document.createElement('div');
+  card.className = 'glass card mg-group';
+  card.id = 'mg-migration-card';
+  card.innerHTML =
+    '<div class="card-head"><div class="card-title"><span class="card-title-icon">🌐</span> ' +
+    'Ensamble Colectivo · memoria global</div></div>' +
+    '<div class="mg-group-desc">Tu historial es privado. La memoria estadística es compartida. ' +
+    'El servidor es la fuente de verdad; aquí sólo hay una caché.</div>' +
+    '<div style="padding:0 4px 8px;">' + estados + '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 4px 4px;">' +
+      '<button onclick="mgCollectiveDownloadExport()" style="padding:6px 12px;border-radius:6px;' +
+      'font-size:11px;font-weight:600;cursor:pointer;background:rgba(99,102,241,.16);' +
+      'border:1px solid rgba(99,102,241,.4);color:#818cf8;">Exportar memoria local</button>' +
+      '<label style="padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;' +
+      'background:rgba(99,102,241,.08);border:1px solid var(--border);color:var(--text-2);">' +
+      'Importar y validar' +
+      '<input type="file" accept="application/json,.json" style="display:none;" ' +
+      'onchange="mgCollectiveHandleImportFile(this)"></label>' +
+    '</div>' +
+    '<div style="padding:0 4px 4px;font-size:10px;color:var(--text-3);">' +
+    'Exportar es sólo lectura: no borra ni modifica nada. Importar valida y muestra un ' +
+    'preview; no importa sin confirmación.</div>' +
+    tabla;
+  host.appendChild(card);
+}
+
+function mgCollectiveImportConfirm() {
+  var p = window.MG_IMPORT_PREVIEW;
+  if (!p || !p.validation || !p.validation.total.importable) {
+    showToast('No hay observaciones verificadas que importar', 'info');
+    return;
+  }
+  showToast('Importación de ' + p.validation.total.importable + ' observación(es) preparada', 'info');
 }
 </script>
 <script>// ═══════════════════════════════════════════════════════════
@@ -11564,6 +11823,17 @@ function loadGame(game) {
   
   state.currentGame = game;
   state.maxNumber = GAME_CONFIG[game].maxNum;
+
+  // 🌐 El cerebro global es la fuente de verdad; la caché local sólo lo sirve
+  // mientras llega. Tris nunca entra (§2).
+  try {
+    mgSyncCollectiveAvailability();
+    if (MG_GLOBAL.eligible(game)) {
+      MG_GLOBAL.sync(game).then(function () {
+        try { if (state.mode === 'collective') mgRenderCollectivePanel(); } catch (e) {}
+      });
+    }
+  } catch (e) { console.warn('MG-GLOBAL: sync', e); }
   
   // Merge base + user draws
   const base = BASE_DRAWS[game] || [];
@@ -12566,6 +12836,18 @@ async function selectGame(game) {
 // ═══════════════════════════════════════════════════════════
 
 function setMode(m) {
+  // §2/§31 · Tris tiene motor posicional propio y no participa en el Ensamble
+  // Colectivo. Ocultar el botón no basta: cualquier otra vía que llegue aquí
+  // tiene que rebotar igual, o la app diría "colectivo" y entregaría otra cosa.
+  if (m === 'collective') {
+    var apto = true;
+    try { apto = MG_GLOBAL.eligible(state.currentGame); } catch (e) {}
+    if (!apto) {
+      try { showToast('El Ensamble Colectivo no está disponible para ' +
+        ((GAME_CONFIG[state.currentGame] || {}).name || state.currentGame), 'info'); } catch (e) {}
+      m = 'balanced';
+    }
+  }
   state.mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
   try { mgRenderCollectivePanel(); } catch (e) {}
@@ -21606,7 +21888,15 @@ function mgRenderAlePanel() {
         reject('REVANCHA_LENGTH_EQUALS_MELATE', 'longitudes idénticas: ' + rev);
     }
 
-    var mem = loadMemory(game);
+    // 🌐 §38 · se aprende de la memoria GLOBAL si está sincronizada; si no,
+    // de la local. computeWeights no cambia: sólo cambia de dónde sale `mem`.
+    var mem = loadMemory(game), memSource = 'local';
+    try {
+      if (typeof MG_GLOBAL !== 'undefined' && MG_GLOBAL.eligible(game)) {
+        var g = MG_GLOBAL.memoryFor(game);
+        if (g.source === 'global') { mem = g.memory; memSource = 'global:v' + g.version; }
+      }
+    } catch (e) { console.warn('MG-COL: memoria global no disponible', e); }
     var cw = computeWeights(mem, state.models, N, k);
     var probs = fuse(state.models, cw.weights, N);
 
@@ -21619,7 +21909,8 @@ function mgRenderAlePanel() {
       engine_version: VERSION, game: game, N: N, k: k,
       target_draw: targetDraw, snapshot_upto: snapshotUpto,
       weights: cw.weights, detail: cw.detail, model_picks: cw.picks,
-      observations: cw.observations, probs: probs, memory: mem
+      observations: cw.observations, probs: probs, memory: mem,
+      memory_source: memSource
     };
   }
 
@@ -22148,6 +22439,120 @@ function mgRenderAlePanel() {
   };
 })();
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  🌐 GLOBAL COLLECTIVE BRAIN · cliente
+//
+//  Supabase es la FUENTE DE VERDAD de la memoria colectiva (§17). localStorage
+//  guarda sólo una CACHÉ, para que la app siga funcionando sin conexión (§39).
+//  El cliente nunca escribe la memoria global: envía evidencia a la Edge
+//  Function, que verifica el sello y calcula (§12).
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_GLOBAL = (function () {
+  'use strict';
+  var GAMES = ['melate', 'revancha', 'retro', 'chispazo'];   // Tris fuera (§2)
+  var cacheKey = function (game) { return 'mg_global_cache_' + game; };
+
+  function elegible(game) { return GAMES.indexOf(game) >= 0; }
+
+  function readCache(game) {
+    try {
+      var raw = localStorage.getItem(cacheKey(game));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function writeCache(game, payload) {
+    try { localStorage.setItem(cacheKey(game), JSON.stringify(payload)); } catch (e) {}
+  }
+
+  // Descarga la última versión global. Si falla, la caché sigue sirviendo.
+  function sync(game) {
+    if (!elegible(game)) return Promise.resolve(null);
+    if (typeof sb === 'undefined' || !sb) return Promise.resolve(readCache(game));
+    return sb.from('collective_global_state')
+      .select('version, observations, memory, new_memory_hash, created_at')
+      .eq('game', game).order('version', { ascending: false }).limit(1)
+      .then(function (r) {
+        if (r.error || !r.data || !r.data.length) return readCache(game);
+        var row = r.data[0];
+        var payload = { game: game, version: row.version, observations: row.observations,
+                        memory: row.memory, hash: row.new_memory_hash,
+                        synced_at: new Date().toISOString(), server_at: row.created_at };
+        writeCache(game, payload);                 // §17 el servidor gana
+        return payload;
+      })
+      .catch(function () { return readCache(game); });
+  }
+
+  // Memoria que debe usar la generación: la global si existe, si no la local.
+  function memoryFor(game) {
+    var c = readCache(game);
+    if (c && c.memory && Array.isArray(c.memory.observations)) {
+      return { source: 'global', version: c.version, memory: c.memory, synced_at: c.synced_at };
+    }
+    return { source: 'local', version: null, memory: MG_COLLECTIVE.loadMemory(game),
+             synced_at: null };
+  }
+
+  // Envía EVIDENCIA. El servidor verifica el sello y calcula. Nunca pesos.
+  function submit(game, contest, snapshot) {
+    if (!elegible(game)) {
+      return Promise.resolve({ ok: false, code: 'GAME_NOT_ELIGIBLE', detail: game });
+    }
+    if (typeof sb === 'undefined' || !sb) {
+      return Promise.resolve({ ok: false, code: 'OFFLINE', detail: 'sin cliente Supabase' });
+    }
+    return sb.functions.invoke('collective-feedback', {
+      body: { game: game, official_contest_number: contest, snapshot: snapshot }
+    }).then(function (r) {
+      if (r.error) return { ok: false, code: 'EDGE_ERROR', detail: String(r.error.message || r.error) };
+      var d = r.data || {};
+      if (d.ok && d.memory) {
+        writeCache(game, { game: game, version: d.version, observations: d.observations,
+                           memory: d.memory, hash: d.new_memory_hash,
+                           synced_at: new Date().toISOString() });
+      }
+      return d;
+    }).catch(function (e) {
+      return { ok: false, code: 'NETWORK', detail: String(e && e.message || e) };
+    });
+  }
+
+  function status(game) {
+    var c = readCache(game);
+    return {
+      game: game, eligible: elegible(game),
+      version: c ? c.version : null,
+      observations: c ? c.observations : 0,
+      synced_at: c ? c.synced_at : null,
+      source: c ? 'global' : 'local'
+    };
+  }
+
+  return { GAMES: GAMES, eligible: elegible, sync: sync, memoryFor: memoryFor,
+           submit: submit, status: status, readCache: readCache, cacheKey: cacheKey };
+})();
+
+// Tris no participa en el cerebro colectivo (§2, §31). El selector no puede
+// quedar visible ejecutando en silencio el motor posicional.
+function mgSyncCollectiveAvailability() {
+  try {
+    var btn = document.querySelector('[data-mode="collective"]');
+    if (!btn) return;
+    var row = btn.closest ? btn.closest('.mode-picker') : null;
+    var apto = MG_GLOBAL.eligible(state.currentGame);
+    if (row) row.style.display = apto ? '' : 'none';
+    btn.disabled = !apto;
+    if (!apto && state.mode === 'collective') {
+      state.mode = 'balanced';
+      document.querySelectorAll('.mode-btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.mode === 'balanced');
+      });
+      var panel = document.getElementById('collective-panel');
+      if (panel) { panel.innerHTML = ''; panel.style.display = 'none'; }
+    }
+  } catch (e) { console.warn('MG-GLOBAL: disponibilidad', e); }
+}
+
 // ── enganche de generación ───────────────────────────────────────────────────
 // Devuelve las probabilidades colectivas, o null si no aplica. No altera
 // ninguna otra estrategia.
@@ -22307,6 +22712,24 @@ function mgRenderCollectivePanel() {
       '<div style="font-size:11.5px;color:var(--text-3);line-height:1.5;margin-bottom:10px;">' +
         'Todos los modelos trabajan juntos y el motor aprende de los resultados reales.' +
       '</div>' +
+      (function () {
+        // §37 · qué sabe el cerebro global y qué parte es tuya
+        var gs; try { gs = MG_GLOBAL.status(game); } catch (e) { return ''; }
+        if (!gs || !gs.eligible) return '';
+        return '<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;' +
+          'background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.22);' +
+          'font-size:10.5px;line-height:1.5;">' +
+          '<strong>🌐 Memoria global</strong>: ' +
+          (gs.version === null
+            ? 'todavía vacía — los 13 modelos arrancan con peso idéntico'
+            : gs.observations + ' sorteo(s) evaluados · versión v' + gs.version) +
+          ' · modelos <strong>13</strong>' +
+          '<br><span style="color:var(--text-3);">Tu participación: ' + st.drawsEvaluated +
+          ' sorteo(s) · ' +
+          (gs.synced_at
+            ? 'sincronizada ' + String(gs.synced_at).slice(0, 16).replace('T', ' ')
+            : 'sin sincronizar (se usa la caché local)') + '</span></div>';
+      })() +
       '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">' +
         '<span>Sorteos evaluados: <strong>' + st.drawsEvaluated + '</strong></span>' +
         '<span>Guardadas pendientes de resultado: <strong>' + st.savedPending + '</strong></span>' +
