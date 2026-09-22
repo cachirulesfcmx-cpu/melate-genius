@@ -11003,7 +11003,10 @@ async function loadUserDataFromDB() {
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
   
-  state.userDraws = { melate: [], revancha: [], retro: [] };
+  // Se derivan de GAME_CONFIG: añadir un juego nuevo ya no deja fuera sus
+  // sorteos de usuario, como ocurría con tris y chispazo.
+  state.userDraws = {};
+  Object.keys(GAME_CONFIG).forEach(function (g) { state.userDraws[g] = []; });
   if (draws) {
     draws.forEach(d => {
       if (state.userDraws[d.game]) state.userDraws[d.game].push(d.numbers);
@@ -11030,6 +11033,11 @@ async function loadUserDataFromDB() {
     matchedNumbers: p.matched_numbers,
     // La metadata del protocolo v9 viaja dentro del jsonb `score` (_research)
     research: (p.score && p.score._research) ? p.score._research : null,
+    // El enlace con el snapshot colectivo viaja igual (_collective). Sin él,
+    // cada sincronización con Supabase borraba la relación y la reconciliación
+    // quedaba dependiendo sólo del emparejamiento por billete.
+    collective_sha: (p.score && p.score._collective) ? p.score._collective.sha : undefined,
+    collective_target_draw: (p.score && p.score._collective) ? p.score._collective.target_draw : undefined,
     checkedAt: p.checked_at ? new Date(p.checked_at).getTime() : null
   }));
   
@@ -11083,6 +11091,20 @@ async function saveDrawToDB(game, numbers) {
   });
 }
 
+// Empaqueta en el jsonb `score` la metadata sin columna propia: trazabilidad
+// v9 (_research) y enlace con el snapshot colectivo (_collective). Sin esto el
+// enlace se perdía en cada sincronización con Supabase.
+function mgWithPredMeta(pred) {
+  var out = pred.score;
+  if (pred.research) out = Object.assign({}, out, { _research: pred.research });
+  if (pred.collective_sha) {
+    out = Object.assign({}, out, {
+      _collective: { sha: pred.collective_sha, target_draw: pred.collective_target_draw }
+    });
+  }
+  return out;
+}
+
 async function savePredictionToDB(pred) {
   if (!state.user) return;
   await sb.from('predictions').insert({
@@ -11091,7 +11113,7 @@ async function savePredictionToDB(pred) {
     game: pred.game,
     mode: pred.mode,
     ticket: pred.ticket,
-    score: pred.research ? Object.assign({}, pred.score, { _research: pred.research }) : pred.score,
+    score: mgWithPredMeta(pred),
     weights: pred.weights,
     status: pred.status,
     hits: pred.hits,
@@ -11480,7 +11502,7 @@ async function enterApp() {
   // Repara en silencio el feedback colectivo que quedó sin aplicar en
   // versiones anteriores. Idempotente y sin efectos si no hay nada pendiente.
   try {
-    ['melate', 'revancha', 'retro'].forEach(function (g) { mgCollectiveReconcile(g); });
+    Object.keys(GAME_CONFIG).forEach(function (g) { mgCollectiveReconcile(g); });
   } catch (e) { console.warn('MG-COL: reconciliación inicial falló', e); }
 }
 
@@ -21778,6 +21800,65 @@ function mgRenderAlePanel() {
              frozenUnsaved: frozenUnsaved, snapshots: snaps.length };
   }
 
+  // Contraste historial <-> memoria. Si el historial tiene predicciones
+  // colectivas YA evaluadas de este juego y la memoria no aprendió nada, hay
+  // una incompatibilidad y debe verse, no quedarse muda.
+  function mismatch(game, history) {
+    var hist = history || (typeof state !== 'undefined' && state.history) || [];
+    var evaluatedDraws = {}, n = 0;
+    for (var i = 0; i < hist.length; i++) {
+      var h = hist[i];
+      if (!h || h.game !== game || h.mode !== 'collective' || h.status !== 'checked') continue;
+      if (!Array.isArray(h.actual)) continue;
+      evaluatedDraws[h.actual.slice().sort(function (a, b) { return a - b; }).join(',')] = 1;
+      n++;
+    }
+    var historyDraws = Object.keys(evaluatedDraws).length;
+    var st = stats(game);
+    var r = reconcileDryRun(game, hist);
+    return {
+      game: game, historyCollectiveChecked: n, historyDistinctDraws: historyDraws,
+      memoryDraws: st.drawsEvaluated,
+      inconsistent: historyDraws > st.drawsEvaluated,
+      reasons: r.reasons
+    };
+  }
+
+  // Motivos por los que cada snapshot pendiente no se puede reconciliar, sin
+  // escribir nada. Es lo que permite decir QUÉ falta en vez de callar.
+  function reconcileDryRun(game, history) {
+    var hist = history || [], mem = loadMemory(game), snaps = loadSnaps(game);
+    var reasons = {};
+    for (var i = 0; i < snaps.length; i++) {
+      var s = snaps[i];
+      if (mem.seen[s.prediction_sha256]) continue;
+      var why = null;
+      if (s.game !== game) why = 'GAME_MISMATCH';
+      else if (s.state !== 'FROZEN') why = 'UNFROZEN_PREDICTION';
+      else if (!verify(s)) why = 'FREEZE_HASH_MISMATCH';
+      else if (!(s.snapshot_upto < s.target_draw)) why = 'TEMPORAL_LEAK';
+      else {
+        var keys = {};
+        for (var q = 0; q < s.tickets.length; q++)
+          keys[s.tickets[q].slice().sort(function (a, b) { return a - b; }).join(',')] = 1;
+        var acts = {}, cand = 0;
+        for (q = 0; q < hist.length; q++) {
+          var h = hist[q];
+          if (!h || h.game !== game || h.status !== 'checked') continue;
+          if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
+          var link = h.collective_sha && h.collective_sha === s.prediction_sha256;
+          var tick = !h.collective_sha && h.mode === 'collective' &&
+            keys[h.ticket.slice().sort(function (a, b) { return a - b; }).join(',')];
+          if (link || tick) { cand++; acts[h.actual.slice().sort(function (a, b) { return a - b; }).join(',')] = 1; }
+        }
+        if (!cand) why = 'NO_EVALUATED_HISTORY';
+        else if (Object.keys(acts).length !== 1) why = 'AMBIGUOUS_RESULT';
+      }
+      if (why) reasons[why] = (reasons[why] || 0) + 1;
+    }
+    return { reasons: reasons };
+  }
+
   // Reconciliación IDEMPOTENTE: recupera feedback de snapshots cuyo sorteo ya
   // fue evaluado en state.history pero que nunca llegaron a la memoria (por
   // ejemplo, porque el contador de sorteos divergió entre generar y registrar).
@@ -21868,7 +21949,8 @@ function mgRenderAlePanel() {
   // ═══ API pública ══════════════════════════════════════════════════════════
   window.MG_COLLECTIVE = {
     markSaved: markSaved, statusOf: statusOf, stats: stats,
-    reconcile: reconcile, diagnose: diagnose,
+    reconcile: reconcile, diagnose: diagnose, mismatch: mismatch,
+    reconcileDryRun: reconcileDryRun,
     VERSION: VERSION, MODEL_IDS: MODEL_IDS, FLOOR: FLOOR, CAP: CAP, SHRINK_N0: SHRINK_N0,
     prepare: prepare, freeze: freeze, verify: verify, onResult: onResult,
     computeWeights: computeWeights, fuse: fuse, projectCapFloor: projectCapFloor,
@@ -22007,6 +22089,19 @@ function mgRenderCollectivePanel() {
           'SHA <code style="font-size:10px;">' + String(last.prediction_sha256).slice(0, 12) + '…</code> · ' +
           '<span style="color:#22c55e;font-weight:600;">FROZEN</span></div>'
         : '') +
+      (function () {
+        var mm; try { mm = MG_COLLECTIVE.mismatch(game, state.history); } catch (e) { return ''; }
+        if (!mm || !mm.inconsistent) return '';
+        var why = Object.keys(mm.reasons).map(function (k) { return k + '×' + mm.reasons[k]; }).join(' · ');
+        return '<div style="margin-top:10px;padding:8px;border-radius:6px;' +
+          'background:rgba(255,176,32,.10);border:1px solid rgba(255,176,32,.28);' +
+          'font-size:10.5px;color:#ffb020;line-height:1.5;">' +
+          'El historial tiene <strong>' + mm.historyDistinctDraws + '</strong> sorteo(s) colectivos ya comparados ' +
+          'y la memoria registra <strong>' + mm.memoryDraws + '</strong>. ' +
+          (why ? 'Sin reconciliar por: <strong>' + why + '</strong>. ' : '') +
+          'No se aprende de lo que no puede emparejarse de forma inequívoca.' +
+        '</div>';
+      })() +
       '<div style="margin-top:10px;font-size:10.5px;color:var(--text-3);">' +
         'No es una ventaja demostrada: NO_EDGE sigue activo y esta estrategia no participa en Champion Gate ni en el preregistro.' +
       '</div>' +
