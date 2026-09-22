@@ -10870,6 +10870,265 @@ function mgRenderResearchPanel() {
 function mgRenderAjustesView() {
   mgRenderSettingsView();
   mgRenderResearchStatus();
+  try { mgRenderMigrationTools(); } catch (e) { console.warn('MG-MIG: render', e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  §19/§35 · MIGRACIÓN DE MEMORIA LOCAL → GLOBAL
+//  Exportar es SOLO LECTURA. Importar valida y muestra un preview; nunca
+//  importa sin que lo confirmes.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_MIGRATION_ID = 'MG-COLLECTIVE-MIGRATION-LOCAL-TO-GLOBAL-v1';
+
+// Backup lógico completo. No borra ni modifica nada (§3, §34).
+function mgCollectiveExportLocal() {
+  var JUEGOS = ['melate', 'revancha', 'retro', 'chispazo', 'tris'];
+  var out = { migration_id: MG_MIGRATION_ID, exportado_en: new Date().toISOString(),
+              engine: MG_COLLECTIVE.VERSION, juegos: {}, historial_resumen: {} };
+  var K = function (t) { return t.slice().sort(function (a, b) { return a - b; }).join(','); };
+
+  JUEGOS.forEach(function (g) {
+    var memRaw = null, snapRaw = null, err = [];
+    try { memRaw = localStorage.getItem(MG_COLLECTIVE.memKey(g)); } catch (e) { err.push('memoria: ' + e.message); }
+    try { snapRaw = localStorage.getItem(MG_COLLECTIVE.snapKey(g)); } catch (e) { err.push('snapshots: ' + e.message); }
+    var mem = null, snaps = null;
+    try { mem = memRaw ? JSON.parse(memRaw) : null; } catch (e) { err.push('memoria ilegible'); }
+    try { snaps = snapRaw ? JSON.parse(snapRaw) : null; } catch (e) { err.push('snapshots ilegibles'); }
+
+    out.juegos[g] = {
+      errores: err, memoria: mem,
+      snapshots: (snaps || []).map(function (x) {
+        return { prediction_sha256: x.prediction_sha256, engine_version: x.engine_version,
+                 game: x.game, target_draw: x.target_draw, snapshot_upto: x.snapshot_upto,
+                 state: x.state, saved: !!x.saved, saved_at: x.saved_at || null,
+                 generated_at: x.generated_at, seed: x.seed || null, run_id: x.run_id || null,
+                 model_ids: x.model_ids, model_weights: x.model_weights,
+                 model_picks: x.model_picks, tickets: x.tickets,
+                 sello_valido: (function () { try { return MG_COLLECTIVE.verify(x); } catch (e) { return null; } })(),
+                 estado_actual: (function () {
+                   try { return MG_COLLECTIVE.statusOf(x, MG_COLLECTIVE.loadMemory(g)); } catch (e) { return null; }
+                 })() };
+      }),
+      estado: (function () { try { return MG_COLLECTIVE.stats(g); } catch (e) { return null; } })(),
+      global: (function () { try { return MG_GLOBAL.status(g); } catch (e) { return null; } })()
+    };
+
+    var col = (state.history || []).filter(function (h) {
+      return h && h.game === g && h.mode === 'collective';
+    });
+    var grupos = {};
+    col.forEach(function (h) {
+      if (h.status !== 'checked' || !Array.isArray(h.actual)) return;
+      var rk = K(h.actual);
+      grupos[rk] = grupos[rk] || { resultado: h.actual, boletos: 0, con_sello: 0, tickets: [] };
+      grupos[rk].boletos++; grupos[rk].tickets.push(h.ticket);
+      if (h.collective_sha) grupos[rk].con_sello++;
+    });
+    out.historial_resumen[g] = {
+      colectivas: col.length,
+      evaluadas: col.filter(function (h) { return h.status === 'checked'; }).length,
+      pendientes: col.filter(function (h) { return h.status === 'pending'; }).length,
+      con_collective_sha: col.filter(function (h) { return !!h.collective_sha; }).length,
+      sorteos_distintos: Object.keys(grupos).length,
+      grupos: Object.keys(grupos).map(function (kk) { return grupos[kk]; })
+    };
+  });
+
+  out.hash = (function () {
+    var t = JSON.stringify(out), h = 0;
+    for (var i = 0; i < t.length; i++) h = ((h << 5) - h + t.charCodeAt(i)) | 0;
+    return 'x' + (h >>> 0).toString(16) + '-' + t.length;
+  })();
+  return out;
+}
+
+function mgCollectiveDownloadExport() {
+  var data;
+  try { data = mgCollectiveExportLocal(); }
+  catch (e) { showToast('No se pudo exportar: ' + e.message, 'error'); return; }
+  try {
+    var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'melate-memoria-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+    showToast('Memoria exportada · ' + data.hash, 'success');
+  } catch (e) {
+    window.MG_EXPORT = data;
+    showToast('Descarga bloqueada; queda en window.MG_EXPORT', 'info');
+  }
+}
+
+// Valida un export y devuelve la clasificación de la §4/§21. NO importa nada.
+function mgCollectiveValidateExport(data) {
+  var IDS = MG_COLLECTIVE.MODEL_IDS;
+  var res = { migration_id: MG_MIGRATION_ID, por_juego: {}, total: {
+    found: 0, verified: 0, unverified: 0, ambiguous: 0, invalid: 0, duplicates: 0, importable: 0 } };
+
+  MG_GLOBAL.GAMES.forEach(function (g) {
+    var j = (data && data.juegos && data.juegos[g]) || null;
+    var fila = { found: 0, verified: 0, unverified: 0, ambiguous: 0, invalid: 0,
+                 duplicates: 0, importable: 0, motivos: {}, casos: [] };
+    var snaps = (j && j.snapshots) || [];
+    var gl = MG_GLOBAL.readCache(g);
+    var yaGlobal = (gl && gl.memory && gl.memory.seen) || {};
+
+    snaps.forEach(function (x) {
+      fila.found++;
+      var motivo = null;
+      // A · snapshot presente (lo es por construcción)  B · sello válido
+      if (x.state !== 'FROZEN') motivo = 'INVALID:UNFROZEN';
+      else if (x.sello_valido !== true) motivo = 'INVALID:FREEZE_HASH_MISMATCH';
+      // E · temporalidad
+      else if (!(x.snapshot_upto < x.target_draw)) motivo = 'INVALID:TEMPORAL_LEAK';
+      // H · model_picks disponibles (§22)
+      else if (!x.model_picks || IDS.some(function (id) { return !Array.isArray(x.model_picks[id]); }))
+        motivo = 'INVALID:MODEL_PICKS_MISSING';
+      // F · evaluación consistente: ¿la memoria local ya la aprendió?
+      else if (!(j.memoria && j.memoria.seen && j.memoria.seen[x.prediction_sha256]))
+        motivo = 'UNVERIFIED:SIN_EVALUACION_LOCAL';
+      // C · concurso oficial conocido  ← el bloqueo real hoy
+      else motivo = 'UNVERIFIED:SIN_CONCURSO_OFICIAL';
+
+      // G · ¿ya existe en el cerebro global?
+      if (motivo.indexOf('INVALID') !== 0) {
+        var dup = Object.keys(yaGlobal).some(function (kk) { return kk.indexOf(g + ':') === 0; });
+        if (dup && Object.keys(yaGlobal).length && x.__yaGlobal) motivo = 'DUPLICATE';
+      }
+
+      var clase = motivo.split(':')[0].toLowerCase();
+      if (clase === 'invalid') fila.invalid++;
+      else if (clase === 'duplicate') fila.duplicates++;
+      else if (clase === 'unverified') fila.unverified++;
+      else if (clase === 'ambiguous') fila.ambiguous++;
+      else { fila.verified++; fila.importable++; }
+      fila.motivos[motivo] = (fila.motivos[motivo] || 0) + 1;
+      fila.casos.push({ sha: String(x.prediction_sha256).slice(0, 12),
+                        target_draw: x.target_draw, motivo: motivo });
+    });
+
+    res.por_juego[g] = fila;
+    ['found', 'verified', 'unverified', 'ambiguous', 'invalid', 'duplicates', 'importable']
+      .forEach(function (kk) { res.total[kk] += fila[kk]; });
+  });
+  return res;
+}
+
+function mgCollectiveHandleImportFile(input) {
+  var f = input && input.files && input.files[0];
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function () {
+    var data;
+    try { data = JSON.parse(r.result); }
+    catch (e) { showToast('El archivo no es un JSON válido', 'error'); return; }
+    if (!data || !data.juegos) { showToast('No parece un export de memoria', 'error'); return; }
+    var val;
+    try { val = mgCollectiveValidateExport(data); }
+    catch (e) { showToast('No se pudo validar: ' + e.message, 'error'); return; }
+    window.MG_IMPORT_PREVIEW = { data: data, validation: val };
+    mgRenderMigrationTools(val);
+    showToast('Validado. Revisa el preview antes de importar.', 'info');
+  };
+  r.readAsText(f);
+}
+
+function mgRenderMigrationTools(preview) {
+  var host = document.getElementById('mg-settings-body');
+  if (!host) return;
+  var prev = document.getElementById('mg-migration-card');
+  if (prev) prev.remove();
+
+  var estados = MG_GLOBAL.GAMES.map(function (g) {
+    var st = MG_GLOBAL.status(g);
+    return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;">' +
+      '<span>' + g + '</span><span style="color:var(--text-3);">' +
+      (st.version === null ? 'sin memoria global' : 'v' + st.version + ' · ' + st.observations + ' obs') +
+      '</span></div>';
+  }).join('');
+
+  var tabla = '';
+  if (preview) {
+    var t = preview.total;
+    tabla =
+      '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">' +
+      '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3);margin-bottom:4px;">Preview de la migración</div>' +
+      '<div style="font-size:11px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;">' +
+      '<tr style="color:var(--text-3);text-align:right;"><th style="text-align:left;">juego</th>' +
+      '<th>found</th><th>verif.</th><th>unverif.</th><th>ambig.</th><th>inval.</th><th>dup.</th><th>import.</th></tr>' +
+      MG_GLOBAL.GAMES.map(function (g) {
+        var f = preview.por_juego[g];
+        return '<tr style="text-align:right;"><td style="text-align:left;">' + g + '</td><td>' +
+          f.found + '</td><td>' + f.verified + '</td><td>' + f.unverified + '</td><td>' +
+          f.ambiguous + '</td><td>' + f.invalid + '</td><td>' + f.duplicates + '</td><td><strong>' +
+          f.importable + '</strong></td></tr>';
+      }).join('') +
+      '<tr style="text-align:right;border-top:1px solid var(--border);font-weight:600;">' +
+      '<td style="text-align:left;">total</td><td>' + t.found + '</td><td>' + t.verified +
+      '</td><td>' + t.unverified + '</td><td>' + t.ambiguous + '</td><td>' + t.invalid +
+      '</td><td>' + t.duplicates + '</td><td>' + t.importable + '</td></tr>' +
+      '</table></div>' +
+      (function () {
+        var m = {};
+        MG_GLOBAL.GAMES.forEach(function (g) {
+          Object.keys(preview.por_juego[g].motivos).forEach(function (kk) {
+            m[kk] = (m[kk] || 0) + preview.por_juego[g].motivos[kk];
+          });
+        });
+        var ks = Object.keys(m);
+        return ks.length
+          ? '<div style="margin-top:6px;font-size:10px;color:var(--text-3);">' +
+            ks.map(function (kk) { return kk + ' ×' + m[kk]; }).join(' · ') + '</div>'
+          : '';
+      })() +
+      '<button ' + (t.importable ? '' : 'disabled ') +
+        'onclick="mgCollectiveImportConfirm()" style="margin-top:8px;padding:6px 12px;border-radius:6px;' +
+        'font-size:11px;font-weight:600;cursor:' + (t.importable ? 'pointer' : 'not-allowed') + ';' +
+        'background:' + (t.importable ? 'rgba(34,197,94,.18)' : 'rgba(128,128,128,.12)') + ';' +
+        'border:1px solid ' + (t.importable ? 'rgba(34,197,94,.42)' : 'var(--border)') + ';' +
+        'color:' + (t.importable ? '#22c55e' : 'var(--text-3)') + ';">' +
+        'Importar ' + t.importable + ' observación(es) al cerebro global</button>' +
+      (t.importable ? '' :
+        '<div style="margin-top:6px;font-size:10px;color:#ffb020;">Nada es importable todavía: ' +
+        'el cerebro global se identifica por número de CONCURSO OFICIAL y esos números no ' +
+        'están en el proyecto. Nada se inventa.</div>') +
+      '</div>';
+  }
+
+  var card = document.createElement('div');
+  card.className = 'glass card mg-group';
+  card.id = 'mg-migration-card';
+  card.innerHTML =
+    '<div class="card-head"><div class="card-title"><span class="card-title-icon">🌐</span> ' +
+    'Ensamble Colectivo · memoria global</div></div>' +
+    '<div class="mg-group-desc">Tu historial es privado. La memoria estadística es compartida. ' +
+    'El servidor es la fuente de verdad; aquí sólo hay una caché.</div>' +
+    '<div style="padding:0 4px 8px;">' + estados + '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 4px 4px;">' +
+      '<button onclick="mgCollectiveDownloadExport()" style="padding:6px 12px;border-radius:6px;' +
+      'font-size:11px;font-weight:600;cursor:pointer;background:rgba(99,102,241,.16);' +
+      'border:1px solid rgba(99,102,241,.4);color:#818cf8;">Exportar memoria local</button>' +
+      '<label style="padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;' +
+      'background:rgba(99,102,241,.08);border:1px solid var(--border);color:var(--text-2);">' +
+      'Importar y validar' +
+      '<input type="file" accept="application/json,.json" style="display:none;" ' +
+      'onchange="mgCollectiveHandleImportFile(this)"></label>' +
+    '</div>' +
+    '<div style="padding:0 4px 4px;font-size:10px;color:var(--text-3);">' +
+    'Exportar es sólo lectura: no borra ni modifica nada. Importar valida y muestra un ' +
+    'preview; no importa sin confirmación.</div>' +
+    tabla;
+  host.appendChild(card);
+}
+
+function mgCollectiveImportConfirm() {
+  var p = window.MG_IMPORT_PREVIEW;
+  if (!p || !p.validation || !p.validation.total.importable) {
+    showToast('No hay observaciones verificadas que importar', 'info');
+    return;
+  }
+  showToast('Importación de ' + p.validation.total.importable + ' observación(es) preparada', 'info');
 }
 </script>
 <script>// ═══════════════════════════════════════════════════════════
@@ -11038,6 +11297,16 @@ async function loadUserDataFromDB() {
     // quedaba dependiendo sólo del emparejamiento por billete.
     collective_sha: (p.score && p.score._collective) ? p.score._collective.sha : undefined,
     collective_target_draw: (p.score && p.score._collective) ? p.score._collective.target_draw : undefined,
+    collective_upto: (p.score && p.score._collective) ? p.score._collective.upto : undefined,
+    collective_seed: (p.score && p.score._collective) ? p.score._collective.seed : undefined,
+    collective_created_at: (p.score && p.score._collective) ? p.score._collective.created_at : undefined,
+    collective_set_sha: (p.score && p.score._collective) ? p.score._collective.set_sha : undefined,
+    collective_ticket_count: (p.score && p.score._collective) ? p.score._collective.ticket_count : undefined,
+    // Sin esto, el desempate temporal P5 no tiene con qué trabajar tras un
+    // viaje de ida y vuelta: la fila vuelve sin ninguna marca de creación.
+    createdAt: (p.score && p.score._collective && p.score._collective.saved_at)
+      ? Date.parse(p.score._collective.saved_at)
+      : (p.created_at ? Date.parse(p.created_at) : undefined),
     checkedAt: p.checked_at ? new Date(p.checked_at).getTime() : null
   }));
   
@@ -11099,7 +11368,13 @@ function mgWithPredMeta(pred) {
   if (pred.research) out = Object.assign({}, out, { _research: pred.research });
   if (pred.collective_sha) {
     out = Object.assign({}, out, {
-      _collective: { sha: pred.collective_sha, target_draw: pred.collective_target_draw }
+      _collective: {
+        sha: pred.collective_sha, target_draw: pred.collective_target_draw,
+        game: pred.game, upto: pred.collective_upto, seed: pred.collective_seed,
+        created_at: pred.collective_created_at, set_sha: pred.collective_set_sha,
+        ticket_count: pred.collective_ticket_count,
+        saved_at: pred.createdAt ? new Date(pred.createdAt).toISOString() : null
+      }
     });
   }
   return out;
@@ -11548,6 +11823,17 @@ function loadGame(game) {
   
   state.currentGame = game;
   state.maxNumber = GAME_CONFIG[game].maxNum;
+
+  // 🌐 El cerebro global es la fuente de verdad; la caché local sólo lo sirve
+  // mientras llega. Tris nunca entra (§2).
+  try {
+    mgSyncCollectiveAvailability();
+    if (MG_GLOBAL.eligible(game)) {
+      MG_GLOBAL.sync(game).then(function () {
+        try { if (state.mode === 'collective') mgRenderCollectivePanel(); } catch (e) {}
+      });
+    }
+  } catch (e) { console.warn('MG-GLOBAL: sync', e); }
   
   // Merge base + user draws
   const base = BASE_DRAWS[game] || [];
@@ -12550,6 +12836,18 @@ async function selectGame(game) {
 // ═══════════════════════════════════════════════════════════
 
 function setMode(m) {
+  // §2/§31 · Tris tiene motor posicional propio y no participa en el Ensamble
+  // Colectivo. Ocultar el botón no basta: cualquier otra vía que llegue aquí
+  // tiene que rebotar igual, o la app diría "colectivo" y entregaría otra cosa.
+  if (m === 'collective') {
+    var apto = true;
+    try { apto = MG_GLOBAL.eligible(state.currentGame); } catch (e) {}
+    if (!apto) {
+      try { showToast('El Ensamble Colectivo no está disponible para ' +
+        ((GAME_CONFIG[state.currentGame] || {}).name || state.currentGame), 'info'); } catch (e) {}
+      m = 'balanced';
+    }
+  }
   state.mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
   try { mgRenderCollectivePanel(); } catch (e) {}
@@ -21590,7 +21888,15 @@ function mgRenderAlePanel() {
         reject('REVANCHA_LENGTH_EQUALS_MELATE', 'longitudes idénticas: ' + rev);
     }
 
-    var mem = loadMemory(game);
+    // 🌐 §38 · se aprende de la memoria GLOBAL si está sincronizada; si no,
+    // de la local. computeWeights no cambia: sólo cambia de dónde sale `mem`.
+    var mem = loadMemory(game), memSource = 'local';
+    try {
+      if (typeof MG_GLOBAL !== 'undefined' && MG_GLOBAL.eligible(game)) {
+        var g = MG_GLOBAL.memoryFor(game);
+        if (g.source === 'global') { mem = g.memory; memSource = 'global:v' + g.version; }
+      }
+    } catch (e) { console.warn('MG-COL: memoria global no disponible', e); }
     var cw = computeWeights(mem, state.models, N, k);
     var probs = fuse(state.models, cw.weights, N);
 
@@ -21603,7 +21909,8 @@ function mgRenderAlePanel() {
       engine_version: VERSION, game: game, N: N, k: k,
       target_draw: targetDraw, snapshot_upto: snapshotUpto,
       weights: cw.weights, detail: cw.detail, model_picks: cw.picks,
-      observations: cw.observations, probs: probs, memory: mem
+      observations: cw.observations, probs: probs, memory: mem,
+      memory_source: memSource
     };
   }
 
@@ -21824,6 +22131,217 @@ function mgRenderAlePanel() {
     };
   }
 
+  // ═══ IDENTIDAD HISTÓRICA ══════════════════════════════════════════════════
+  // Decide QUÉ resultado pertenece a un snapshot, en este orden estricto:
+  //   P1  collective_sha exacto
+  //   P2  game + collective_target_draw exacto
+  //   P3  game + resultado + CONJUNTO COMPLETO de boletos
+  //   P4  game + resultado + máxima coincidencia exacta, con máximo ÚNICO
+  //   P5  orden temporal verificable, sólo como desempate inequívoco
+  // Nunca se desempata por índice de array, por orden de localStorage, por
+  // "el primero", por "el último" ni por Date.now(). Si dos candidatos
+  // presentan exactamente la misma evidencia: AMBIGUOUS_RESULT y no se aprende.
+  function tkey(t) { return t.slice().sort(function (a, b) { return a - b; }).join(','); }
+  function skey(list) {
+    var u = {}; for (var i = 0; i < list.length; i++) u[tkey(list[i])] = 1;
+    return Object.keys(u).sort().join('|');
+  }
+  function tsOf(h) {
+    var v = h && (h.createdAt || h.created_at || h.collective_created_at);
+    if (typeof v === 'string') { var p = Date.parse(v); return isFinite(p) ? p : null; }
+    return (typeof v === 'number' && isFinite(v)) ? v : null;
+  }
+
+  // Agrupa el historial YA evaluado por RESULTADO. Cada grupo es un sorteo
+  // candidato, con su conjunto de boletos y su marca temporal más temprana.
+  function resultGroups(game, hist, onlyUnlinked) {
+    var by = {};
+    for (var i = 0; i < hist.length; i++) {
+      var h = hist[i];
+      if (!h || h.game !== game || h.mode !== 'collective' || h.status !== 'checked') continue;
+      if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
+      if (onlyUnlinked && h.collective_sha) continue;
+      var rk = tkey(h.actual);
+      var g = by[rk];
+      if (!g) g = by[rk] = { resultKey: rk, actual: h.actual.slice().sort(function (a, b) { return a - b; }),
+                             tset: {}, entries: [], firstTs: null, setSha: null };
+      g.tset[tkey(h.ticket)] = 1;
+      g.entries.push(h.id);
+      if (!g.setSha && h.collective_set_sha) g.setSha = h.collective_set_sha;
+      var ts = tsOf(h);
+      if (ts !== null && (g.firstTs === null || ts < g.firstTs)) g.firstTs = ts;
+    }
+    return Object.keys(by).sort().map(function (k) {
+      by[k].ticketKeys = Object.keys(by[k].tset).sort();
+      return by[k];
+    });
+  }
+
+  // P5 · desempate temporal. Sólo resuelve cuando TODAS las marcas existen y
+  // el orden es estricto: un único grupo puede haber nacido después de ESTE
+  // snapshot, y ningún otro snapshot del juego se interpone entre ambos.
+  // Nunca elige "el más cercano": si hay duda, devuelve null.
+  function temporalPick(s, groups, snaps) {
+    var sTs = Date.parse(s.generated_at);
+    if (!isFinite(sTs)) return null;
+    for (var i = 0; i < groups.length; i++) if (groups[i].firstTs === null) return null;
+    var possible = groups.filter(function (g) { return g.firstTs >= sTs; });
+    if (possible.length !== 1) return null;
+    var g = possible[0], list = snaps || [];
+    for (i = 0; i < list.length; i++) {
+      if (list[i].prediction_sha256 === s.prediction_sha256) continue;
+      var oTs = Date.parse(list[i].generated_at);
+      if (isFinite(oTs) && oTs > sTs && oTs <= g.firstTs) return null;   // otro se interpone
+    }
+    return g;
+  }
+
+  // Validaciones que no dependen del historial.
+  function precheck(s, game) {
+    if (s.game !== game) return 'GAME_MISMATCH';
+    if (s.state !== 'FROZEN') return 'UNFROZEN_PREDICTION';
+    if (!verify(s)) return 'FREEZE_HASH_MISMATCH';
+    if (!(s.snapshot_upto < s.target_draw)) return 'TEMPORAL_LEAK';
+    return null;
+  }
+
+  function resolveSnapshot(s, hist, snaps) {
+    var out = { priority: null, actual: null, reason: null, detail: '', candidates: [] };
+    var i, h;
+    var sSet = skey(s.tickets), sKeys = {};
+    for (i = 0; i < s.tickets.length; i++) sKeys[tkey(s.tickets[i])] = 1;
+
+    // ── P1 · SHA exacto ──────────────────────────────────────────────────
+    var lActs = {}, lN = 0;
+    for (i = 0; i < hist.length; i++) {
+      h = hist[i];
+      if (!h || h.game !== s.game || h.status !== 'checked') continue;
+      if (!Array.isArray(h.actual) || !Array.isArray(h.ticket)) continue;
+      if (h.collective_sha && h.collective_sha === s.prediction_sha256) {
+        lActs[tkey(h.actual)] = 1; lN++;
+      }
+    }
+    if (lN) {
+      var lk = Object.keys(lActs);
+      if (lk.length === 1) { out.priority = 1; out.actual = lk[0].split(',').map(Number); return out; }
+      out.reason = 'AMBIGUOUS_RESULT';
+      out.detail = 'el mismo SHA aparece con ' + lk.length + ' resultados distintos';
+      return out;
+    }
+
+    // ── P2 · game + collective_target_draw exacto ────────────────────────
+    var tActs = {}, tN = 0;
+    for (i = 0; i < hist.length; i++) {
+      h = hist[i];
+      if (!h || h.game !== s.game || h.mode !== 'collective' || h.status !== 'checked') continue;
+      if (!Array.isArray(h.actual) || !Array.isArray(h.ticket)) continue;
+      if (h.collective_sha) continue;                        // sellada a OTRO snapshot
+      if (h.collective_target_draw === s.target_draw) { tActs[tkey(h.actual)] = 1; tN++; }
+    }
+    if (tN) {
+      var tk = Object.keys(tActs);
+      if (tk.length === 1) { out.priority = 2; out.actual = tk[0].split(',').map(Number); return out; }
+      out.reason = 'AMBIGUOUS_RESULT';
+      out.detail = 'el target ' + s.target_draw + ' aparece con ' + tk.length + ' resultados distintos';
+      return out;
+    }
+
+    // ── P3/P4/P5 · sólo historial sin sello ──────────────────────────────
+    var groups = resultGroups(s.game, hist, true);
+    for (i = 0; i < groups.length; i++) {
+      var g = groups[i], inter = 0;
+      for (var q = 0; q < g.ticketKeys.length; q++) if (sKeys[g.ticketKeys[q]]) inter++;
+      g.exactTicketMatches = inter;
+      g.completeSet = g.ticketKeys.join('|') === sSet;
+      // ¿el grupo arrastra boletos que NO pertenecen a este snapshot? Eso
+      // ocurre cuando un resultado liquidó de golpe predicciones pendientes de
+      // varios snapshots. Esa evidencia está mezclada y no identifica a nadie.
+      g.foreign = false;
+      for (q = 0; q < g.ticketKeys.length; q++) if (!sKeys[g.ticketKeys[q]]) { g.foreign = true; break; }
+    }
+    out.candidates = groups;
+
+    // P3 · conjunto COMPLETO. Un solo boleto NUNCA basta si hay varios grupos.
+    var full = groups.filter(function (x) { return x.completeSet; });
+    if (full.length === 1) { out.priority = 3; out.actual = full[0].actual; return out; }
+    // Si varios grupos presentan el conjunto COMPLETO, P3 no discrimina, pero
+    // eso no cierra el caso: se sigue bajando por la escalera CON ESOS MISMOS
+    // candidatos. Nunca se amplía el conjunto de candidatos al bajar.
+    var identicos = full.length > 1;
+    var pool = identicos ? full : groups;
+
+    // P4 · máxima coincidencia exacta, sólo si el máximo es ÚNICO y la
+    // evidencia no está mezclada con boletos de otros snapshots (§5).
+    var hit = pool.filter(function (x) { return x.exactTicketMatches > 0; });
+    if (!hit.length) { out.reason = 'NO_EVALUATED_HISTORY'; return out; }
+    var limpio = hit.filter(function (x) { return !x.foreign; });
+    if (!limpio.length) {
+      out.reason = 'AMBIGUOUS_RESULT';
+      out.detail = 'la evidencia mezcla boletos de varios snapshots; ninguna identifica a este';
+      return out;
+    }
+    var max = 0;
+    for (i = 0; i < limpio.length; i++) if (limpio[i].exactTicketMatches > max) max = limpio[i].exactTicketMatches;
+    var top = limpio.filter(function (x) { return x.exactTicketMatches === max; });
+    if (top.length === 1) { out.priority = 4; out.actual = top[0].actual; return out; }
+
+    // P5 · desempate temporal inequívoco.
+    var pick = temporalPick(s, top, snaps);
+    if (pick) { out.priority = 5; out.actual = pick.actual; return out; }
+
+    out.reason = 'AMBIGUOUS_RESULT';
+    out.detail = identicos
+      ? top.length + ' sorteos con el conjunto de boletos IDÉNTICO y sin orden temporal verificable'
+      : top.length + ' candidatos con la misma evidencia (' + max + ' boleto(s) exacto(s))';
+    return out;
+  }
+
+  // §3 · Diagnóstico estructurado de los casos que siguen sin resolverse.
+  // Sólo lee el dispositivo del propio usuario y no expone SHA completos.
+  function diagnoseAmbiguity(game, history) {
+    var hist = history || (typeof state !== 'undefined' && state.history) || [];
+    var mem = loadMemory(game), snaps = loadSnaps(game), cases = [];
+    for (var i = 0; i < snaps.length; i++) {
+      var s = snaps[i];
+      if (mem.seen[s.prediction_sha256]) continue;
+      if (precheck(s, game)) continue;
+      var r = resolveSnapshot(s, hist, snaps);
+      if (r.priority) continue;                              // ya se resuelve
+      cases.push({
+        game: game,
+        target_draw: s.target_draw,
+        snapshot_upto: s.snapshot_upto,
+        snapshot_id: String(s.prediction_sha256).slice(0, 12),
+        sha_short: String(s.prediction_sha256).slice(0, 12),
+        created_at: s.generated_at,
+        seed: s.seed || null,
+        run_id: s.run_id || null,
+        ticket_count: s.tickets.length,
+        tickets: s.tickets.map(function (t) { return t.slice(); }),
+        set_sha: String(mgSha256(skey(s.tickets))).slice(0, 16),
+        reason: r.reason || 'AMBIGUOUS_RESULT',
+        detail: r.detail,
+        candidate_count: r.candidates.length,
+        candidates: r.candidates.map(function (g) {
+          return {
+            result: g.actual.slice(),
+            foreignTickets: !!g.foreign,
+            result_fingerprint: String(mgSha256(g.resultKey)).slice(0, 12),
+            history_entry_ids: g.entries.slice(),
+            history_ticket_count: g.ticketKeys.length,
+            exactTicketMatches: g.exactTicketMatches,
+            completeSetMatch: !!g.completeSet,
+            set_sha: String(mgSha256(g.ticketKeys.join('|'))).slice(0, 16),
+            declared_set_sha: g.setSha || null,
+            first_seen: g.firstTs ? new Date(g.firstTs).toISOString() : null
+          };
+        })
+      });
+    }
+    return { game: game, engine: VERSION, ambiguous: cases.length,
+             stats: stats(game), cases: cases };
+  }
+
   // Motivos por los que cada snapshot pendiente no se puede reconciliar, sin
   // escribir nada. Es lo que permite decir QUÉ falta en vez de callar.
   function reconcileDryRun(game, history) {
@@ -21832,27 +22350,10 @@ function mgRenderAlePanel() {
     for (var i = 0; i < snaps.length; i++) {
       var s = snaps[i];
       if (mem.seen[s.prediction_sha256]) continue;
-      var why = null;
-      if (s.game !== game) why = 'GAME_MISMATCH';
-      else if (s.state !== 'FROZEN') why = 'UNFROZEN_PREDICTION';
-      else if (!verify(s)) why = 'FREEZE_HASH_MISMATCH';
-      else if (!(s.snapshot_upto < s.target_draw)) why = 'TEMPORAL_LEAK';
-      else {
-        var keys = {};
-        for (var q = 0; q < s.tickets.length; q++)
-          keys[s.tickets[q].slice().sort(function (a, b) { return a - b; }).join(',')] = 1;
-        var acts = {}, cand = 0;
-        for (q = 0; q < hist.length; q++) {
-          var h = hist[q];
-          if (!h || h.game !== game || h.status !== 'checked') continue;
-          if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
-          var link = h.collective_sha && h.collective_sha === s.prediction_sha256;
-          var tick = !h.collective_sha && h.mode === 'collective' &&
-            keys[h.ticket.slice().sort(function (a, b) { return a - b; }).join(',')];
-          if (link || tick) { cand++; acts[h.actual.slice().sort(function (a, b) { return a - b; }).join(',')] = 1; }
-        }
-        if (!cand) why = 'NO_EVALUATED_HISTORY';
-        else if (Object.keys(acts).length !== 1) why = 'AMBIGUOUS_RESULT';
+      var why = precheck(s, game);
+      if (!why) {
+        var r = resolveSnapshot(s, hist, snaps);
+        if (!r.priority) why = r.reason || 'AMBIGUOUS_RESULT';
       }
       if (why) reasons[why] = (reasons[why] || 0) + 1;
     }
@@ -21876,40 +22377,15 @@ function mgRenderAlePanel() {
         skipped.push({ sha: s.prediction_sha256, code: 'RECONCILIATION_SKIPPED',
                        reason: reason, detail: detail || '' });
       }
-      if (s.game !== game) { skip('GAME_MISMATCH', s.game); continue; }
-      if (s.state !== 'FROZEN') { skip('UNFROZEN_PREDICTION'); continue; }
-      if (!verify(s)) { skip('FREEZE_HASH_MISMATCH'); continue; }
-      if (!(s.snapshot_upto < s.target_draw)) { skip('TEMPORAL_LEAK'); continue; }
+      var pre = precheck(s, game);
+      if (pre) { skip(pre, pre === 'GAME_MISMATCH' ? s.game : ''); continue; }
 
-      // Entradas de historial YA evaluadas que corresponden a este snapshot.
-      var keys = {}, kOrder = [];
-      for (var q = 0; q < s.tickets.length; q++) {
-        var kk = s.tickets[q].slice().sort(function (a, b) { return a - b; }).join(',');
-        keys[kk] = 1; kOrder.push(kk);
-      }
-      var cands = [];
-      for (q = 0; q < hist.length; q++) {
-        var h = hist[q];
-        if (!h || h.game !== game || h.status !== 'checked') continue;
-        if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
-        // El enlace fuerte es el SHA estampado al guardar; si no está, se
-        // acepta la coincidencia EXACTA del billete.
-        var byLink = h.collective_sha && h.collective_sha === s.prediction_sha256;
-        var byTicket = !h.collective_sha && h.mode === 'collective' &&
-          keys[h.ticket.slice().sort(function (a, b) { return a - b; }).join(',')];
-        if (byLink || byTicket) cands.push(h);
-      }
-      if (!cands.length) { skip('NO_EVALUATED_HISTORY'); continue; }
+      // Identidad histórica: escalera determinista P1..P5. Devuelve el
+      // resultado SÓLO cuando el candidato es inequívoco.
+      var res = resolveSnapshot(s, hist, snaps);
+      if (!res.priority) { skip(res.reason || 'AMBIGUOUS_RESULT', res.detail); continue; }
 
-      // Todas deben apuntar al MISMO resultado: si hay dos distintos, el
-      // sorteo es ambiguo y no se aprende.
-      var actuals = {};
-      for (q = 0; q < cands.length; q++)
-        actuals[cands[q].actual.slice().sort(function (a, b) { return a - b; }).join(',')] = 1;
-      var uniq = Object.keys(actuals);
-      if (uniq.length !== 1) { skip('AMBIGUOUS_RESULT', uniq.length + ' resultados distintos'); continue; }
-
-      var actual = uniq[0].split(',').map(Number);
+      var actual = res.actual;
       var spec = (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[game]) || {};
       if (actual.length !== ((spec.pick) || 6)) { skip('INVALID_RESULT', actual.length + ' números'); continue; }
 
@@ -21918,7 +22394,8 @@ function mgRenderAlePanel() {
       var r = onResult(game, s.target_draw, actual);
       if (r.evaluated.length) {
         applied.push({ sha: s.prediction_sha256, target_draw: s.target_draw,
-                       hits_by_ticket: r.evaluated[0].hits_by_ticket, source: 'reconciliation' });
+                       hits_by_ticket: r.evaluated[0].hits_by_ticket,
+                       matched_by: 'P' + res.priority, source: 'reconciliation' });
         mem = loadMemory(game);                                  // releer memoria
       } else {
         var code = (r.rejected[0] && r.rejected[0].code) || 'UNKNOWN';
@@ -21950,7 +22427,8 @@ function mgRenderAlePanel() {
   window.MG_COLLECTIVE = {
     markSaved: markSaved, statusOf: statusOf, stats: stats,
     reconcile: reconcile, diagnose: diagnose, mismatch: mismatch,
-    reconcileDryRun: reconcileDryRun,
+    reconcileDryRun: reconcileDryRun, diagnoseAmbiguity: diagnoseAmbiguity,
+    resolveSnapshot: resolveSnapshot, resultGroups: resultGroups, skey: skey,
     VERSION: VERSION, MODEL_IDS: MODEL_IDS, FLOOR: FLOOR, CAP: CAP, SHRINK_N0: SHRINK_N0,
     prepare: prepare, freeze: freeze, verify: verify, onResult: onResult,
     computeWeights: computeWeights, fuse: fuse, projectCapFloor: projectCapFloor,
@@ -21960,6 +22438,120 @@ function mgRenderAlePanel() {
     _lastPrep: null
   };
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  🌐 GLOBAL COLLECTIVE BRAIN · cliente
+//
+//  Supabase es la FUENTE DE VERDAD de la memoria colectiva (§17). localStorage
+//  guarda sólo una CACHÉ, para que la app siga funcionando sin conexión (§39).
+//  El cliente nunca escribe la memoria global: envía evidencia a la Edge
+//  Function, que verifica el sello y calcula (§12).
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_GLOBAL = (function () {
+  'use strict';
+  var GAMES = ['melate', 'revancha', 'retro', 'chispazo'];   // Tris fuera (§2)
+  var cacheKey = function (game) { return 'mg_global_cache_' + game; };
+
+  function elegible(game) { return GAMES.indexOf(game) >= 0; }
+
+  function readCache(game) {
+    try {
+      var raw = localStorage.getItem(cacheKey(game));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function writeCache(game, payload) {
+    try { localStorage.setItem(cacheKey(game), JSON.stringify(payload)); } catch (e) {}
+  }
+
+  // Descarga la última versión global. Si falla, la caché sigue sirviendo.
+  function sync(game) {
+    if (!elegible(game)) return Promise.resolve(null);
+    if (typeof sb === 'undefined' || !sb) return Promise.resolve(readCache(game));
+    return sb.from('collective_global_state')
+      .select('version, observations, memory, new_memory_hash, created_at')
+      .eq('game', game).order('version', { ascending: false }).limit(1)
+      .then(function (r) {
+        if (r.error || !r.data || !r.data.length) return readCache(game);
+        var row = r.data[0];
+        var payload = { game: game, version: row.version, observations: row.observations,
+                        memory: row.memory, hash: row.new_memory_hash,
+                        synced_at: new Date().toISOString(), server_at: row.created_at };
+        writeCache(game, payload);                 // §17 el servidor gana
+        return payload;
+      })
+      .catch(function () { return readCache(game); });
+  }
+
+  // Memoria que debe usar la generación: la global si existe, si no la local.
+  function memoryFor(game) {
+    var c = readCache(game);
+    if (c && c.memory && Array.isArray(c.memory.observations)) {
+      return { source: 'global', version: c.version, memory: c.memory, synced_at: c.synced_at };
+    }
+    return { source: 'local', version: null, memory: MG_COLLECTIVE.loadMemory(game),
+             synced_at: null };
+  }
+
+  // Envía EVIDENCIA. El servidor verifica el sello y calcula. Nunca pesos.
+  function submit(game, contest, snapshot) {
+    if (!elegible(game)) {
+      return Promise.resolve({ ok: false, code: 'GAME_NOT_ELIGIBLE', detail: game });
+    }
+    if (typeof sb === 'undefined' || !sb) {
+      return Promise.resolve({ ok: false, code: 'OFFLINE', detail: 'sin cliente Supabase' });
+    }
+    return sb.functions.invoke('collective-feedback', {
+      body: { game: game, official_contest_number: contest, snapshot: snapshot }
+    }).then(function (r) {
+      if (r.error) return { ok: false, code: 'EDGE_ERROR', detail: String(r.error.message || r.error) };
+      var d = r.data || {};
+      if (d.ok && d.memory) {
+        writeCache(game, { game: game, version: d.version, observations: d.observations,
+                           memory: d.memory, hash: d.new_memory_hash,
+                           synced_at: new Date().toISOString() });
+      }
+      return d;
+    }).catch(function (e) {
+      return { ok: false, code: 'NETWORK', detail: String(e && e.message || e) };
+    });
+  }
+
+  function status(game) {
+    var c = readCache(game);
+    return {
+      game: game, eligible: elegible(game),
+      version: c ? c.version : null,
+      observations: c ? c.observations : 0,
+      synced_at: c ? c.synced_at : null,
+      source: c ? 'global' : 'local'
+    };
+  }
+
+  return { GAMES: GAMES, eligible: elegible, sync: sync, memoryFor: memoryFor,
+           submit: submit, status: status, readCache: readCache, cacheKey: cacheKey };
+})();
+
+// Tris no participa en el cerebro colectivo (§2, §31). El selector no puede
+// quedar visible ejecutando en silencio el motor posicional.
+function mgSyncCollectiveAvailability() {
+  try {
+    var btn = document.querySelector('[data-mode="collective"]');
+    if (!btn) return;
+    var row = btn.closest ? btn.closest('.mode-picker') : null;
+    var apto = MG_GLOBAL.eligible(state.currentGame);
+    if (row) row.style.display = apto ? '' : 'none';
+    btn.disabled = !apto;
+    if (!apto && state.mode === 'collective') {
+      state.mode = 'balanced';
+      document.querySelectorAll('.mode-btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.mode === 'balanced');
+      });
+      var panel = document.getElementById('collective-panel');
+      if (panel) { panel.innerHTML = ''; panel.style.display = 'none'; }
+    }
+  } catch (e) { console.warn('MG-GLOBAL: disponibilidad', e); }
+}
 
 // ── enganche de generación ───────────────────────────────────────────────────
 // Devuelve las probabilidades colectivas, o null si no aplica. No altera
@@ -22006,7 +22598,26 @@ function mgCollectiveLinkSaved(entry) {
   if (!belongs) return;
   entry.collective_sha = snap.prediction_sha256;
   entry.collective_target_draw = snap.target_draw;
+  // §9 · identidad completa y duradera. Nada de esto toca el payload sellado:
+  // son metadatos externos, así que el SHA del snapshot sigue verificando.
+  entry.collective_upto = snap.snapshot_upto;
+  entry.collective_seed = snap.seed || null;
+  entry.collective_created_at = snap.generated_at;
+  try { entry.collective_set_sha = String(mgSha256(MG_COLLECTIVE.skey(snap.tickets))).slice(0, 16); }
+  catch (e) { entry.collective_set_sha = null; }
+  entry.collective_ticket_count = snap.tickets.length;
   MG_COLLECTIVE.markSaved(entry.game, snap.prediction_sha256);
+}
+
+// §3 · Diagnóstico estructurado de los casos AMBIGUOUS_RESULT de un juego.
+// Devuelve el objeto tal cual para poder inspeccionarlo desde la consola.
+function mgCollectiveDiagnoseAmbiguity(game) {
+  try {
+    return MG_COLLECTIVE.diagnoseAmbiguity(game || state.currentGame, state.history);
+  } catch (e) {
+    console.warn('MG-COL: diagnóstico falló —', e.message);
+    return { game: game, ambiguous: 0, cases: [], error: e.message };
+  }
 }
 
 function mgCollectiveReconcile(game) {
@@ -22028,6 +22639,40 @@ function mgCollectiveOnResult(game, targetDraw, actual) {
 }
 
 // ── panel de la estrategia ───────────────────────────────────────────────────
+// §11 · Explica cada caso ambiguo con la evidencia que lo hace ambiguo.
+// No muestra SHA completos: sólo identificadores cortos, ya presentes en el
+// propio dispositivo del usuario.
+function mgCollectiveRenderAmbiguity() {
+  var box = document.getElementById('collective-ambiguity');
+  if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }          // segundo clic: cerrar
+  var d = mgCollectiveDiagnoseAmbiguity(state.currentGame);
+  if (!d || !d.cases || !d.cases.length) {
+    box.innerHTML = '<div style="margin-top:8px;font-size:10px;">Sin casos ambiguos pendientes.</div>';
+    return;
+  }
+  var L = 'ABCDEFGH';
+  box.innerHTML = '<div style="margin-top:8px;border-top:1px solid rgba(255,176,32,.28);padding-top:8px;' +
+    'font-size:10px;line-height:1.55;">' +
+    d.cases.map(function (c, i) {
+      return '<div style="margin-bottom:8px;">' +
+        '<div><strong>Caso ' + (i + 1) + '</strong> · sorteo objetivo <strong>' + c.target_draw + '</strong> · ' +
+        c.ticket_count + ' boleto(s) · congelado ' + String(c.created_at).slice(0, 16).replace('T', ' ') +
+        ' · id <code>' + c.snapshot_id + '</code></div>' +
+        '<div style="color:var(--text-3);">Motivo: ' + c.reason + (c.detail ? ' — ' + c.detail : '') + '</div>' +
+        c.candidates.map(function (g, j) {
+          return '<div style="padding-left:8px;">Candidato ' + L[j] + ': resultado ' +
+            g.result.join('-') + ' · ' + g.exactTicketMatches + '/' + c.ticket_count +
+            ' boleto(s) exacto(s)' + (g.completeSetMatch ? ' · conjunto COMPLETO' : '') +
+            (g.first_seen ? ' · desde ' + String(g.first_seen).slice(0, 16).replace('T', ' ') : ' · sin fecha') +
+            '</div>';
+        }).join('') +
+      '</div>';
+    }).join('') +
+    '<div style="color:var(--text-3);">Mientras dos candidatos presenten exactamente la misma evidencia, ' +
+    'no se aprende de ninguno.</div></div>';
+}
+
 function mgRenderCollectivePanel() {
   var el = document.getElementById('collective-panel');
   if (!el) return;
@@ -22067,6 +22712,24 @@ function mgRenderCollectivePanel() {
       '<div style="font-size:11.5px;color:var(--text-3);line-height:1.5;margin-bottom:10px;">' +
         'Todos los modelos trabajan juntos y el motor aprende de los resultados reales.' +
       '</div>' +
+      (function () {
+        // §37 · qué sabe el cerebro global y qué parte es tuya
+        var gs; try { gs = MG_GLOBAL.status(game); } catch (e) { return ''; }
+        if (!gs || !gs.eligible) return '';
+        return '<div style="margin-bottom:8px;padding:6px 8px;border-radius:6px;' +
+          'background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.22);' +
+          'font-size:10.5px;line-height:1.5;">' +
+          '<strong>🌐 Memoria global</strong>: ' +
+          (gs.version === null
+            ? 'todavía vacía — los 13 modelos arrancan con peso idéntico'
+            : gs.observations + ' sorteo(s) evaluados · versión v' + gs.version) +
+          ' · modelos <strong>13</strong>' +
+          '<br><span style="color:var(--text-3);">Tu participación: ' + st.drawsEvaluated +
+          ' sorteo(s) · ' +
+          (gs.synced_at
+            ? 'sincronizada ' + String(gs.synced_at).slice(0, 16).replace('T', ' ')
+            : 'sin sincronizar (se usa la caché local)') + '</span></div>';
+      })() +
       '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">' +
         '<span>Sorteos evaluados: <strong>' + st.drawsEvaluated + '</strong></span>' +
         '<span>Guardadas pendientes de resultado: <strong>' + st.savedPending + '</strong></span>' +
@@ -22093,6 +22756,7 @@ function mgRenderCollectivePanel() {
         var mm; try { mm = MG_COLLECTIVE.mismatch(game, state.history); } catch (e) { return ''; }
         if (!mm || !mm.inconsistent) return '';
         var why = Object.keys(mm.reasons).map(function (k) { return k + '×' + mm.reasons[k]; }).join(' · ');
+        var amb = (mm.reasons && mm.reasons.AMBIGUOUS_RESULT) || 0;
         return '<div style="margin-top:10px;padding:8px;border-radius:6px;' +
           'background:rgba(255,176,32,.10);border:1px solid rgba(255,176,32,.28);' +
           'font-size:10.5px;color:#ffb020;line-height:1.5;">' +
@@ -22100,6 +22764,13 @@ function mgRenderCollectivePanel() {
           'y la memoria registra <strong>' + mm.memoryDraws + '</strong>. ' +
           (why ? 'Sin reconciliar por: <strong>' + why + '</strong>. ' : '') +
           'No se aprende de lo que no puede emparejarse de forma inequívoca.' +
+          (amb
+            ? '<div style="margin-top:6px;"><button onclick="mgCollectiveRenderAmbiguity()" ' +
+              'style="background:rgba(255,176,32,.18);border:1px solid rgba(255,176,32,.42);' +
+              'color:#ffb020;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:5px;' +
+              'cursor:pointer;">Ver diagnóstico</button></div>'
+            : '') +
+          '<div id="collective-ambiguity"></div>' +
         '</div>';
       })() +
       '<div style="margin-top:10px;font-size:10.5px;color:var(--text-3);">' +
