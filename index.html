@@ -11038,6 +11038,16 @@ async function loadUserDataFromDB() {
     // quedaba dependiendo sólo del emparejamiento por billete.
     collective_sha: (p.score && p.score._collective) ? p.score._collective.sha : undefined,
     collective_target_draw: (p.score && p.score._collective) ? p.score._collective.target_draw : undefined,
+    collective_upto: (p.score && p.score._collective) ? p.score._collective.upto : undefined,
+    collective_seed: (p.score && p.score._collective) ? p.score._collective.seed : undefined,
+    collective_created_at: (p.score && p.score._collective) ? p.score._collective.created_at : undefined,
+    collective_set_sha: (p.score && p.score._collective) ? p.score._collective.set_sha : undefined,
+    collective_ticket_count: (p.score && p.score._collective) ? p.score._collective.ticket_count : undefined,
+    // Sin esto, el desempate temporal P5 no tiene con qué trabajar tras un
+    // viaje de ida y vuelta: la fila vuelve sin ninguna marca de creación.
+    createdAt: (p.score && p.score._collective && p.score._collective.saved_at)
+      ? Date.parse(p.score._collective.saved_at)
+      : (p.created_at ? Date.parse(p.created_at) : undefined),
     checkedAt: p.checked_at ? new Date(p.checked_at).getTime() : null
   }));
   
@@ -11099,7 +11109,13 @@ function mgWithPredMeta(pred) {
   if (pred.research) out = Object.assign({}, out, { _research: pred.research });
   if (pred.collective_sha) {
     out = Object.assign({}, out, {
-      _collective: { sha: pred.collective_sha, target_draw: pred.collective_target_draw }
+      _collective: {
+        sha: pred.collective_sha, target_draw: pred.collective_target_draw,
+        game: pred.game, upto: pred.collective_upto, seed: pred.collective_seed,
+        created_at: pred.collective_created_at, set_sha: pred.collective_set_sha,
+        ticket_count: pred.collective_ticket_count,
+        saved_at: pred.createdAt ? new Date(pred.createdAt).toISOString() : null
+      }
     });
   }
   return out;
@@ -21824,6 +21840,217 @@ function mgRenderAlePanel() {
     };
   }
 
+  // ═══ IDENTIDAD HISTÓRICA ══════════════════════════════════════════════════
+  // Decide QUÉ resultado pertenece a un snapshot, en este orden estricto:
+  //   P1  collective_sha exacto
+  //   P2  game + collective_target_draw exacto
+  //   P3  game + resultado + CONJUNTO COMPLETO de boletos
+  //   P4  game + resultado + máxima coincidencia exacta, con máximo ÚNICO
+  //   P5  orden temporal verificable, sólo como desempate inequívoco
+  // Nunca se desempata por índice de array, por orden de localStorage, por
+  // "el primero", por "el último" ni por Date.now(). Si dos candidatos
+  // presentan exactamente la misma evidencia: AMBIGUOUS_RESULT y no se aprende.
+  function tkey(t) { return t.slice().sort(function (a, b) { return a - b; }).join(','); }
+  function skey(list) {
+    var u = {}; for (var i = 0; i < list.length; i++) u[tkey(list[i])] = 1;
+    return Object.keys(u).sort().join('|');
+  }
+  function tsOf(h) {
+    var v = h && (h.createdAt || h.created_at || h.collective_created_at);
+    if (typeof v === 'string') { var p = Date.parse(v); return isFinite(p) ? p : null; }
+    return (typeof v === 'number' && isFinite(v)) ? v : null;
+  }
+
+  // Agrupa el historial YA evaluado por RESULTADO. Cada grupo es un sorteo
+  // candidato, con su conjunto de boletos y su marca temporal más temprana.
+  function resultGroups(game, hist, onlyUnlinked) {
+    var by = {};
+    for (var i = 0; i < hist.length; i++) {
+      var h = hist[i];
+      if (!h || h.game !== game || h.mode !== 'collective' || h.status !== 'checked') continue;
+      if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
+      if (onlyUnlinked && h.collective_sha) continue;
+      var rk = tkey(h.actual);
+      var g = by[rk];
+      if (!g) g = by[rk] = { resultKey: rk, actual: h.actual.slice().sort(function (a, b) { return a - b; }),
+                             tset: {}, entries: [], firstTs: null, setSha: null };
+      g.tset[tkey(h.ticket)] = 1;
+      g.entries.push(h.id);
+      if (!g.setSha && h.collective_set_sha) g.setSha = h.collective_set_sha;
+      var ts = tsOf(h);
+      if (ts !== null && (g.firstTs === null || ts < g.firstTs)) g.firstTs = ts;
+    }
+    return Object.keys(by).sort().map(function (k) {
+      by[k].ticketKeys = Object.keys(by[k].tset).sort();
+      return by[k];
+    });
+  }
+
+  // P5 · desempate temporal. Sólo resuelve cuando TODAS las marcas existen y
+  // el orden es estricto: un único grupo puede haber nacido después de ESTE
+  // snapshot, y ningún otro snapshot del juego se interpone entre ambos.
+  // Nunca elige "el más cercano": si hay duda, devuelve null.
+  function temporalPick(s, groups, snaps) {
+    var sTs = Date.parse(s.generated_at);
+    if (!isFinite(sTs)) return null;
+    for (var i = 0; i < groups.length; i++) if (groups[i].firstTs === null) return null;
+    var possible = groups.filter(function (g) { return g.firstTs >= sTs; });
+    if (possible.length !== 1) return null;
+    var g = possible[0], list = snaps || [];
+    for (i = 0; i < list.length; i++) {
+      if (list[i].prediction_sha256 === s.prediction_sha256) continue;
+      var oTs = Date.parse(list[i].generated_at);
+      if (isFinite(oTs) && oTs > sTs && oTs <= g.firstTs) return null;   // otro se interpone
+    }
+    return g;
+  }
+
+  // Validaciones que no dependen del historial.
+  function precheck(s, game) {
+    if (s.game !== game) return 'GAME_MISMATCH';
+    if (s.state !== 'FROZEN') return 'UNFROZEN_PREDICTION';
+    if (!verify(s)) return 'FREEZE_HASH_MISMATCH';
+    if (!(s.snapshot_upto < s.target_draw)) return 'TEMPORAL_LEAK';
+    return null;
+  }
+
+  function resolveSnapshot(s, hist, snaps) {
+    var out = { priority: null, actual: null, reason: null, detail: '', candidates: [] };
+    var i, h;
+    var sSet = skey(s.tickets), sKeys = {};
+    for (i = 0; i < s.tickets.length; i++) sKeys[tkey(s.tickets[i])] = 1;
+
+    // ── P1 · SHA exacto ──────────────────────────────────────────────────
+    var lActs = {}, lN = 0;
+    for (i = 0; i < hist.length; i++) {
+      h = hist[i];
+      if (!h || h.game !== s.game || h.status !== 'checked') continue;
+      if (!Array.isArray(h.actual) || !Array.isArray(h.ticket)) continue;
+      if (h.collective_sha && h.collective_sha === s.prediction_sha256) {
+        lActs[tkey(h.actual)] = 1; lN++;
+      }
+    }
+    if (lN) {
+      var lk = Object.keys(lActs);
+      if (lk.length === 1) { out.priority = 1; out.actual = lk[0].split(',').map(Number); return out; }
+      out.reason = 'AMBIGUOUS_RESULT';
+      out.detail = 'el mismo SHA aparece con ' + lk.length + ' resultados distintos';
+      return out;
+    }
+
+    // ── P2 · game + collective_target_draw exacto ────────────────────────
+    var tActs = {}, tN = 0;
+    for (i = 0; i < hist.length; i++) {
+      h = hist[i];
+      if (!h || h.game !== s.game || h.mode !== 'collective' || h.status !== 'checked') continue;
+      if (!Array.isArray(h.actual) || !Array.isArray(h.ticket)) continue;
+      if (h.collective_sha) continue;                        // sellada a OTRO snapshot
+      if (h.collective_target_draw === s.target_draw) { tActs[tkey(h.actual)] = 1; tN++; }
+    }
+    if (tN) {
+      var tk = Object.keys(tActs);
+      if (tk.length === 1) { out.priority = 2; out.actual = tk[0].split(',').map(Number); return out; }
+      out.reason = 'AMBIGUOUS_RESULT';
+      out.detail = 'el target ' + s.target_draw + ' aparece con ' + tk.length + ' resultados distintos';
+      return out;
+    }
+
+    // ── P3/P4/P5 · sólo historial sin sello ──────────────────────────────
+    var groups = resultGroups(s.game, hist, true);
+    for (i = 0; i < groups.length; i++) {
+      var g = groups[i], inter = 0;
+      for (var q = 0; q < g.ticketKeys.length; q++) if (sKeys[g.ticketKeys[q]]) inter++;
+      g.exactTicketMatches = inter;
+      g.completeSet = g.ticketKeys.join('|') === sSet;
+      // ¿el grupo arrastra boletos que NO pertenecen a este snapshot? Eso
+      // ocurre cuando un resultado liquidó de golpe predicciones pendientes de
+      // varios snapshots. Esa evidencia está mezclada y no identifica a nadie.
+      g.foreign = false;
+      for (q = 0; q < g.ticketKeys.length; q++) if (!sKeys[g.ticketKeys[q]]) { g.foreign = true; break; }
+    }
+    out.candidates = groups;
+
+    // P3 · conjunto COMPLETO. Un solo boleto NUNCA basta si hay varios grupos.
+    var full = groups.filter(function (x) { return x.completeSet; });
+    if (full.length === 1) { out.priority = 3; out.actual = full[0].actual; return out; }
+    // Si varios grupos presentan el conjunto COMPLETO, P3 no discrimina, pero
+    // eso no cierra el caso: se sigue bajando por la escalera CON ESOS MISMOS
+    // candidatos. Nunca se amplía el conjunto de candidatos al bajar.
+    var identicos = full.length > 1;
+    var pool = identicos ? full : groups;
+
+    // P4 · máxima coincidencia exacta, sólo si el máximo es ÚNICO y la
+    // evidencia no está mezclada con boletos de otros snapshots (§5).
+    var hit = pool.filter(function (x) { return x.exactTicketMatches > 0; });
+    if (!hit.length) { out.reason = 'NO_EVALUATED_HISTORY'; return out; }
+    var limpio = hit.filter(function (x) { return !x.foreign; });
+    if (!limpio.length) {
+      out.reason = 'AMBIGUOUS_RESULT';
+      out.detail = 'la evidencia mezcla boletos de varios snapshots; ninguna identifica a este';
+      return out;
+    }
+    var max = 0;
+    for (i = 0; i < limpio.length; i++) if (limpio[i].exactTicketMatches > max) max = limpio[i].exactTicketMatches;
+    var top = limpio.filter(function (x) { return x.exactTicketMatches === max; });
+    if (top.length === 1) { out.priority = 4; out.actual = top[0].actual; return out; }
+
+    // P5 · desempate temporal inequívoco.
+    var pick = temporalPick(s, top, snaps);
+    if (pick) { out.priority = 5; out.actual = pick.actual; return out; }
+
+    out.reason = 'AMBIGUOUS_RESULT';
+    out.detail = identicos
+      ? top.length + ' sorteos con el conjunto de boletos IDÉNTICO y sin orden temporal verificable'
+      : top.length + ' candidatos con la misma evidencia (' + max + ' boleto(s) exacto(s))';
+    return out;
+  }
+
+  // §3 · Diagnóstico estructurado de los casos que siguen sin resolverse.
+  // Sólo lee el dispositivo del propio usuario y no expone SHA completos.
+  function diagnoseAmbiguity(game, history) {
+    var hist = history || (typeof state !== 'undefined' && state.history) || [];
+    var mem = loadMemory(game), snaps = loadSnaps(game), cases = [];
+    for (var i = 0; i < snaps.length; i++) {
+      var s = snaps[i];
+      if (mem.seen[s.prediction_sha256]) continue;
+      if (precheck(s, game)) continue;
+      var r = resolveSnapshot(s, hist, snaps);
+      if (r.priority) continue;                              // ya se resuelve
+      cases.push({
+        game: game,
+        target_draw: s.target_draw,
+        snapshot_upto: s.snapshot_upto,
+        snapshot_id: String(s.prediction_sha256).slice(0, 12),
+        sha_short: String(s.prediction_sha256).slice(0, 12),
+        created_at: s.generated_at,
+        seed: s.seed || null,
+        run_id: s.run_id || null,
+        ticket_count: s.tickets.length,
+        tickets: s.tickets.map(function (t) { return t.slice(); }),
+        set_sha: String(mgSha256(skey(s.tickets))).slice(0, 16),
+        reason: r.reason || 'AMBIGUOUS_RESULT',
+        detail: r.detail,
+        candidate_count: r.candidates.length,
+        candidates: r.candidates.map(function (g) {
+          return {
+            result: g.actual.slice(),
+            foreignTickets: !!g.foreign,
+            result_fingerprint: String(mgSha256(g.resultKey)).slice(0, 12),
+            history_entry_ids: g.entries.slice(),
+            history_ticket_count: g.ticketKeys.length,
+            exactTicketMatches: g.exactTicketMatches,
+            completeSetMatch: !!g.completeSet,
+            set_sha: String(mgSha256(g.ticketKeys.join('|'))).slice(0, 16),
+            declared_set_sha: g.setSha || null,
+            first_seen: g.firstTs ? new Date(g.firstTs).toISOString() : null
+          };
+        })
+      });
+    }
+    return { game: game, engine: VERSION, ambiguous: cases.length,
+             stats: stats(game), cases: cases };
+  }
+
   // Motivos por los que cada snapshot pendiente no se puede reconciliar, sin
   // escribir nada. Es lo que permite decir QUÉ falta en vez de callar.
   function reconcileDryRun(game, history) {
@@ -21832,27 +22059,10 @@ function mgRenderAlePanel() {
     for (var i = 0; i < snaps.length; i++) {
       var s = snaps[i];
       if (mem.seen[s.prediction_sha256]) continue;
-      var why = null;
-      if (s.game !== game) why = 'GAME_MISMATCH';
-      else if (s.state !== 'FROZEN') why = 'UNFROZEN_PREDICTION';
-      else if (!verify(s)) why = 'FREEZE_HASH_MISMATCH';
-      else if (!(s.snapshot_upto < s.target_draw)) why = 'TEMPORAL_LEAK';
-      else {
-        var keys = {};
-        for (var q = 0; q < s.tickets.length; q++)
-          keys[s.tickets[q].slice().sort(function (a, b) { return a - b; }).join(',')] = 1;
-        var acts = {}, cand = 0;
-        for (q = 0; q < hist.length; q++) {
-          var h = hist[q];
-          if (!h || h.game !== game || h.status !== 'checked') continue;
-          if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
-          var link = h.collective_sha && h.collective_sha === s.prediction_sha256;
-          var tick = !h.collective_sha && h.mode === 'collective' &&
-            keys[h.ticket.slice().sort(function (a, b) { return a - b; }).join(',')];
-          if (link || tick) { cand++; acts[h.actual.slice().sort(function (a, b) { return a - b; }).join(',')] = 1; }
-        }
-        if (!cand) why = 'NO_EVALUATED_HISTORY';
-        else if (Object.keys(acts).length !== 1) why = 'AMBIGUOUS_RESULT';
+      var why = precheck(s, game);
+      if (!why) {
+        var r = resolveSnapshot(s, hist, snaps);
+        if (!r.priority) why = r.reason || 'AMBIGUOUS_RESULT';
       }
       if (why) reasons[why] = (reasons[why] || 0) + 1;
     }
@@ -21876,40 +22086,15 @@ function mgRenderAlePanel() {
         skipped.push({ sha: s.prediction_sha256, code: 'RECONCILIATION_SKIPPED',
                        reason: reason, detail: detail || '' });
       }
-      if (s.game !== game) { skip('GAME_MISMATCH', s.game); continue; }
-      if (s.state !== 'FROZEN') { skip('UNFROZEN_PREDICTION'); continue; }
-      if (!verify(s)) { skip('FREEZE_HASH_MISMATCH'); continue; }
-      if (!(s.snapshot_upto < s.target_draw)) { skip('TEMPORAL_LEAK'); continue; }
+      var pre = precheck(s, game);
+      if (pre) { skip(pre, pre === 'GAME_MISMATCH' ? s.game : ''); continue; }
 
-      // Entradas de historial YA evaluadas que corresponden a este snapshot.
-      var keys = {}, kOrder = [];
-      for (var q = 0; q < s.tickets.length; q++) {
-        var kk = s.tickets[q].slice().sort(function (a, b) { return a - b; }).join(',');
-        keys[kk] = 1; kOrder.push(kk);
-      }
-      var cands = [];
-      for (q = 0; q < hist.length; q++) {
-        var h = hist[q];
-        if (!h || h.game !== game || h.status !== 'checked') continue;
-        if (!Array.isArray(h.ticket) || !Array.isArray(h.actual)) continue;
-        // El enlace fuerte es el SHA estampado al guardar; si no está, se
-        // acepta la coincidencia EXACTA del billete.
-        var byLink = h.collective_sha && h.collective_sha === s.prediction_sha256;
-        var byTicket = !h.collective_sha && h.mode === 'collective' &&
-          keys[h.ticket.slice().sort(function (a, b) { return a - b; }).join(',')];
-        if (byLink || byTicket) cands.push(h);
-      }
-      if (!cands.length) { skip('NO_EVALUATED_HISTORY'); continue; }
+      // Identidad histórica: escalera determinista P1..P5. Devuelve el
+      // resultado SÓLO cuando el candidato es inequívoco.
+      var res = resolveSnapshot(s, hist, snaps);
+      if (!res.priority) { skip(res.reason || 'AMBIGUOUS_RESULT', res.detail); continue; }
 
-      // Todas deben apuntar al MISMO resultado: si hay dos distintos, el
-      // sorteo es ambiguo y no se aprende.
-      var actuals = {};
-      for (q = 0; q < cands.length; q++)
-        actuals[cands[q].actual.slice().sort(function (a, b) { return a - b; }).join(',')] = 1;
-      var uniq = Object.keys(actuals);
-      if (uniq.length !== 1) { skip('AMBIGUOUS_RESULT', uniq.length + ' resultados distintos'); continue; }
-
-      var actual = uniq[0].split(',').map(Number);
+      var actual = res.actual;
       var spec = (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[game]) || {};
       if (actual.length !== ((spec.pick) || 6)) { skip('INVALID_RESULT', actual.length + ' números'); continue; }
 
@@ -21918,7 +22103,8 @@ function mgRenderAlePanel() {
       var r = onResult(game, s.target_draw, actual);
       if (r.evaluated.length) {
         applied.push({ sha: s.prediction_sha256, target_draw: s.target_draw,
-                       hits_by_ticket: r.evaluated[0].hits_by_ticket, source: 'reconciliation' });
+                       hits_by_ticket: r.evaluated[0].hits_by_ticket,
+                       matched_by: 'P' + res.priority, source: 'reconciliation' });
         mem = loadMemory(game);                                  // releer memoria
       } else {
         var code = (r.rejected[0] && r.rejected[0].code) || 'UNKNOWN';
@@ -21950,7 +22136,8 @@ function mgRenderAlePanel() {
   window.MG_COLLECTIVE = {
     markSaved: markSaved, statusOf: statusOf, stats: stats,
     reconcile: reconcile, diagnose: diagnose, mismatch: mismatch,
-    reconcileDryRun: reconcileDryRun,
+    reconcileDryRun: reconcileDryRun, diagnoseAmbiguity: diagnoseAmbiguity,
+    resolveSnapshot: resolveSnapshot, resultGroups: resultGroups, skey: skey,
     VERSION: VERSION, MODEL_IDS: MODEL_IDS, FLOOR: FLOOR, CAP: CAP, SHRINK_N0: SHRINK_N0,
     prepare: prepare, freeze: freeze, verify: verify, onResult: onResult,
     computeWeights: computeWeights, fuse: fuse, projectCapFloor: projectCapFloor,
@@ -22006,7 +22193,26 @@ function mgCollectiveLinkSaved(entry) {
   if (!belongs) return;
   entry.collective_sha = snap.prediction_sha256;
   entry.collective_target_draw = snap.target_draw;
+  // §9 · identidad completa y duradera. Nada de esto toca el payload sellado:
+  // son metadatos externos, así que el SHA del snapshot sigue verificando.
+  entry.collective_upto = snap.snapshot_upto;
+  entry.collective_seed = snap.seed || null;
+  entry.collective_created_at = snap.generated_at;
+  try { entry.collective_set_sha = String(mgSha256(MG_COLLECTIVE.skey(snap.tickets))).slice(0, 16); }
+  catch (e) { entry.collective_set_sha = null; }
+  entry.collective_ticket_count = snap.tickets.length;
   MG_COLLECTIVE.markSaved(entry.game, snap.prediction_sha256);
+}
+
+// §3 · Diagnóstico estructurado de los casos AMBIGUOUS_RESULT de un juego.
+// Devuelve el objeto tal cual para poder inspeccionarlo desde la consola.
+function mgCollectiveDiagnoseAmbiguity(game) {
+  try {
+    return MG_COLLECTIVE.diagnoseAmbiguity(game || state.currentGame, state.history);
+  } catch (e) {
+    console.warn('MG-COL: diagnóstico falló —', e.message);
+    return { game: game, ambiguous: 0, cases: [], error: e.message };
+  }
 }
 
 function mgCollectiveReconcile(game) {
@@ -22028,6 +22234,40 @@ function mgCollectiveOnResult(game, targetDraw, actual) {
 }
 
 // ── panel de la estrategia ───────────────────────────────────────────────────
+// §11 · Explica cada caso ambiguo con la evidencia que lo hace ambiguo.
+// No muestra SHA completos: sólo identificadores cortos, ya presentes en el
+// propio dispositivo del usuario.
+function mgCollectiveRenderAmbiguity() {
+  var box = document.getElementById('collective-ambiguity');
+  if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }          // segundo clic: cerrar
+  var d = mgCollectiveDiagnoseAmbiguity(state.currentGame);
+  if (!d || !d.cases || !d.cases.length) {
+    box.innerHTML = '<div style="margin-top:8px;font-size:10px;">Sin casos ambiguos pendientes.</div>';
+    return;
+  }
+  var L = 'ABCDEFGH';
+  box.innerHTML = '<div style="margin-top:8px;border-top:1px solid rgba(255,176,32,.28);padding-top:8px;' +
+    'font-size:10px;line-height:1.55;">' +
+    d.cases.map(function (c, i) {
+      return '<div style="margin-bottom:8px;">' +
+        '<div><strong>Caso ' + (i + 1) + '</strong> · sorteo objetivo <strong>' + c.target_draw + '</strong> · ' +
+        c.ticket_count + ' boleto(s) · congelado ' + String(c.created_at).slice(0, 16).replace('T', ' ') +
+        ' · id <code>' + c.snapshot_id + '</code></div>' +
+        '<div style="color:var(--text-3);">Motivo: ' + c.reason + (c.detail ? ' — ' + c.detail : '') + '</div>' +
+        c.candidates.map(function (g, j) {
+          return '<div style="padding-left:8px;">Candidato ' + L[j] + ': resultado ' +
+            g.result.join('-') + ' · ' + g.exactTicketMatches + '/' + c.ticket_count +
+            ' boleto(s) exacto(s)' + (g.completeSetMatch ? ' · conjunto COMPLETO' : '') +
+            (g.first_seen ? ' · desde ' + String(g.first_seen).slice(0, 16).replace('T', ' ') : ' · sin fecha') +
+            '</div>';
+        }).join('') +
+      '</div>';
+    }).join('') +
+    '<div style="color:var(--text-3);">Mientras dos candidatos presenten exactamente la misma evidencia, ' +
+    'no se aprende de ninguno.</div></div>';
+}
+
 function mgRenderCollectivePanel() {
   var el = document.getElementById('collective-panel');
   if (!el) return;
@@ -22093,6 +22333,7 @@ function mgRenderCollectivePanel() {
         var mm; try { mm = MG_COLLECTIVE.mismatch(game, state.history); } catch (e) { return ''; }
         if (!mm || !mm.inconsistent) return '';
         var why = Object.keys(mm.reasons).map(function (k) { return k + '×' + mm.reasons[k]; }).join(' · ');
+        var amb = (mm.reasons && mm.reasons.AMBIGUOUS_RESULT) || 0;
         return '<div style="margin-top:10px;padding:8px;border-radius:6px;' +
           'background:rgba(255,176,32,.10);border:1px solid rgba(255,176,32,.28);' +
           'font-size:10.5px;color:#ffb020;line-height:1.5;">' +
@@ -22100,6 +22341,13 @@ function mgRenderCollectivePanel() {
           'y la memoria registra <strong>' + mm.memoryDraws + '</strong>. ' +
           (why ? 'Sin reconciliar por: <strong>' + why + '</strong>. ' : '') +
           'No se aprende de lo que no puede emparejarse de forma inequívoca.' +
+          (amb
+            ? '<div style="margin-top:6px;"><button onclick="mgCollectiveRenderAmbiguity()" ' +
+              'style="background:rgba(255,176,32,.18);border:1px solid rgba(255,176,32,.42);' +
+              'color:#ffb020;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:5px;' +
+              'cursor:pointer;">Ver diagnóstico</button></div>'
+            : '') +
+          '<div id="collective-ambiguity"></div>' +
         '</div>';
       })() +
       '<div style="margin-top:10px;font-size:10.5px;color:var(--text-3);">' +
