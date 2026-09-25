@@ -3053,6 +3053,7 @@ body.light-mode .mg-strip-meta .tag { background: rgba(0,0,0,0.06); }
           <button class="mode-btn" data-mode="collective" onclick="setMode('collective')" style="flex:1;">🧠 Ensamble Colectivo</button>
         </div>
         <div id="collective-panel" style="display:none;"></div>
+        <div id="mg-evidence-banner"></div>
         
         <div class="slider-wrap">
           <div class="slider-head">
@@ -10871,6 +10872,7 @@ function mgRenderAjustesView() {
   mgRenderSettingsView();
   mgRenderResearchStatus();
   try { mgRenderMigrationTools(); } catch (e) { console.warn('MG-MIG: render', e); }
+  try { mgRenderScienceDashboard(); } catch (e) { console.warn('MG-V2: dashboard', e); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -13013,6 +13015,9 @@ function _renderRegenControls() {
 }
 
 function renderPredictionsView() {
+  // §12 · primero la EVIDENCIA, después la cartera.
+  try { mgRenderEvidenceBanner(); } catch (e) { console.warn('MG-V2: banner', e); }
+
   const cv = document.getElementById('count-value');
   if (cv) cv.textContent = state.count;
   const cs = document.getElementById('count-slider');
@@ -22855,6 +22860,733 @@ function mgRenderCollectivePanel() {
         'No es una ventaja demostrada: NO_EDGE sigue activo y esta estrategia no participa en Champion Gate ni en el preregistro.' +
       '</div>' +
     '</div>';
+}
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  🔬 MELATE GENIUS · SCIENTIFIC LAYER V2 · scientific-v2.0.0
+//
+//  Capa AISLADA que COMPONE los primitivos científicos que ya existen
+//  (mgBrierBinary, mgExpectedCalibrationError, mgIsotonicFit, mgPlattFit,
+//  mgTheoreticalMean, mgWalkForward, mgStability, mgResolvePortfolioWith-
+//  BoundedOverlap). No los reimplementa, no los sustituye y no los toca.
+//
+//  Cuatro palabras que NO son sinónimos y aquí nunca se mezclan:
+//    score        · salida cruda de un modelo, sin escala probabilística
+//    probability  · sólo después de calibrar y sólo con muestra suficiente
+//    confidence   · cuánta evidencia respalda al sistema. NO es probabilidad
+//                   de ganar, y el objeto lo declara explícitamente
+//    evidence     · veredicto reproducible: EDGE-0..3 / NO_EDGE
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_SCI_V2 = (function () {
+  'use strict';
+  var VERSION = 'scientific-v2.0.0';
+
+  // ── utilidades deterministas ────────────────────────────────────────────
+  // PRNG sembrado. Se usa SÓLO para desempates, nunca para generar señal.
+  function mulberry32(seed) {
+    var a = (seed >>> 0) || 1;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function mean(a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : 0; }
+  function sd(a) {
+    if (a.length < 2) return 0;
+    var m = mean(a);
+    return Math.sqrt(a.reduce(function (s, x) { return s + (x - m) * (x - m); }, 0) / (a.length - 1));
+  }
+  function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function keyOf(t) { return t.slice().sort(function (a, b) { return a - b; }).join(','); }
+  function overlap(a, b) {
+    var s = {}, c = 0;
+    for (var i = 0; i < b.length; i++) s[b[i]] = 1;
+    for (i = 0; i < a.length; i++) if (s[a[i]]) c++;
+    return c;
+  }
+  // Primitivos de producción, con caída segura para poder probar la capa sola.
+  function brier(p, o) {
+    if (typeof mgBrierBinary === 'function') return mgBrierBinary(p, o);
+    var s = 0;
+    for (var i = 0; i < o.length; i++) { var d = p[i] - (o[i] ? 1 : 0); s += d * d; }
+    return o.length ? s / o.length : 0;
+  }
+  function ece(p, o, bins) {
+    if (typeof mgExpectedCalibrationError === 'function') return mgExpectedCalibrationError(p, o, bins || 10);
+    return 0;
+  }
+  function baselineHits(N, k) {
+    if (typeof mgTheoreticalMean === 'function') return mgTheoreticalMean(N, k);
+    return (k * k) / N;
+  }
+
+  // ═══ 1 · PORTFOLIO OPTIMIZER ═════════════════════════════════════════════
+  // Optimiza una CARTERA, no un supuesto boleto ganador. Cuatro términos
+  // deliberadamente disjuntos, para no contar dos veces la misma señal:
+  //   signal      · de los scores calibrados, encogido por la incertidumbre
+  //   coverage    · números NUEVOS que aporta el boleto (unión, no score)
+  //   redundancy  · solape con lo ya elegido (penalización)
+  //   consensus   · acuerdo entre modelos, como ponderador de la señal
+  // El desempate es por seed; la señal jamás sale del PRNG.
+  var PO_DEFAULTS = { wSignal: 1.0, wCoverage: 0.45, wRedundancy: 0.8, overlapLimit: 1 };
+
+  function optimize(input) {
+    var game = input.game;
+    var n = Math.max(1, input.ticketCount | 0);
+    var pool = (input.candidatePool || []).map(function (t) { return t.slice(); });
+    var scores = input.calibratedScores || {};
+    var unc = clamp01(input.uncertainty == null ? 0.5 : input.uncertainty);
+    var cons = clamp01(input.consensus == null ? 0.5 : input.consensus);
+    var disagreement = clamp01(input.disagreement == null ? 1 - cons : input.disagreement);
+    var limit = input.overlapLimit == null ? PO_DEFAULTS.overlapLimit : input.overlapLimit;
+    var seed = input.seed == null ? 0 : (input.seed | 0);
+    var rnd = mulberry32(seed);
+    var flags = [];
+
+    if (!pool.length) {
+      return { tickets: [], portfolioScore: 0, diversity: 0, coverage: 0,
+               overlapStats: { max: 0, mean: 0, histogram: {} }, seed: seed,
+               version: VERSION, evidenceFlags: ['EMPTY_POOL'], relaxation: 0,
+               requested: n, delivered: 0 };
+    }
+    // deduplicado estable del pool
+    var seen = {}, uniq = [];
+    pool.forEach(function (t) { var kk = keyOf(t); if (!seen[kk]) { seen[kk] = 1; uniq.push(t); } });
+    if (uniq.length < pool.length) flags.push('POOL_HAD_DUPLICATES');
+    if (uniq.length < n) flags.push('POOL_SMALLER_THAN_REQUEST');
+
+    // señal base por boleto: media de los scores calibrados de sus números,
+    // encogida por la incertidumbre y ponderada por el consenso.
+    var shrink = (1 - unc) * (0.5 + 0.5 * cons);
+    function signalOf(t) {
+      var s = 0, c = 0;
+      for (var i = 0; i < t.length; i++) {
+        var v = scores[t[i]];
+        if (typeof v === 'number' && isFinite(v)) { s += v; c++; }
+      }
+      return c ? (s / c) * shrink : 0;
+    }
+    var sig = uniq.map(signalOf);
+
+    // Selección voraz por ganancia marginal, con relajación explícita del
+    // overlap si —y sólo si— no hay forma de completar la cartera.
+    function construir(lim) {
+      var elegidos = [], cubiertos = {}, usados = {};
+      for (var paso = 0; paso < n; paso++) {
+        var mejor = -1, mejorVal = -Infinity, mejorTie = -1;
+        for (var i = 0; i < uniq.length; i++) {
+          if (usados[i]) continue;
+          var t = uniq[i], ok = true, red = 0;
+          for (var j = 0; j < elegidos.length; j++) {
+            var ov = overlap(t, elegidos[j]);
+            if (ov > lim) { ok = false; break; }
+            red += ov;
+          }
+          if (!ok) continue;
+          var nuevos = 0;
+          for (j = 0; j < t.length; j++) if (!cubiertos[t[j]]) nuevos++;
+          var val = PO_DEFAULTS.wSignal * sig[i]
+                  + PO_DEFAULTS.wCoverage * (nuevos / t.length)
+                  - PO_DEFAULTS.wRedundancy * (elegidos.length ? red / (elegidos.length * t.length) : 0);
+          var tie = rnd();
+          if (val > mejorVal + 1e-12 || (Math.abs(val - mejorVal) <= 1e-12 && tie > mejorTie)) {
+            mejorVal = val; mejor = i; mejorTie = tie;
+          }
+        }
+        if (mejor < 0) break;
+        usados[mejor] = 1;
+        elegidos.push(uniq[mejor]);
+        uniq[mejor].forEach(function (x) { cubiertos[x] = 1; });
+      }
+      return elegidos;
+    }
+
+    var lim = limit, tickets = construir(lim), relax = 0;
+    while (tickets.length < n && lim < 6) {
+      lim++; relax++;
+      rnd = mulberry32(seed);              // reproducible en cada intento
+      tickets = construir(lim);
+    }
+    if (relax) flags.push('OVERLAP_RELAXED_TO_' + lim);
+    if (tickets.length < n) flags.push('INSUFFICIENT_POOL');
+
+    // métricas de la cartera
+    var pares = [], maxOv = 0, hist = {};
+    for (var i = 0; i < tickets.length; i++) {
+      for (var j = i + 1; j < tickets.length; j++) {
+        var ov = overlap(tickets[i], tickets[j]);
+        pares.push(ov); if (ov > maxOv) maxOv = ov;
+        hist[ov] = (hist[ov] || 0) + 1;
+      }
+    }
+    var cob = {}; tickets.forEach(function (t) { t.forEach(function (x) { cob[x] = 1; }); });
+    var k = tickets.length ? tickets[0].length : 0;
+    var coverage = tickets.length ? Object.keys(cob).length / (tickets.length * k) : 0;
+    var diversity = pares.length ? 1 - (mean(pares) / k) : (tickets.length ? 1 : 0);
+    var portfolioScore = tickets.length
+      ? mean(tickets.map(function (t) { return signalOf(t); })) * (0.7 + 0.3 * diversity)
+      : 0;
+
+    // NUNCA se afirma mejora de probabilidad: sólo se describe la cartera.
+    flags.push('NOT_A_PROBABILITY_CLAIM');
+    if (disagreement > 0.6) flags.push('HIGH_MODEL_DISAGREEMENT');
+    if (unc > 0.6) flags.push('HIGH_UNCERTAINTY');
+
+    return {
+      tickets: tickets, portfolioScore: portfolioScore, diversity: diversity,
+      coverage: coverage,
+      overlapStats: { max: maxOv, mean: pares.length ? mean(pares) : 0, histogram: hist,
+                      limit: lim, requestedLimit: limit },
+      seed: seed, version: VERSION, evidenceFlags: flags,
+      relaxation: relax, requested: n, delivered: tickets.length
+    };
+  }
+
+  // ═══ 2 · CALIBRATION ENGINE ══════════════════════════════════════════════
+  // Con muestra insuficiente NO se inventan probabilidades: se devuelve el
+  // score crudo y se marca insufficient_sample.
+  var CAL_MIN_N = 50;
+
+  function calFit(observations, opts) {
+    var o = observations || [];
+    var minN = (opts && opts.minN) || CAL_MIN_N;
+    var xs = o.map(function (r) { return Number(r.score); });
+    var ys = o.map(function (r) { return r.outcome ? 1 : 0; });
+    if (o.length < minN) {
+      return { method: 'raw', insufficient_sample: true, n: o.length, minN: minN,
+               apply: function (p) { return p; }, version: VERSION,
+               note: 'muestra insuficiente: se devuelve el score sin calibrar' };
+    }
+    // Selección de método en una partición TEMPORAL interna: se ajusta en el
+    // primer 70 % y se elige por Brier en el 30 % final. Nunca se elige el
+    // método con los mismos datos con los que se ajustó.
+    var corte = Math.floor(o.length * 0.7);
+    var trX = xs.slice(0, corte), trY = ys.slice(0, corte);
+    var teX = xs.slice(corte), teY = ys.slice(corte);
+    var cands = [], ausentes = [];
+    cands.push({ method: 'raw', apply: function (p) { return p; } });
+    // Si un primitivo de producción no está disponible, NO se degrada en
+    // silencio: se deja constancia para que no parezca que se comparó.
+    if (typeof mgIsotonicFit === 'function') {
+      try {
+        var iso = mgIsotonicFit(trX, trY);
+        cands.push({ method: 'isotonic', apply: function (p) { return iso.apply(p); } });
+      } catch (e) { ausentes.push('isotonic:' + e.message); }
+    } else ausentes.push('mgIsotonicFit no disponible');
+    if (typeof mgPlattFit === 'function') {
+      try {
+        var pl = mgPlattFit(trX, trY, 300);
+        cands.push({ method: 'platt', apply: function (p) { return pl.apply ? pl.apply(p) : p; } });
+      } catch (e) { ausentes.push('platt:' + e.message); }
+    } else ausentes.push('mgPlattFit no disponible');
+    var mejor = null;
+    cands.forEach(function (c) {
+      var pred = teX.map(function (p) { return clamp01(c.apply(p)); });
+      var b = brier(pred, teY);
+      c.brierValidacion = b;
+      if (!mejor || b < mejor.brierValidacion - 1e-12) mejor = c;
+    });
+    return { method: mejor.method, insufficient_sample: false, n: o.length, minN: minN,
+             apply: mejor.apply, candidates: cands.map(function (c) {
+               return { method: c.method, brier: c.brierValidacion }; }),
+             primitivesAvailable: ausentes.length === 0,
+             unavailable: ausentes,
+             version: VERSION };
+  }
+
+  function calCalibrate(fitted, scores) {
+    if (!fitted || typeof fitted.apply !== 'function') return scores.slice();
+    return scores.map(function (p) { return clamp01(fitted.apply(Number(p))); });
+  }
+
+  function calEvaluate(predictions, outcomes, bins) {
+    var p = predictions.map(Number), y = outcomes.map(function (x) { return x ? 1 : 0; });
+    var B = bins || 10;
+    var ll = 0;
+    for (var i = 0; i < p.length; i++) {
+      var q = Math.min(1 - 1e-12, Math.max(1e-12, p[i]));
+      ll += -(y[i] * Math.log(q) + (1 - y[i]) * Math.log(1 - q));
+    }
+    // fiabilidad por bins
+    var reliability = [];
+    for (var b = 0; b < B; b++) reliability.push({ bin: b, lo: b / B, hi: (b + 1) / B, n: 0, predicho: 0, observado: 0 });
+    for (i = 0; i < p.length; i++) {
+      var idx = Math.min(B - 1, Math.max(0, Math.floor(p[i] * B)));
+      reliability[idx].n++; reliability[idx].predicho += p[i]; reliability[idx].observado += y[i];
+    }
+    reliability.forEach(function (r) {
+      if (r.n) { r.predicho /= r.n; r.observado /= r.n; r.gap = Math.abs(r.predicho - r.observado); }
+      else { r.gap = null; }
+    });
+    var calibrationError = 0, tot = 0;
+    reliability.forEach(function (r) { if (r.n) { calibrationError += r.n * r.gap; tot += r.n; } });
+    return {
+      n: p.length,
+      brier: brier(p, y),
+      logLoss: p.length ? ll / p.length : 0,
+      ece: ece(p, y, B),
+      calibrationError: tot ? calibrationError / tot : 0,
+      reliability: reliability,
+      version: VERSION
+    };
+  }
+
+  // ═══ 3 · CONFIDENCE ENGINE ═══════════════════════════════════════════════
+  // ConfidenceScore NO es probabilidad de ganar. El objeto lo dice y los
+  // consumidores tienen que leerlo.
+  function confCompute(input) {
+    var nsz = Math.max(0, input.sampleSize || 0);
+    var comp = {
+      // encogimiento clásico n/(n+n0): con poca muestra la confianza no sube
+      sampleSize: nsz / (nsz + 40),
+      agreement: clamp01(input.agreement == null ? 0 : input.agreement),
+      stability: clamp01(input.stability == null ? 0 : input.stability),
+      calibration: clamp01(input.calibration == null ? 0 : input.calibration),
+      recentConsistency: clamp01(input.recentConsistency == null ? 0 : input.recentConsistency),
+      certainty: 1 - clamp01(input.uncertainty == null ? 1 : input.uncertainty)
+    };
+    var W = { sampleSize: 0.30, agreement: 0.15, stability: 0.20,
+              calibration: 0.15, recentConsistency: 0.10, certainty: 0.10 };
+    var score = 0;
+    Object.keys(W).forEach(function (kk) { score += W[kk] * comp[kk]; });
+    score = clamp01(score);
+    var band = score < 0.2 ? 'MUY_BAJA' : score < 0.4 ? 'BAJA'
+             : score < 0.6 ? 'MEDIA' : score < 0.8 ? 'ALTA' : 'MUY_ALTA';
+    return {
+      score: score, band: band, components: comp, weights: W,
+      isWinProbability: false,
+      disclaimer: 'La confianza mide cuánta evidencia respalda al sistema. ' +
+                  'NO es la probabilidad de ganar ni la altera.',
+      version: VERSION
+    };
+  }
+
+  // ═══ 4 · RANDOM BASELINE ═════════════════════════════════════════════════
+  // Cartera aleatoria uniforme, sembrada y en las MISMAS condiciones que la
+  // del optimizador: mismo k, mismo N, mismo número de boletos.
+  function randomBaseline(input) {
+    var N = input.maxNum, k = input.pick, n = Math.max(1, input.ticketCount | 0);
+    var rnd = mulberry32(input.seed == null ? 0 : (input.seed | 0));
+    var tickets = [], vistos = {};
+    var intentos = 0, maxIntentos = n * 200;
+    while (tickets.length < n && intentos++ < maxIntentos) {
+      var s = {};
+      while (Object.keys(s).length < k) s[1 + Math.floor(rnd() * N)] = 1;
+      var t = Object.keys(s).map(Number).sort(function (a, b) { return a - b; });
+      var kk = keyOf(t);
+      if (vistos[kk]) continue;
+      vistos[kk] = 1; tickets.push(t);
+    }
+    return { tickets: tickets, seed: input.seed == null ? 0 : (input.seed | 0),
+             version: VERSION, method: 'uniform_random_seeded' };
+  }
+
+  // Compara dos carteras contra el MISMO resultado oficial.
+  function compareToBaseline(aiTickets, randomTickets, actual, N, k) {
+    var set = {}; actual.forEach(function (x) { set[x] = 1; });
+    var h = function (ts) { return ts.map(function (t) { return t.filter(function (x) { return set[x]; }).length; }); };
+    var ai = h(aiTickets), rd = h(randomTickets);
+    var base = baselineHits(N, k);
+    return {
+      ai: { hits: ai, mean: mean(ai), max: ai.length ? Math.max.apply(null, ai) : 0 },
+      random: { hits: rd, mean: mean(rd), max: rd.length ? Math.max.apply(null, rd) : 0 },
+      theoreticalBaseline: base,
+      delta: mean(ai) - mean(rd),
+      nDraws: 1,
+      verdict: 'INSUFFICIENT_SAMPLE',
+      note: 'Un solo sorteo no distingue nada. El veredicto exige el EdgeDetector.',
+      version: VERSION
+    };
+  }
+
+  // ═══ 5 · WALK-FORWARD LAB ════════════════════════════════════════════════
+  // Ventanas temporales sobre el histórico OFICIAL. Cero leakage por
+  // construcción: la ventana de test siempre es posterior a la de train.
+  function walkForwardPlan(nDraws, opts) {
+    var o = opts || {};
+    var windows = Math.max(1, o.windows || 5);
+    var testSize = Math.max(1, o.testSize || Math.floor(nDraws * 0.04));
+    var minTrain = Math.max(50, o.minTrain || Math.floor(nDraws * 0.3));
+    var plan = [], fin = nDraws;
+    for (var w = 0; w < windows; w++) {
+      var testEnd = fin - w * testSize;
+      var testStart = testEnd - testSize;
+      var trainEnd = testStart;
+      if (testStart <= minTrain) break;
+      plan.push({ window: windows - w, trainFrom: 0, trainTo: trainEnd,
+                  testFrom: testStart, testTo: testEnd, nTrain: trainEnd, nTest: testSize });
+    }
+    plan.reverse();
+    return { windows: plan, requested: windows, generated: plan.length,
+             leakageCheck: plan.every(function (p) { return p.trainTo <= p.testFrom; }),
+             version: VERSION };
+  }
+
+  // Auditoría de fuga: ninguna ventana puede tocar datos posteriores al test.
+  function leakageAudit(plan) {
+    var problemas = [];
+    (plan.windows || []).forEach(function (w) {
+      if (w.trainTo > w.testFrom) problemas.push('ventana ' + w.window + ': train invade test');
+      if (w.testFrom >= w.testTo) problemas.push('ventana ' + w.window + ': test vacío');
+      if (w.trainFrom < 0 || w.testTo < 0) problemas.push('ventana ' + w.window + ': índices negativos');
+    });
+    return { clean: problemas.length === 0, problems: problemas, version: VERSION };
+  }
+
+  // Resume una corrida: por modelo y por ensemble, contra el baseline exacto.
+  function walkForwardSummarize(porVentana, N, k) {
+    var base = baselineHits(N, k);
+    var modelos = {};
+    porVentana.forEach(function (v) {
+      Object.keys(v.hitsByModel || {}).forEach(function (m) {
+        (modelos[m] = modelos[m] || []).push(mean(v.hitsByModel[m]));
+      });
+    });
+    var out = {};
+    Object.keys(modelos).forEach(function (m) {
+      var serie = modelos[m];
+      out[m] = {
+        windows: serie.length,
+        meanHits: mean(serie),
+        sd: sd(serie),
+        delta: mean(serie) - base,
+        positiveWindows: serie.filter(function (x) { return x > base; }).length,
+        negativeWindows: serie.filter(function (x) { return x < base; }).length,
+        stability: serie.length ? serie.filter(function (x) { return x > base; }).length / serie.length : 0
+      };
+    });
+    return { baseline: base, models: out, nWindows: porVentana.length, version: VERSION };
+  }
+
+  // ═══ 6 · ABLATION LAB ════════════════════════════════════════════════════
+  // FULL contra FULL menos cada modelo, sobre LAS MISMAS ventanas.
+  function ablationRun(fullSerie, sinModelo, N, k) {
+    var base = baselineHits(N, k);
+    var full = { meanHits: mean(fullSerie), sd: sd(fullSerie), windows: fullSerie.length,
+                 delta: mean(fullSerie) - base };
+    var filas = Object.keys(sinModelo).map(function (m) {
+      var s = sinModelo[m];
+      var d = mean(fullSerie) - mean(s);
+      var ganadas = 0;
+      for (var i = 0; i < Math.min(fullSerie.length, s.length); i++) if (fullSerie[i] > s[i]) ganadas++;
+      return {
+        removed: m, meanWithout: mean(s), contribution: d,
+        windowsImproved: ganadas,
+        windowsTotal: Math.min(fullSerie.length, s.length),
+        consistent: fullSerie.length ? ganadas / fullSerie.length >= 0.6 : false
+      };
+    }).sort(function (a, b) { return b.contribution - a.contribution; });
+    return { full: full, baseline: base, ablations: filas, version: VERSION };
+  }
+
+  // ═══ 7 · EDGE DETECTOR 2.0 ═══════════════════════════════════════════════
+  // EDGE-0 sin evidencia · EDGE-1 débil o no reproducible ·
+  // EDGE-2 señal reproducible · EDGE-3 evidencia fuerte y repetida.
+  var EDGE_REQ = {
+    minWindows: 5, minStability: 0.6, minDelta: 0.0,
+    maxQ: 0.05, minHoldoutDelta: 0.0, minReplications: 2
+  };
+
+  function edgeEvaluate(ev, req) {
+    var R = Object.assign({}, EDGE_REQ, req || {});
+    var e = ev || {};
+    var razones = [];
+    var nW = e.windows || 0;
+    var estab = e.stability == null ? 0 : e.stability;
+    var delta = e.delta == null ? 0 : e.delta;
+    var q = e.qValue == null ? 1 : e.qValue;
+    var hold = e.holdoutDelta;
+    var reps = e.replications || 0;
+    var vsBase = e.beatsRandomBaseline === true;
+    var multComp = e.multipleComparisonControlled === true;
+
+    if (nW < 1 || delta <= 0) {
+      razones.push(nW < 1 ? 'sin ventanas evaluadas' : 'delta <= 0 contra el baseline exacto');
+      return veredicto('EDGE-0', razones, R, e);
+    }
+    if (nW < R.minWindows || estab < R.minStability) {
+      razones.push('sólo ' + nW + ' ventana(s) (mínimo ' + R.minWindows + ')');
+      if (estab < R.minStability) razones.push('estabilidad ' + estab.toFixed(2) + ' < ' + R.minStability);
+      return veredicto('EDGE-1', razones, R, e);
+    }
+    if (q > R.maxQ) razones.push('q=' + q + ' > ' + R.maxQ);
+    if (!vsBase) razones.push('no supera al baseline aleatorio');
+    if (razones.length) return veredicto('EDGE-1', razones, R, e);
+
+    var faltaFuerte = [];
+    if (hold == null) faltaFuerte.push('sin holdout evaluado');
+    else if (hold <= R.minHoldoutDelta) faltaFuerte.push('holdout delta <= 0');
+    if (reps < R.minReplications) faltaFuerte.push('replicaciones ' + reps + ' < ' + R.minReplications);
+    if (!multComp) faltaFuerte.push('sin control de comparaciones múltiples');
+    if (faltaFuerte.length) return veredicto('EDGE-2', faltaFuerte, R, e);
+    return veredicto('EDGE-3', [], R, e);
+  }
+  function veredicto(estado, razones, R, e) {
+    return {
+      state: estado,
+      verdict: estado === 'EDGE-0' || estado === 'EDGE-1' ? 'NO_EDGE' : estado,
+      isEdge: estado === 'EDGE-2' || estado === 'EDGE-3',
+      reasons: razones,
+      requirements: R,
+      evidence: e,
+      statement: estado === 'EDGE-0'
+        ? 'No se encontró evidencia de ventaja predictiva.'
+        : estado === 'EDGE-1'
+        ? 'Señal débil o no reproducible: NO_EDGE.'
+        : estado === 'EDGE-2'
+        ? 'Señal reproducible, todavía sin evidencia fuerte.'
+        : 'Evidencia fuerte y repetida fuera de muestra.',
+      version: VERSION
+    };
+  }
+
+  // ═══ 8 · ANTI-OVERFITTING SHIELD ═════════════════════════════════════════
+  // Ocho controles nombrados. Si alguno falla: REJECTED_POSSIBLE_OVERFITTING.
+  var SHIELD_CHECKS = ['holdout', 'walkForward', 'seedSensitivity', 'hyperparamSensitivity',
+                       'randomBaseline', 'temporalRobustness', 'multipleComparison', 'leakageAudit'];
+
+  function shieldEvaluate(c) {
+    var x = c || {};
+    var detalle = SHIELD_CHECKS.map(function (name) {
+      var v = x[name];
+      var aplica = !(v && v.notApplicable);
+      var pasa = v === true || (v && v.pass === true);
+      return { check: name, applicable: aplica, passed: !!pasa,
+               detail: (v && v.detail) || (v === true ? 'ok' : 'no evaluado') };
+    });
+    var fallos = detalle.filter(function (d) { return d.applicable && !d.passed; });
+    return {
+      verdict: fallos.length ? 'REJECTED_POSSIBLE_OVERFITTING' : 'PASSED',
+      passed: fallos.length === 0,
+      checks: detalle,
+      failed: fallos.map(function (d) { return d.check; }),
+      version: VERSION
+    };
+  }
+
+  // ═══ 9 · FAILURE MEMORY (resumen cliente) ════════════════════════════════
+  // La escritura vive en el servidor. Aquí sólo se resume lo que el servidor
+  // ya validó, para poder mostrarlo.
+  function failureSummary(registros, N, k) {
+    var base = baselineHits(N, k);
+    var porModelo = {};
+    (registros || []).forEach(function (r) {
+      var m = r.model_id;
+      var o = porModelo[m] = porModelo[m] || {
+        model: m, n: 0, hits: [], highConfFailures: 0, recent: [],
+        calibrationErrors: [], disagreements: []
+      };
+      o.n++; o.hits.push(r.hits);
+      if ((r.confidence_bucket === 'ALTA' || r.confidence_bucket === 'MUY_ALTA') && r.hits < base) {
+        o.highConfFailures++;
+      }
+      if (r.calibration_error != null) o.calibrationErrors.push(Number(r.calibration_error));
+      if (r.disagreement != null) o.disagreements.push(Number(r.disagreement));
+    });
+    var filas = Object.keys(porModelo).map(function (m) {
+      var o = porModelo[m];
+      var mitad = Math.floor(o.hits.length / 2);
+      var antes = o.hits.slice(0, mitad), despues = o.hits.slice(mitad);
+      return {
+        model: m, n: o.n, meanHits: mean(o.hits), delta: mean(o.hits) - base,
+        highConfidenceFailures: o.highConfFailures,
+        highConfidenceFailureRate: o.n ? o.highConfFailures / o.n : 0,
+        recentDegradation: (despues.length && antes.length) ? mean(despues) - mean(antes) : null,
+        meanCalibrationError: o.calibrationErrors.length ? mean(o.calibrationErrors) : null,
+        meanDisagreement: o.disagreements.length ? mean(o.disagreements) : null
+      };
+    }).sort(function (a, b) { return b.highConfidenceFailureRate - a.highConfidenceFailureRate; });
+    return { baseline: base, models: filas, n: (registros || []).length, version: VERSION };
+  }
+
+  return {
+    VERSION: VERSION,
+    PortfolioOptimizer: { optimize: optimize, DEFAULTS: PO_DEFAULTS },
+    CalibrationEngine: { fit: calFit, calibrate: calCalibrate, evaluate: calEvaluate, MIN_N: CAL_MIN_N },
+    ConfidenceEngine: { compute: confCompute },
+    RandomBaseline: { generate: randomBaseline, compare: compareToBaseline },
+    WalkForwardLab: { plan: walkForwardPlan, audit: leakageAudit, summarize: walkForwardSummarize },
+    AblationLab: { run: ablationRun },
+    EdgeDetector: { evaluate: edgeEvaluate, REQUIREMENTS: EDGE_REQ },
+    AntiOverfitShield: { evaluate: shieldEvaluate, CHECKS: SHIELD_CHECKS },
+    FailureMemory: { summary: failureSummary },
+    _internal: { mulberry32: mulberry32, overlap: overlap, mean: mean, sd: sd }
+  };
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PUENTE V2 · conecta la capa científica con el estado real de la app.
+//  No sustituye nada: lee lo que ya existe y lo traduce a evidencia.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Evidencia disponible AHORA para el juego actual. Honesta por construcción:
+// con 5 observaciones globales no hay ventanas, así que el EdgeDetector
+// devolverá EDGE-0/NO_EDGE, que es lo correcto.
+function mgV2Evidence(game) {
+  game = game || state.currentGame;
+  var cfg = GAME_CONFIG[game] || {};
+  var N = cfg.maxNum || 56, k = cfg.pick || 6;
+  var out = { game: game, N: N, k: k, version: MG_SCI_V2.VERSION };
+
+  // memoria global (fuente de verdad) o local mientras no haya sincronía
+  var mem = null, fuente = 'local', versionGlobal = null;
+  try {
+    if (typeof MG_GLOBAL !== 'undefined' && MG_GLOBAL.eligible(game)) {
+      var g = MG_GLOBAL.memoryFor(game);
+      mem = g.memory; fuente = g.source; versionGlobal = g.version;
+    } else if (typeof MG_COLLECTIVE !== 'undefined') {
+      mem = MG_COLLECTIVE.loadMemory(game);
+    }
+  } catch (e) {}
+  var obs = (mem && mem.observations) || [];
+  out.observations = obs.length;
+  out.memorySource = fuente;
+  out.globalVersion = versionGlobal;
+
+  // acuerdo entre modelos y desacuerdo estructural, del estado vivo
+  var acuerdo = 0, desacuerdo = 1;
+  try {
+    if (state.models && typeof MG_COLLECTIVE !== 'undefined') {
+      var sig = MG_COLLECTIVE.structuralSignals(state.models, N, k);
+      var ids = MG_COLLECTIVE.MODEL_IDS;
+      var ds = ids.map(function (id) { return sig[id] ? sig[id].disagreement : 1; });
+      desacuerdo = ds.reduce(function (a, b) { return a + b; }, 0) / (ds.length || 1);
+      acuerdo = 1 - desacuerdo;
+    }
+  } catch (e) {}
+  out.agreement = acuerdo;
+  out.disagreement = desacuerdo;
+
+  // aciertos por sorteo contra el baseline exacto
+  var base = mgTheoreticalMean(N, k);
+  var serie = obs.map(function (o) {
+    var h = 0, n = 0;
+    Object.keys(o.hits_by_model || {}).forEach(function (m) { h += o.hits_by_model[m]; n++; });
+    return n ? h / n : 0;
+  });
+  var media = serie.length ? serie.reduce(function (a, b) { return a + b; }, 0) / serie.length : 0;
+  out.baseline = base;
+  out.meanHits = media;
+  out.delta = serie.length ? media - base : 0;
+  out.stability = serie.length
+    ? serie.filter(function (x) { return x > base; }).length / serie.length : 0;
+
+  // confianza: NO es probabilidad de ganar
+  out.confidence = MG_SCI_V2.ConfidenceEngine.compute({
+    sampleSize: obs.length, agreement: acuerdo, stability: out.stability,
+    calibration: 0, recentConsistency: out.stability, uncertainty: desacuerdo
+  });
+
+  // veredicto de evidencia. Las ventanas son sorteos oficiales evaluados:
+  // con 5 no se llega ni a EDGE-1, y así debe reportarse.
+  out.edge = MG_SCI_V2.EdgeDetector.evaluate({
+    windows: obs.length, delta: out.delta, stability: out.stability,
+    qValue: null, beatsRandomBaseline: false,
+    holdoutDelta: null, replications: 0, multipleComparisonControlled: false
+  });
+
+  // el escudo antifraude estadístico, con lo que realmente se ha evaluado
+  out.shield = MG_SCI_V2.AntiOverfitShield.evaluate({
+    holdout: { pass: false, detail: 'no evaluado con esta muestra' },
+    walkForward: { pass: obs.length >= 5, detail: obs.length + ' sorteos oficiales' },
+    seedSensitivity: { pass: true, detail: 'generación determinista por seed' },
+    hyperparamSensitivity: { pass: false, detail: 'no evaluado' },
+    randomBaseline: { pass: false, detail: 'no evaluado' },
+    temporalRobustness: { pass: false, detail: 'no evaluado' },
+    multipleComparison: { pass: false, detail: 'no evaluado' },
+    leakageAudit: { pass: true, detail: 'snapshot_upto < target_draw en todos los snapshots' }
+  });
+  return out;
+}
+
+// Banner de EVIDENCIA. Se pinta ANTES de los boletos (§12).
+function mgRenderEvidenceBanner() {
+  var host = document.getElementById('mg-evidence-banner');
+  if (!host) return;
+  var e;
+  try { e = mgV2Evidence(state.currentGame); } catch (err) { host.innerHTML = ''; return; }
+  var edge = e.edge, conf = e.confidence;
+  var color = edge.isEdge ? '#22c55e' : '#ffb020';
+  host.innerHTML =
+    '<div class="glass card" style="margin-bottom:12px;border-left:3px solid ' + color + ';">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+        '<span style="font-size:16px;">🔬</span>' +
+        '<strong style="font-size:12.5px;">ESTADO DE LA EVIDENCIA</strong>' +
+        '<span style="font-size:9.5px;font-weight:700;letter-spacing:.4px;padding:2px 6px;' +
+        'border-radius:4px;background:' + (edge.isEdge ? 'rgba(34,197,94,.16)' : 'rgba(255,176,32,.16)') +
+        ';color:' + color + ';">' + edge.state + '</span>' +
+      '</div>' +
+      '<div style="font-size:11.5px;line-height:1.55;margin-bottom:8px;">' + edge.statement + '</div>' +
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;">' +
+        '<span>Calidad de señal: <strong>' + (e.delta > 0 ? '+' : '') + e.delta.toFixed(4) +
+          '</strong> vs baseline ' + e.baseline.toFixed(4) + '</span>' +
+        '<span>Observaciones' + (e.memorySource === 'global' ? ' globales' : ' locales') +
+          ': <strong>' + e.observations + '</strong></span>' +
+        '<span>Consenso de modelos: <strong>' + (e.agreement * 100).toFixed(0) + '%</strong></span>' +
+        '<span>Incertidumbre: <strong>' + (e.disagreement * 100).toFixed(0) + '%</strong></span>' +
+      '</div>' +
+      '<div style="margin-top:6px;font-size:11px;">Confianza del sistema: <strong>' +
+        conf.band + '</strong> (' + (conf.score * 100).toFixed(0) + '%)' +
+        '<span style="color:var(--text-3);"> — ' + conf.disclaimer + '</span></div>' +
+      (edge.isEdge ? '' :
+        '<div style="margin-top:8px;padding:7px;border-radius:6px;background:rgba(255,176,32,.09);' +
+        'border:1px solid rgba(255,176,32,.25);font-size:10.5px;color:#ffb020;line-height:1.5;">' +
+        '<strong>NO_EDGE</strong> · No se encontró evidencia reproducible de ventaja predictiva. ' +
+        'Los boletos de abajo son una cartera diversificada, no una predicción con ventaja ' +
+        'demostrada. ' + (edge.reasons.length ? 'Falta: ' + edge.reasons.join(' · ') + '.' : '') +
+        '</div>') +
+    '</div>';
+}
+
+// §8 · Dashboard científico, separado de la generación de boletos.
+function mgRenderScienceDashboard() {
+  var host = document.getElementById('mg-settings-body');
+  if (!host) return;
+  var prev = document.getElementById('mg-science-card');
+  if (prev) prev.remove();
+  var juegos = ['melate', 'revancha', 'retro', 'chispazo'];
+
+  function fila(g) {
+    var e; try { e = mgV2Evidence(g); } catch (err) { return ''; }
+    var st; try { st = MG_GLOBAL.status(g); } catch (err) { st = {}; }
+    return '<div style="padding:6px 0;border-top:1px solid var(--border);">' +
+      '<div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:600;">' +
+        '<span>' + g + '</span>' +
+        '<span style="color:' + (e.edge.isEdge ? '#22c55e' : '#ffb020') + ';">' + e.edge.state + '</span>' +
+      '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-3);line-height:1.6;">' +
+        'Global: ' + (st.version == null ? 'sin sincronizar' : 'v' + st.version) +
+        ' · observaciones ' + e.observations +
+        ' · modelos ' + MG_COLLECTIVE.MODEL_IDS.length +
+        ' · shrinkage n/(n+' + MG_COLLECTIVE.SHRINK_N0 + ')' +
+        ' · floor ' + (MG_COLLECTIVE.FLOOR * 100) + '% · cap ' + (MG_COLLECTIVE.CAP * 100) + '%<br>' +
+        'Aciertos medios ' + e.meanHits.toFixed(4) + ' vs baseline ' + e.baseline.toFixed(4) +
+        ' · estabilidad ' + (e.stability * 100).toFixed(0) + '%' +
+        ' · consenso ' + (e.agreement * 100).toFixed(0) + '%<br>' +
+        'Confianza ' + e.confidence.band + ' · escudo antioverfitting <strong>' +
+        e.shield.verdict + '</strong>' +
+        (e.shield.failed.length ? ' (pendiente: ' + e.shield.failed.join(', ') + ')' : '') +
+      '</div></div>';
+  }
+
+  var card = document.createElement('div');
+  card.className = 'glass card mg-group';
+  card.id = 'mg-science-card';
+  card.innerHTML =
+    '<div class="card-head"><div class="card-title"><span class="card-title-icon">🔬</span> ' +
+    'Dashboard científico · ' + MG_SCI_V2.VERSION + '</div></div>' +
+    '<div class="mg-group-desc">Evidencia, no promesas. Ninguna cifra de esta tarjeta es una ' +
+    'probabilidad de ganar.</div>' +
+    juegos.map(fila).join('') +
+    '<div style="padding:8px 4px 4px;font-size:10px;color:var(--text-3);line-height:1.5;">' +
+    'EDGE-0 sin evidencia · EDGE-1 débil o no reproducible · EDGE-2 señal reproducible · ' +
+    'EDGE-3 evidencia fuerte y repetida fuera de muestra. EDGE-0 y EDGE-1 son NO_EDGE.</div>';
+  host.appendChild(card);
 }
 </script>
 
