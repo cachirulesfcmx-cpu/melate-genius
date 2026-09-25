@@ -1,0 +1,105 @@
+{
+  "protocol_version": "mg-v3-blind-1.0.0",
+  "registered_at": "2026-09-25T00:00:00Z",
+  "stage": "despues del barrido sobre DEV, ANTES de abrir REP1, REP2 y HOLDOUT",
+  "sweep_result": {
+    "melate": {
+      "verdict": "POSSIBLE_OVERFITTING",
+      "mean": 0.056309523809523754,
+      "sd": 0.05925676025875556,
+      "min": -0.0028571428571428914,
+      "max": 0.1338095238095237,
+      "positive": "9/12",
+      "best_config_on_dev": {
+        "maxTrainDraws": 400,
+        "stabilityBlocks": 4,
+        "meanHits": 0.7766666666666666,
+        "delta": 0.1338095238095237,
+        "deltaVsRandom": 0.1333333333333333,
+        "stability": 1,
+        "n": 300
+      }
+    },
+    "revancha": {
+      "verdict": "POSSIBLE_OVERFITTING",
+      "mean": -0.05285714285714288,
+      "sd": 0.02522624895547563,
+      "min": -0.09285714285714286,
+      "max": -0.02952380952380962,
+      "positive": "0/12",
+      "best_config_on_dev": {
+        "maxTrainDraws": 800,
+        "stabilityBlocks": 4,
+        "meanHits": 0.6133333333333333,
+        "delta": -0.02952380952380962,
+        "deltaVsRandom": 0.04999999999999993,
+        "stability": 0.25,
+        "n": 300
+      }
+    },
+    "retro": {
+      "verdict": "POSSIBLE_OVERFITTING",
+      "mean": 0.009423076923076867,
+      "sd": 0.04839077046985996,
+      "min": -0.04974358974358983,
+      "max": 0.08025641025641028,
+      "positive": "9/12",
+      "best_config_on_dev": {
+        "maxTrainDraws": 800,
+        "stabilityBlocks": 4,
+        "meanHits": 1.0033333333333334,
+        "delta": 0.08025641025641028,
+        "deltaVsRandom": 0.09000000000000008,
+        "stability": 0.5,
+        "n": 300
+      }
+    },
+    "chispazo": {
+      "verdict": "POSSIBLE_OVERFITTING",
+      "mean": -0.008690476190476248,
+      "sd": 0.037446932147677005,
+      "min": -0.06952380952380954,
+      "max": 0.020476190476190426,
+      "positive": "9/12",
+      "best_config_on_dev": {
+        "maxTrainDraws": 400,
+        "stabilityBlocks": 4,
+        "meanHits": 0.9133333333333333,
+        "delta": 0.020476190476190426,
+        "deltaVsRandom": 0.0033333333333332993,
+        "stability": 0.5,
+        "n": 300
+      }
+    }
+  },
+  "configurations_to_test": [
+    {
+      "id": "PROD",
+      "maxTrainDraws": 1500,
+      "stabilityBlocks": 6,
+      "why": "la configuracion que la app REALMENTE lleva en produccion"
+    },
+    {
+      "id": "DEV_SELECTED",
+      "maxTrainDraws": 400,
+      "stabilityBlocks": 4,
+      "why": "la que un ajustador ingenuo habria elegido viendo solo DEV (melate +0.1338)"
+    }
+  ],
+  "predictions": [
+    "Si la mejora de melate con lookback 400 fuera real, debe reaparecer en REP1, REP2 y HOLDOUT con signo positivo y magnitud comparable.",
+    "Si es sobreajuste a DEV, se encogera hacia cero o cambiara de signo fuera de DEV.",
+    "Revancha dio 0/12 configuraciones positivas en DEV: no se espera nada de ella."
+  ],
+  "non_promotion_rule": "Pase lo que pase, NINGUN hiperparametro se promueve a produccion en este PR. El barrido mide fragilidad, no busca la mejor celda.",
+  "frozen_config_for_replications": {
+    "maxTrainDraws": 1500,
+    "stabilityBlocks": 6
+  },
+  "blocks_not_yet_opened": [
+    "REP1",
+    "REP2",
+    "HOLDOUT"
+  ],
+  "preregistration_hash": "1d76f15d96a3f9f7cf3cff699a84d020be2d0f489518b67be9355406ed5291da"
+}
