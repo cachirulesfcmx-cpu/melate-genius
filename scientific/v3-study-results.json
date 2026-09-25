@@ -1,0 +1,202 @@
+{
+  "protocol_version": "mg-v3-blind-1.0.0",
+  "manifest_hash": "000d987cda90c3b9891fe62cc975270949ebc7ab098725b87d878885a5f0f7e7",
+  "preregistration_hash": "1d76f15d96a3f9f7cf3cff699a84d020be2d0f489518b67be9355406ed5291da",
+  "measured_at": "2026-09-25",
+  "games": {
+    "melate": {
+      "state": "EDGE-1",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          1262,
+          1562
+        ],
+        "delta": 0.010476,
+        "n": 300,
+        "stability": 0.6667
+      },
+      "fdr": {
+        "q_ensemble": 0.991,
+        "significant": 0,
+        "n": 14,
+        "frozen_hash": "60d3a693a5cfc3f3"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": 0.05631,
+        "sd": 0.059257,
+        "range": 0.136667,
+        "positive": "9/12"
+      },
+      "replications": {
+        "positive": 1,
+        "n": 2,
+        "consistentDirection": false,
+        "deltas": [
+          -0.04619,
+          0.010476
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 0.6533,
+        "random": 0.6833,
+        "delta": -0.03,
+        "p": 0.6181,
+        "q": 0.9117,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.991)",
+        "sensibilidad a hiperparámetros estable",
+        "2 replicaciones positivas (hay 1)",
+        "dirección consistente del efecto"
+      ]
+    },
+    "revancha": {
+      "state": "EDGE-1",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          1279,
+          1579
+        ],
+        "delta": 0.017143,
+        "n": 300,
+        "stability": 0.5
+      },
+      "fdr": {
+        "q_ensemble": 0.9487,
+        "significant": 0,
+        "n": 14,
+        "frozen_hash": "d280cd4371c461f3"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": -0.052857,
+        "sd": 0.025226,
+        "range": 0.063333,
+        "positive": "0/12"
+      },
+      "replications": {
+        "positive": 2,
+        "n": 2,
+        "consistentDirection": true,
+        "deltas": [
+          0.017143,
+          0.007143
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 0.66,
+        "random": 0.6667,
+        "delta": -0.006667,
+        "p": 0.9117,
+        "q": 0.9117,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.949)",
+        "sensibilidad a hiperparámetros estable"
+      ]
+    },
+    "retro": {
+      "state": "EDGE-1",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          757,
+          1057
+        ],
+        "delta": 0.076923,
+        "n": 300,
+        "stability": 0.5
+      },
+      "fdr": {
+        "q_ensemble": 0.2407,
+        "significant": 4,
+        "n": 14,
+        "frozen_hash": "93b5487f3e6114d7"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": 0.009423,
+        "sd": 0.048391,
+        "range": 0.13,
+        "positive": "9/12"
+      },
+      "replications": {
+        "positive": 0,
+        "n": 2,
+        "consistentDirection": true,
+        "deltas": [
+          -0.069744,
+          -0.019744
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 1,
+        "random": 0.86,
+        "delta": 0.14,
+        "p": 0.0481,
+        "q": 0.1925,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.241)",
+        "sensibilidad a hiperparámetros estable",
+        "2 replicaciones positivas (hay 0)"
+      ]
+    },
+    "chispazo": {
+      "state": "EDGE-0",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          9770,
+          10070
+        ],
+        "delta": -0.002857,
+        "n": 300,
+        "stability": 0.6667
+      },
+      "fdr": {
+        "q_ensemble": 0.9491,
+        "significant": 0,
+        "n": 14,
+        "frozen_hash": "ddd11f672ecb528f"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": -0.00869,
+        "sd": 0.037447,
+        "range": 0.09,
+        "positive": "9/12"
+      },
+      "replications": {
+        "positive": 0,
+        "n": 2,
+        "consistentDirection": true,
+        "deltas": [
+          -0.019524,
+          -0.039524
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 0.89,
+        "random": 0.9133,
+        "delta": -0.023333,
+        "p": 0.7159,
+        "q": 0.9117,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "holdout ciego positivo",
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.949)",
+        "sensibilidad a hiperparámetros estable",
+        "2 replicaciones positivas (hay 0)"
+      ]
+    }
+  },
+  "global_verdict": "NO_EDGE"
+}
