@@ -1,0 +1,573 @@
+{
+  "protocol_version": "mg-v4-future-1.0.0",
+  "reserved_at": "2026-09-25T00:00:00Z",
+  "rule": "PREDICT → SEAL → OBSERVE → EVALUATE → LEARN. Un sorteo reservado aquí no puede entrar en entrenamiento, selección ni aprendizaje hasta estar RELEASED_TO_LEARNING, y sólo se llega ahí pasando por EVALUATED.",
+  "states": [
+    "RESERVED",
+    "PREDICTED",
+    "SEALED",
+    "RESULT_AVAILABLE",
+    "EVALUATED",
+    "RELEASED_TO_LEARNING"
+  ],
+  "awaiting_state": "AWAITING_OFFICIAL_IDENTITY",
+  "n_future_per_game": 12,
+  "official_anchor": {
+    "melate": {
+      "ultimo": 4268,
+      "fecha": "2026-09-20",
+      "filas": 2165
+    },
+    "retro": {
+      "ultimo": 1670,
+      "fecha": "2026-09-19",
+      "filas": 1659
+    },
+    "revancha": null,
+    "chispazo": null
+  },
+  "limitation": "El registro oficial melate_sorteos sólo contiene melate y retro. Revancha y Chispazo quedan reservados SIN número de concurso, en AWAITING_OFFICIAL_IDENTITY: se les puede predecir, pero no se les puede sellar una identidad oficial ni aprender de ellos hasta que el registro los ancle. No se inventa numeración.",
+  "dataset_hashes": {
+    "melate": "fe566568b978c2c4d8f3ad3d86980f64d6fcb33bf1f4d3c40269d0f6439c8f4b",
+    "revancha": "56a493a8da490660298aba784fa8bd0b1a56e6d13192595b51bfe454269f6e13",
+    "retro": "682699c87258ca3a0a75796e207e70c9140e83814ff60cf68a50b89a9eae58f1",
+    "chispazo": "51558ef6e79ffd2067ea35bab06a99548c3dcf3250c92429247314b07450e043"
+  },
+  "entries": [
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4269,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +1",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "aa461eaf277c446f"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4270,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +2",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "df32f3d9c06d05d9"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4271,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +3",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "ad6034d4bb6d345e"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4272,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +4",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "72d3846757e7060f"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4273,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +5",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "151a7c228d674b2c"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4274,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +6",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "db64d94d03adbbbd"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4275,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +7",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "99353898c39ce7f2"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4276,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +8",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "ce23e56bae5c36b3"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4277,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +9",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "29de49f64f071b30"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4278,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +10",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "fd03c371db980cd1"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4279,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +11",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "e7de190c2555ff76"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "melate",
+      "official_contest_number": 4280,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=4268 del 2026-09-20 · sucesor +12",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "489e1c7c97bf6342"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "revancha",
+      "official_contest_number": null,
+      "state": "AWAITING_OFFICIAL_IDENTITY",
+      "reason": "melate_sorteos no contiene ninguna fila de revancha, así que no hay numeración oficial con la que reservar. Inventar un número rompería la identidad canónica (game, official_contest_number).",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "version": "scientific-v4.0.0",
+      "history": [
+        {
+          "state": "AWAITING_OFFICIAL_IDENTITY",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1671,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +1",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "d3deccf777f4ffdf"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1672,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +2",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "555904fa69043646"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1673,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +3",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "2433bea12182dcd5"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1674,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +4",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "addafcc4478d0f3c"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1675,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +5",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "34635d3b8d287a8b"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1676,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +6",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "45617b7eaa528322"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1677,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +7",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "d65473051c383b91"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1678,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +8",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "13875888213fd0f8"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1679,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +9",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "dfe7752f392cc7e7"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1680,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +10",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "b5e91423bc401f6b"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1681,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +11",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "e54e608cce5a19fc"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "retro",
+      "official_contest_number": 1682,
+      "state": "RESERVED",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "anchor": "melate_sorteos: max(concurso)=1670 del 2026-09-19 · sucesor +12",
+      "version": "scientific-v4.0.0",
+      "snapshot": null,
+      "snapshot_hash": null,
+      "result": null,
+      "result_hash": null,
+      "evaluation": null,
+      "history": [
+        {
+          "state": "RESERVED",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ],
+      "entry_hash": "959b7ecdd015101d"
+    },
+    {
+      "protocol_version": "mg-v4-future-1.0.0",
+      "game": "chispazo",
+      "official_contest_number": null,
+      "state": "AWAITING_OFFICIAL_IDENTITY",
+      "reason": "melate_sorteos no contiene ninguna fila de chispazo, así que no hay numeración oficial con la que reservar. Inventar un número rompería la identidad canónica (game, official_contest_number).",
+      "reserved_at": "2026-09-25T00:00:00Z",
+      "version": "scientific-v4.0.0",
+      "history": [
+        {
+          "state": "AWAITING_OFFICIAL_IDENTITY",
+          "at": "2026-09-25T00:00:00Z"
+        }
+      ]
+    }
+  ],
+  "manifest_hash": "6b09dd241afc8d82"
+}
