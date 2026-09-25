@@ -11133,6 +11133,145 @@ function mgCollectiveImportConfirm() {
   showToast('Importación de ' + p.validation.total.importable + ' observación(es) preparada', 'info');
 }
 </script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  🛡️ MG_SUPABASE_GUARD · V3 FASE 8
+//
+//  El problema: `const sb = supabase.createClient(...)` estaba en el nivel
+//  superior de su bloque <script>. Si el CDN de jsDelivr no cargaba, esa línea
+//  lanzaba y TODO lo que venía después en ese bloque dejaba de existir: auth,
+//  enterApp, el ledger personal, el cerebro global. La app quedaba muerta por
+//  un recurso de terceros.
+//
+//  La solución: comprobar la dependencia antes de usarla, y si no está,
+//  entregar un cliente degradado que NUNCA lanza. Las llamadas devuelven
+//  { data: null, error: { code: 'SUPABASE_UNAVAILABLE' } }, que es la misma
+//  forma que ya maneja el resto del código.
+//
+//  Este bloque va ANTES del bloque de Supabase, a propósito.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_SUPABASE_GUARD = (function () {
+  'use strict';
+  var VERSION = 'supabase-guard-v1.0.0';
+  var CODE = 'SUPABASE_UNAVAILABLE';
+  var estado = { available: null, degraded: false, reason: null, version: VERSION };
+
+  function errObj(op) {
+    return { message: 'Supabase no está disponible (no cargó el SDK). ' +
+                      'La app sigue funcionando en modo degradado.',
+             code: CODE, operation: op || null, degraded: true };
+  }
+
+  // Constructor de cadenas: cualquier .from().select().eq().single() —y
+  // cualquier otra combinación— devuelve un objeto encadenable que además es
+  // "thenable", así que `await` sobre él resuelve sin lanzar.
+  function chain(op) {
+    var eslabon = {};
+    var metodos = ['select', 'insert', 'update', 'upsert', 'delete', 'eq', 'neq',
+      'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'contains', 'or',
+      'not', 'filter', 'order', 'limit', 'range', 'single', 'maybeSingle',
+      'csv', 'throwOnError', 'abortSignal', 'returns', 'match'];
+    metodos.forEach(function (m) {
+      eslabon[m] = function () { return chain(op + '.' + m); };
+    });
+    var resultado = { data: null, error: errObj(op), count: null, status: 503,
+                      statusText: 'SUPABASE_UNAVAILABLE' };
+    eslabon.then = function (res, rej) { return Promise.resolve(resultado).then(res, rej); };
+    eslabon.catch = function (f) { return Promise.resolve(resultado).catch(f); };
+    eslabon.finally = function (f) { return Promise.resolve(resultado).finally(f); };
+    return eslabon;
+  }
+
+  function degradedClient() {
+    var no = function (op) {
+      return function () { return Promise.resolve({ data: null, error: errObj(op) }); };
+    };
+    return {
+      __degraded: true, __guardVersion: VERSION,
+      from: function (tabla) { return chain('from(' + tabla + ')'); },
+      rpc: function (fn) { return chain('rpc(' + fn + ')'); },
+      functions: { invoke: no('functions.invoke') },
+      storage: { from: function (b) { return chain('storage.from(' + b + ')'); } },
+      auth: {
+        signUp: no('auth.signUp'),
+        signInWithPassword: no('auth.signInWithPassword'),
+        signInWithOAuth: no('auth.signInWithOAuth'),
+        signOut: function () { return Promise.resolve({ error: null }); },
+        getUser: function () { return Promise.resolve({ data: { user: null }, error: errObj('auth.getUser') }); },
+        getSession: function () { return Promise.resolve({ data: { session: null }, error: null }); },
+        refreshSession: no('auth.refreshSession'),
+        resetPasswordForEmail: no('auth.resetPasswordForEmail'),
+        onAuthStateChange: function () {
+          return { data: { subscription: { unsubscribe: function () {} } } };
+        }
+      }
+    };
+  }
+
+  // Devuelve el cliente real si la dependencia está; si no, el degradado.
+  // No lanza en ningún camino: ése es el punto.
+  function createClient(url, key) {
+    var dep = (typeof supabase !== 'undefined' && supabase) ? supabase
+            : (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
+    if (dep && typeof dep.createClient === 'function') {
+      try {
+        var c = dep.createClient(url, key);
+        estado = { available: true, degraded: false, reason: null, version: VERSION };
+        return c;
+      } catch (e) {
+        estado = { available: false, degraded: true, version: VERSION,
+                   reason: 'createClient lanzó: ' + (e && e.message) };
+        try { console.error('MG-GUARD: Supabase no pudo inicializarse', e); } catch (e2) {}
+        return degradedClient();
+      }
+    }
+    estado = { available: false, degraded: true, version: VERSION,
+               reason: 'el SDK de Supabase no cargó (CDN bloqueado o caído)' };
+    try { console.warn('MG-GUARD: modo degradado · ' + estado.reason); } catch (e3) {}
+    return degradedClient();
+  }
+
+  function status() {
+    return { available: estado.available, degraded: estado.degraded,
+             reason: estado.reason, version: estado.version };
+  }
+
+  // Aviso visible. Sin secretos: no menciona URL, clave ni nada del proyecto.
+  function renderBanner() {
+    if (!estado.degraded) {
+      var v = document.getElementById('mg-degraded-banner');
+      if (v) v.remove();
+      return false;
+    }
+    if (document.getElementById('mg-degraded-banner')) return true;
+    var d = document.createElement('div');
+    d.id = 'mg-degraded-banner';
+    d.setAttribute('role', 'status');
+    d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;padding:8px 14px;' +
+      'background:#7a4a00;color:#ffe9c7;font-size:12px;line-height:1.5;text-align:center;' +
+      'box-shadow:0 1px 6px rgba(0,0,0,.3);';
+    d.textContent = 'Modo sin conexión a la cuenta: no se pudo cargar un recurso externo. ' +
+      'Puedes generar y ver boletos; iniciar sesión, el historial en la nube y el ' +
+      'cerebro colectivo global no están disponibles hasta que vuelva la conexión.';
+    (document.body || document.documentElement).appendChild(d);
+    return true;
+  }
+
+  return { VERSION: VERSION, CODE: CODE, createClient: createClient,
+           degradedClient: degradedClient, status: status, renderBanner: renderBanner };
+})();
+
+// El aviso de modo degradado se pinta en cuanto haya body.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function () {
+    try { MG_SUPABASE_GUARD.renderBanner(); } catch (e) {}
+  });
+} else {
+  try { MG_SUPABASE_GUARD.renderBanner(); } catch (e) {}
+}
+</script>
+
 <script>// ═══════════════════════════════════════════════════════════
 //  SUPABASE CLIENT & STORAGE (reemplaza el sistema local)
 // ═══════════════════════════════════════════════════════════
@@ -11142,8 +11281,11 @@ function mgCollectiveImportConfirm() {
 const SUPABASE_URL = 'https://nuwsazctbzuscrfpvfty.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51d3NhemN0Ynp1c2NyZnB2ZnR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzczNTMsImV4cCI6MjA5MjgxMzM1M30.kOvI8lPJTob9OYoMTFnOu1KTOzy_YZStcyoljUO9QSo';
 
-// Cliente de Supabase (se carga desde CDN en el HTML)
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Cliente de Supabase (se carga desde CDN en el HTML).
+// V3 FASE 8 · pasa por el guardián: si el CDN no cargó, devuelve un cliente
+// degradado que NUNCA lanza, en vez de matar el resto de este bloque —que
+// contiene auth, enterApp y el ledger personal.
+const sb = MG_SUPABASE_GUARD.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ═══════════════════════════════════════════════════════════
 //  AUTH — usando Supabase Auth
@@ -23588,6 +23730,767 @@ function mgRenderScienceDashboard() {
     'EDGE-3 evidencia fuerte y repetida fuera de muestra. EDGE-0 y EDGE-1 son NO_EDGE.</div>';
   host.appendChild(card);
 }
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  🔬 MELATE GENIUS · HARDENING V3 · scientific-v3.0.0
+//
+//  V3 NO busca ventaja. Hace que la conclusión NO_EDGE sea más difícil de
+//  refutar. Todo lo que hay aquí levanta el listón; nada lo baja.
+//
+//  Se apoya en MG_SCI_V2 y en los primitivos del artefacto. No reimplementa
+//  ninguno de los dos, y no toca el motor predictivo.
+//
+//  Siete componentes:
+//    BlindHoldout              bloque reservado ANTES de ajustar nada
+//    HyperparameterSensitivity barrido congelado; una mejora frágil es sospecha
+//    FDRAnalysis               14 hipótesis congeladas + Benjamini-Hochberg
+//    ReplicationLab            dos replicaciones independientes predefinidas
+//    EdgeDetector21            EDGE-2 exige las cinco condiciones a la vez
+//    PortfolioIntelligence     la cartera NUNCA puede ascender la evidencia
+//    RandomProtocol            AI vs azar, pareado, con seed y con q
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_SCI_V3 = (function () {
+  'use strict';
+  var VERSION = 'scientific-v3.0.0';
+  var PROTOCOL = 'mg-v3-blind-1.0.0';
+
+  // ── utilidades ──────────────────────────────────────────────────────────
+  function mean(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : 0; }
+  function sd(a) {
+    if (a.length < 2) return 0;
+    var m = mean(a);
+    return Math.sqrt(a.reduce(function (s, x) { return s + (x - m) * (x - m); }, 0) / (a.length - 1));
+  }
+  // JSON canónico: mismas reglas que mgCanonicalJson del artefacto, para que
+  // un hash calculado aquí sea comparable con uno calculado allí.
+  function canon(v) {
+    if (v === undefined || v === null) return 'null';
+    if (typeof v === 'number') return isFinite(v) ? JSON.stringify(v) : 'null';
+    if (typeof v === 'boolean' || typeof v === 'string') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (typeof v !== 'object') return 'null';
+    var keys = Object.keys(v).filter(function (k) { return v[k] !== undefined; }).sort();
+    return '{' + keys.map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+  }
+  // Hash estable y síncrono para identificar configuraciones y manifiestos.
+  // No es criptográfico y no pretende serlo: los sellos de las predicciones
+  // siguen usando mgSha256. Esto sólo distingue configuraciones entre sí.
+  function fnv1a(s) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return ('00000000' + h.toString(16)).slice(-8);
+  }
+  function cfgHash(o) { var s = canon(o); return fnv1a(s) + fnv1a(s.split('').reverse().join('')); }
+
+  // Normal estándar de dos colas. Aproximación de Abramowitz-Stegun 7.1.26
+  // sobre erf; error < 1.5e-7, de sobra para decidir a 0.05.
+  function erf(x) {
+    var s = x < 0 ? -1 : 1; x = Math.abs(x);
+    var t = 1 / (1 + 0.3275911 * x);
+    var y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+      - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return s * y;
+  }
+  function pTwoSided(z) { return 1 - erf(Math.abs(z) / Math.SQRT2); }
+
+  // ═══ 1 · BLIND HOLDOUT ═══════════════════════════════════════════════════
+  // El bloque ciego se reserva antes de mirar nada y se abre una sola vez.
+  // El módulo no puede impedir que alguien haga trampa, pero sí puede negarse
+  // a participar: selectionGuard lanza si se intenta seleccionar con él.
+  var BLOCK_SIZE = 300;
+  var BLOCK_PLAN = [
+    { id: 'BURNED_V2', from: -300, to: 0, purpose: 'quemado por V2 · excluido' },
+    { id: 'DEV', from: -600, to: -300, purpose: 'ajuste y selección' },
+    { id: 'HOLDOUT', from: -900, to: -600, purpose: 'CIEGO · se abre una sola vez' },
+    { id: 'REP1', from: -1200, to: -900, purpose: 'replicación 1' },
+    { id: 'REP2', from: -1500, to: -1200, purpose: 'replicación 2' }
+  ];
+
+  function holdoutPlan(nDraws, opts) {
+    var o = opts || {};
+    var plan = (o.plan || BLOCK_PLAN).map(function (b) {
+      return { block_id: b.id, purpose: b.purpose,
+               draw_start: nDraws + b.from, draw_end: nDraws + b.to,
+               n_draws: b.to - b.from };
+    });
+    var viable = plan.filter(function (b) { return b.draw_start >= 0; });
+    return {
+      protocol_version: PROTOCOL, dataset_n: nDraws,
+      blocks: plan, usable: viable.length === plan.length,
+      dropped: plan.length - viable.length,
+      note: viable.length === plan.length ? null
+        : 'el histórico no alcanza para ' + plan.length + ' bloques de ' + BLOCK_SIZE,
+      version: VERSION
+    };
+  }
+
+  function holdoutManifest(entry) {
+    var m = {
+      protocol_version: PROTOCOL,
+      game: entry.game, block_id: entry.block_id,
+      draw_start: entry.draw_start, draw_end: entry.draw_end,
+      n_draws: entry.draw_end - entry.draw_start,
+      dataset_hash: entry.dataset_hash, dataset_n: entry.dataset_n,
+      reserved_at: entry.reserved_at, seed: entry.seed == null ? null : entry.seed,
+      purpose: entry.purpose || null
+    };
+    m.manifest_hash = cfgHash(m);
+    return m;
+  }
+
+  // Un manifiesto sólo vale si el dataset no cambió bajo sus pies.
+  function holdoutVerify(manifest, datasetHash) {
+    if (!manifest) return { ok: false, reason: 'MANIFEST_MISSING' };
+    var copia = {}, k;
+    for (k in manifest) if (k !== 'manifest_hash') copia[k] = manifest[k];
+    if (cfgHash(copia) !== manifest.manifest_hash) return { ok: false, reason: 'MANIFEST_TAMPERED' };
+    if (datasetHash && manifest.dataset_hash !== datasetHash) {
+      return { ok: false, reason: 'DATASET_CHANGED',
+               detail: 'reservado sobre ' + String(manifest.dataset_hash).slice(0, 12) +
+                       ' y ahora es ' + String(datasetHash).slice(0, 12) };
+    }
+    return { ok: true, reason: 'MANIFEST_VALID' };
+  }
+
+  // Cortafuegos explícito: el holdout no participa en decisiones.
+  function selectionGuard(blockId, intent) {
+    if (blockId === 'HOLDOUT' && intent === 'SELECTION') {
+      throw new Error('HOLDOUT_USED_FOR_SELECTION: el bloque ciego no elige ' +
+                      'modelos, hiperparámetros ni seeds');
+    }
+    if (blockId === 'BURNED_V2') {
+      throw new Error('BURNED_BLOCK: ese bloque ya se midió en V2 y no puede ' +
+                      'usarse como evidencia nueva');
+    }
+    return true;
+  }
+
+  // ═══ 2 · HYPERPARAMETER SENSITIVITY ══════════════════════════════════════
+  // Rejilla CONGELADA: se declara aquí y no se toca según los resultados.
+  // Sólo mueve parámetros del protocolo de medición (ventana de entrenamiento
+  // y tamaño de bloque de estabilidad). NO toca pesos, FLOOR, CAP ni shrinkage.
+  var GRID = {
+    maxTrainDraws: [400, 800, 1500, 3000],
+    stabilityBlocks: [4, 6, 10]
+  };
+  function gridConfigs(grid) {
+    var g = grid || GRID, out = [];
+    g.maxTrainDraws.forEach(function (mt) {
+      g.stabilityBlocks.forEach(function (sb) {
+        out.push({ maxTrainDraws: mt, stabilityBlocks: sb,
+                   config_hash: cfgHash({ maxTrainDraws: mt, stabilityBlocks: sb }) });
+      });
+    });
+    return out;
+  }
+
+  // Una mejora que sólo existe en una celda de la rejilla no es una mejora.
+  function sensitivitySummarize(runs, opts) {
+    var o = opts || {};
+    var deltas = runs.map(function (r) { return Number(r.delta); });
+    var m = mean(deltas), s = sd(deltas);
+    var mn = deltas.length ? Math.min.apply(null, deltas) : 0;
+    var mx = deltas.length ? Math.max.apply(null, deltas) : 0;
+    var positivas = deltas.filter(function (d) { return d > 0; }).length;
+    var razones = [];
+    // criterios, todos declarados antes de correr nada
+    if (!deltas.length) razones.push('sin corridas');
+    if (mn <= 0 && mx > 0) razones.push('el signo del efecto cambia dentro de la rejilla');
+    if (s > Math.abs(m)) razones.push('la dispersión entre configuraciones supera al efecto medio');
+    if (positivas < deltas.length) razones.push(positivas + '/' + deltas.length + ' configuraciones positivas');
+    var frágil = razones.length > 0;
+    return {
+      n: deltas.length, mean: m, sd: s, min: mn, max: mx,
+      positiveConfigs: positivas, range: mx - mn,
+      verdict: frágil ? 'POSSIBLE_OVERFITTING' : 'STABLE',
+      reasons: razones,
+      grid_hash: cfgHash(o.grid || GRID),
+      version: VERSION
+    };
+  }
+
+  // ═══ 3 · FDR / BENJAMINI-HOCHBERG ════════════════════════════════════════
+  // Las 14 hipótesis se congelan ANTES de ver un solo resultado: 13 modelos
+  // más el ensemble. No se añaden ni se quitan después.
+  function freezeHypotheses(modelIds, game) {
+    var ids = (modelIds || []).slice();
+    var hyps = ids.map(function (id) {
+      return { hypothesis_id: game + ':' + id, game: game, model_id: id,
+               claim: 'supera la baseline exacta k²/N' };
+    });
+    hyps.push({ hypothesis_id: game + ':ENSEMBLE', game: game, model_id: 'ENSEMBLE',
+                claim: 'supera la baseline exacta k²/N' });
+    return { protocol_version: PROTOCOL, game: game, n: hyps.length,
+             hypotheses: hyps, frozen_hash: cfgHash(hyps), version: VERSION };
+  }
+
+  // BH estándar, con la corrección monótona hacia atrás.
+  function benjaminiHochberg(pvalues) {
+    var m = pvalues.length;
+    if (!m) return [];
+    var idx = pvalues.map(function (p, i) { return { p: Number(p), i: i }; })
+      .sort(function (a, b) { return a.p - b.p; });
+    var q = new Array(m);
+    for (var r = 0; r < m; r++) q[r] = Math.min(1, idx[r].p * m / (r + 1));
+    for (r = m - 2; r >= 0; r--) q[r] = Math.min(q[r], q[r + 1]);
+    var out = new Array(m);
+    for (r = 0; r < m; r++) out[idx[r].i] = q[r];
+    return out;
+  }
+
+  function fdrEvaluate(frozen, results, alpha) {
+    var a = alpha == null ? 0.05 : alpha;
+    var porId = {};
+    (results || []).forEach(function (r) { porId[r.hypothesis_id] = r; });
+    // se evalúan TODAS las hipótesis congeladas, incluidas las que no se
+    // midieron: omitir una sería seleccionar después de ver resultados.
+    var faltan = [];
+    var filas = frozen.hypotheses.map(function (h) {
+      var r = porId[h.hypothesis_id];
+      if (!r) faltan.push(h.hypothesis_id);
+      return {
+        hypothesis_id: h.hypothesis_id, game: h.game, model_id: h.model_id,
+        p_value: r ? Number(r.p_value) : 1,
+        effect_size: r ? Number(r.effect_size) : 0,
+        direction: r ? (r.effect_size > 0 ? 'POSITIVE' : r.effect_size < 0 ? 'NEGATIVE' : 'NULL') : 'MISSING',
+        window: r ? (r.window || null) : null,
+        measured: !!r
+      };
+    });
+    var qs = benjaminiHochberg(filas.map(function (f) { return f.p_value; }));
+    filas.forEach(function (f, i) { f.q_value = qs[i]; f.significant = qs[i] <= a; });
+    var sig = filas.filter(function (f) { return f.significant; });
+    return {
+      protocol_version: PROTOCOL, game: frozen.game, alpha: a,
+      n_hypotheses: filas.length, frozen_hash: frozen.frozen_hash,
+      missing: faltan, rows: filas,
+      significant: sig.map(function (f) { return f.hypothesis_id; }),
+      anySignificant: sig.length > 0,
+      minQ: filas.length ? Math.min.apply(null, filas.map(function (f) { return f.q_value; })) : 1,
+      verdict: sig.length ? 'FDR_SIGNIFICANT' : 'NO_SIGNIFICANT_AFTER_FDR',
+      version: VERSION
+    };
+  }
+
+  // ═══ 4 · REPLICATION LAB ═════════════════════════════════════════════════
+  function replicationRecord(r) {
+    var rec = {
+      protocol_version: PROTOCOL,
+      replication_id: r.replication_id, game: r.game, seed: r.seed,
+      data_range: [r.draw_start, r.draw_end],
+      dataset_hash: r.dataset_hash,
+      configuration_hash: r.configuration_hash || cfgHash(r.configuration || {}),
+      metrics: r.metrics || {}
+    };
+    rec.record_hash = cfgHash(rec);
+    return rec;
+  }
+
+  // Una señal sólo sube de estado si sobrevive a LAS DOS. Ni una ni media.
+  function replicationSurvives(reps, opts) {
+    var o = opts || {};
+    var minimo = o.minReplications == null ? 2 : o.minReplications;
+    var razones = [];
+    if (!reps || reps.length < minimo) {
+      razones.push('hacen falta ' + minimo + ' replicaciones y hay ' + ((reps && reps.length) || 0));
+      return { survived: false, n: (reps && reps.length) || 0, positive: 0,
+               consistentDirection: false, reasons: razones, version: VERSION };
+    }
+    var deltas = reps.map(function (r) { return Number(r.metrics && r.metrics.delta); });
+    var positivas = deltas.filter(function (d) { return d > 0; }).length;
+    var mismoSigno = deltas.every(function (d) { return d > 0; })
+                  || deltas.every(function (d) { return d < 0; });
+    if (positivas < reps.length) razones.push(positivas + '/' + reps.length + ' replicaciones positivas');
+    if (!mismoSigno) razones.push('la dirección del efecto no es consistente entre replicaciones');
+    return {
+      survived: razones.length === 0, n: reps.length, positive: positivas,
+      consistentDirection: mismoSigno, deltas: deltas,
+      reasons: razones, version: VERSION
+    };
+  }
+
+  // ═══ 5 · EDGE DETECTOR 2.1 ═══════════════════════════════════════════════
+  // Sube el listón de V2. EDGE-2 ya no se alcanza con "delta positivo y algo
+  // de estabilidad": exige las CINCO condiciones a la vez.
+  var REQ_21 = {
+    edge2: {
+      holdoutPositive: true,
+      maxQ: 0.05,
+      sensitivityStable: true,
+      minReplications: 2,
+      consistentDirection: true
+    },
+    edge3: {
+      minWindows: 5,
+      minStability: 0.6,
+      beatsRandomBaseline: true,
+      multipleComparisonControlled: true,
+      repeatedOutOfSample: 2
+    }
+  };
+
+  function edge21Evaluate(input) {
+    var i = input || {};
+    var faltan2 = [], faltan3 = [];
+
+    if (!(i.holdoutDelta > 0)) faltan2.push('holdout ciego positivo');
+    if (!(i.qValue != null && i.qValue <= REQ_21.edge2.maxQ)) {
+      faltan2.push('q ≤ 0.05 tras Benjamini-Hochberg' +
+        (i.qValue == null ? ' (no calculada)' : ' (q = ' + Number(i.qValue).toFixed(3) + ')'));
+    }
+    if (i.sensitivityVerdict !== 'STABLE') faltan2.push('sensibilidad a hiperparámetros estable');
+    if (!(i.replicationsPositive >= REQ_21.edge2.minReplications)) {
+      faltan2.push('2 replicaciones positivas (hay ' + (i.replicationsPositive || 0) + ')');
+    }
+    if (!i.consistentDirection) faltan2.push('dirección consistente del efecto');
+
+    if (!(i.windows >= REQ_21.edge3.minWindows)) faltan3.push('≥ 5 ventanas');
+    if (!(i.stability >= REQ_21.edge3.minStability)) faltan3.push('estabilidad ≥ 0.6');
+    if (!i.beatsRandomBaseline) faltan3.push('supera al azar');
+    if (!i.multipleComparisonControlled) faltan3.push('control de comparaciones múltiples');
+    if (!(i.outOfSampleRepeats >= REQ_21.edge3.repeatedOutOfSample)) {
+      faltan3.push('evidencia fuera de muestra repetida');
+    }
+
+    var estado, razon;
+    if (faltan2.length === 0 && faltan3.length === 0) {
+      estado = 'EDGE-3'; razon = 'evidencia fuerte, repetida y fuera de muestra';
+    } else if (faltan2.length === 0) {
+      estado = 'EDGE-2'; razon = 'señal reproducible: holdout, FDR, sensibilidad y 2 replicaciones';
+    } else if ((i.delta > 0 || i.holdoutDelta > 0) && faltan2.length < 5) {
+      estado = 'EDGE-1'; razon = 'señal débil o no reproducible';
+    } else {
+      estado = 'EDGE-0'; razon = 'sin evidencia';
+    }
+    var esEdge = estado === 'EDGE-2' || estado === 'EDGE-3';
+    return {
+      state: estado, isEdge: esEdge,
+      verdict: esEdge ? estado : 'NO_EDGE',
+      rationale: razon,
+      unmetForEdge2: faltan2, unmetForEdge3: faltan3,
+      statement: esEdge
+        ? 'Señal reproducible tras holdout ciego, control de FDR, sensibilidad y replicación.'
+        : 'No se encontró evidencia reproducible de ventaja predictiva. ' +
+          (faltan2.length ? 'Falta: ' + faltan2.join(' · ') + '.' : ''),
+      requirements: REQ_21, protocol_version: PROTOCOL, version: VERSION
+    };
+  }
+
+  // ═══ 6 · PORTFOLIO INTELLIGENCE ══════════════════════════════════════════
+  // La cartera se optimiza con el optimizador de V2 — no se duplica. Lo que
+  // añade V3 es una garantía: la evidencia ENTRA y SALE igual. Un portfolio
+  // score alto no puede convertir NO_EDGE en EDGE. Nunca.
+  function portfolioOptimize(input) {
+    var i = input || {};
+    var evidenciaEntrada = i.evidence || { state: 'EDGE-0', verdict: 'NO_EDGE', isEdge: false };
+    if (typeof MG_SCI_V2 === 'undefined' || !MG_SCI_V2.PortfolioOptimizer) {
+      return { tickets: [], evidence: evidenciaEntrada, error: 'MG_SCI_V2_UNAVAILABLE',
+               version: VERSION };
+    }
+    var base = MG_SCI_V2.PortfolioOptimizer.optimize({
+      game: i.game, ticketCount: i.ticketCount, candidatePool: i.candidatePool,
+      calibratedScores: i.calibratedScores, uncertainty: i.uncertainty,
+      consensus: i.consensus, disagreement: i.disagreement,
+      overlapLimit: i.overlapLimit == null ? 1 : i.overlapLimit,
+      seed: i.seed
+    });
+    // El candado. La evidencia de salida es, byte a byte, la de entrada.
+    var evidenciaSalida = {
+      state: evidenciaEntrada.state, verdict: evidenciaEntrada.verdict,
+      isEdge: !!evidenciaEntrada.isEdge
+    };
+    var honesto = !evidenciaSalida.isEdge;
+    return {
+      tickets: base.tickets, portfolioScore: base.portfolioScore,
+      diversity: base.diversity, coverage: base.coverage,
+      overlapStats: base.overlapStats, seed: base.seed,
+      optimizerVersion: base.version, relaxation: base.relaxation,
+      evidenceFlags: base.evidenceFlags,
+      evidence: evidenciaSalida,
+      evidenceUnchanged: canon(evidenciaSalida) === canon({
+        state: evidenciaEntrada.state, verdict: evidenciaEntrada.verdict,
+        isEdge: !!evidenciaEntrada.isEdge }),
+      description: honesto
+        ? 'Cartera diversificada sin ventaja demostrada. El optimizador reparte ' +
+          'la cobertura; no mejora las probabilidades matemáticas.'
+        : 'Cartera diversificada sobre una señal con evidencia reproducible.',
+      isWinProbability: false,
+      version: VERSION
+    };
+  }
+
+  // ═══ 7 · RANDOM PROTOCOL ═════════════════════════════════════════════════
+  // Pareado por sorteo: el mismo resultado oficial juzga a la IA y al azar.
+  // Eso elimina la varianza del sorteo y es la comparación honesta.
+  function paired(ai, random) {
+    var n = Math.min(ai.length, random.length);
+    var d = [];
+    for (var i = 0; i < n; i++) d.push(Number(ai[i]) - Number(random[i]));
+    var m = mean(d), s = sd(d), se = n ? s / Math.sqrt(n) : 0;
+    // Caso degenerado: varianza CERO en las diferencias. Si además la
+    // diferencia media no es cero, el efecto es perfectamente constante y la
+    // evidencia es máxima — devolver z = 0 aquí reportaría "sin diferencia"
+    // ante una ventaja enorme, que es la forma más peligrosa de equivocarse.
+    var degenerado = se === 0;
+    var z = !degenerado ? m / se : (m === 0 ? 0 : (m > 0 ? Infinity : -Infinity));
+    var p = degenerado ? (m === 0 ? 1 : 0) : pTwoSided(z);
+    return { n: n, meanAI: mean(ai.slice(0, n)), meanRandom: mean(random.slice(0, n)),
+             delta: m, sd: s, se: se, z: z, p_value: p,
+             degenerate: degenerado, degenerateNote: degenerado
+               ? (m === 0 ? 'series idénticas: no hay diferencia que medir'
+                          : 'diferencia constante y sin varianza: el contraste normal ' +
+                            'no aplica, la evidencia es máxima')
+               : null };
+  }
+
+  function randomProtocolRun(records, opts) {
+    var o = opts || {};
+    var alpha = o.alpha == null ? 0.05 : o.alpha;
+    var filas = (records || []).map(function (r) {
+      var t = paired(r.ai, r.random);
+      return { game: r.game, seed: r.seed, n: t.n,
+               meanAI: t.meanAI, meanRandom: t.meanRandom,
+               delta: t.delta, se: t.se, z: t.z, p_value: t.p_value };
+    });
+    var qs = benjaminiHochberg(filas.map(function (f) { return f.p_value; }));
+    filas.forEach(function (f, i) {
+      f.q_value = qs[i];
+      f.verdict = qs[i] <= alpha ? 'DISTINGUIBLE' : 'AI ≈ RANDOM';
+    });
+    var distinguibles = filas.filter(function (f) { return f.q_value <= alpha; });
+    var signos = filas.map(function (f) { return f.delta > 0 ? 1 : f.delta < 0 ? -1 : 0; });
+    var mismoSigno = signos.every(function (s) { return s > 0; })
+                  || signos.every(function (s) { return s < 0; });
+    return {
+      protocol_version: PROTOCOL, alpha: alpha, rows: filas,
+      nDistinguishable: distinguibles.length, nGames: filas.length,
+      consistentDirection: mismoSigno,
+      verdict: distinguibles.length ? 'AT_LEAST_ONE_DISTINGUISHABLE' : 'AI_EQUIVALENT_TO_RANDOM',
+      note: distinguibles.length ? null
+        : 'Ningún juego se distingue del azar tras control de comparaciones múltiples.',
+      version: VERSION
+    };
+  }
+
+  return {
+    VERSION: VERSION, PROTOCOL: PROTOCOL,
+    BlindHoldout: { plan: holdoutPlan, manifest: holdoutManifest, verify: holdoutVerify,
+                    selectionGuard: selectionGuard, BLOCK_PLAN: BLOCK_PLAN, BLOCK_SIZE: BLOCK_SIZE },
+    HyperparameterSensitivity: { GRID: GRID, configs: gridConfigs, summarize: sensitivitySummarize },
+    FDRAnalysis: { freeze: freezeHypotheses, benjaminiHochberg: benjaminiHochberg,
+                   evaluate: fdrEvaluate },
+    ReplicationLab: { record: replicationRecord, survives: replicationSurvives },
+    EdgeDetector21: { evaluate: edge21Evaluate, REQUIREMENTS: REQ_21 },
+    PortfolioIntelligence: { optimize: portfolioOptimize },
+    RandomProtocol: { paired: paired, run: randomProtocolRun },
+    _internal: { canon: canon, cfgHash: cfgHash, mean: mean, sd: sd, pTwoSided: pTwoSided }
+  };
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ESTUDIO V3 · resultados MEDIDOS, congelados y versionados en el repo.
+//  No se recalculan en el navegador: son los del protocolo sellado, con su
+//  manifiesto y su preinscripción. Ver scientific/v3-*.json.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_V3_STUDY = {
+  "protocol_version": "mg-v3-blind-1.0.0",
+  "manifest_hash": "000d987cda90c3b9891fe62cc975270949ebc7ab098725b87d878885a5f0f7e7",
+  "preregistration_hash": "1d76f15d96a3f9f7cf3cff699a84d020be2d0f489518b67be9355406ed5291da",
+  "measured_at": "2026-09-25",
+  "games": {
+    "melate": {
+      "state": "EDGE-1",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          1262,
+          1562
+        ],
+        "delta": 0.010476,
+        "n": 300,
+        "stability": 0.6667
+      },
+      "fdr": {
+        "q_ensemble": 0.991,
+        "significant": 0,
+        "n": 14,
+        "frozen_hash": "60d3a693a5cfc3f3"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": 0.05631,
+        "sd": 0.059257,
+        "range": 0.136667,
+        "positive": "9/12"
+      },
+      "replications": {
+        "positive": 1,
+        "n": 2,
+        "consistentDirection": false,
+        "deltas": [
+          -0.04619,
+          0.010476
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 0.6533,
+        "random": 0.6833,
+        "delta": -0.03,
+        "p": 0.6181,
+        "q": 0.9117,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.991)",
+        "sensibilidad a hiperparámetros estable",
+        "2 replicaciones positivas (hay 1)",
+        "dirección consistente del efecto"
+      ]
+    },
+    "revancha": {
+      "state": "EDGE-1",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          1279,
+          1579
+        ],
+        "delta": 0.017143,
+        "n": 300,
+        "stability": 0.5
+      },
+      "fdr": {
+        "q_ensemble": 0.9487,
+        "significant": 0,
+        "n": 14,
+        "frozen_hash": "d280cd4371c461f3"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": -0.052857,
+        "sd": 0.025226,
+        "range": 0.063333,
+        "positive": "0/12"
+      },
+      "replications": {
+        "positive": 2,
+        "n": 2,
+        "consistentDirection": true,
+        "deltas": [
+          0.017143,
+          0.007143
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 0.66,
+        "random": 0.6667,
+        "delta": -0.006667,
+        "p": 0.9117,
+        "q": 0.9117,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.949)",
+        "sensibilidad a hiperparámetros estable"
+      ]
+    },
+    "retro": {
+      "state": "EDGE-1",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          757,
+          1057
+        ],
+        "delta": 0.076923,
+        "n": 300,
+        "stability": 0.5
+      },
+      "fdr": {
+        "q_ensemble": 0.2407,
+        "significant": 4,
+        "n": 14,
+        "frozen_hash": "93b5487f3e6114d7"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": 0.009423,
+        "sd": 0.048391,
+        "range": 0.13,
+        "positive": "9/12"
+      },
+      "replications": {
+        "positive": 0,
+        "n": 2,
+        "consistentDirection": true,
+        "deltas": [
+          -0.069744,
+          -0.019744
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 1,
+        "random": 0.86,
+        "delta": 0.14,
+        "p": 0.0481,
+        "q": 0.1925,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.241)",
+        "sensibilidad a hiperparámetros estable",
+        "2 replicaciones positivas (hay 0)"
+      ]
+    },
+    "chispazo": {
+      "state": "EDGE-0",
+      "verdict": "NO_EDGE",
+      "holdout": {
+        "range": [
+          9770,
+          10070
+        ],
+        "delta": -0.002857,
+        "n": 300,
+        "stability": 0.6667
+      },
+      "fdr": {
+        "q_ensemble": 0.9491,
+        "significant": 0,
+        "n": 14,
+        "frozen_hash": "ddd11f672ecb528f"
+      },
+      "sensitivity": {
+        "verdict": "POSSIBLE_OVERFITTING",
+        "mean": -0.00869,
+        "sd": 0.037447,
+        "range": 0.09,
+        "positive": "9/12"
+      },
+      "replications": {
+        "positive": 0,
+        "n": 2,
+        "consistentDirection": true,
+        "deltas": [
+          -0.019524,
+          -0.039524
+        ]
+      },
+      "aiVsRandom": {
+        "ai": 0.89,
+        "random": 0.9133,
+        "delta": -0.023333,
+        "p": 0.7159,
+        "q": 0.9117,
+        "verdict": "AI ≈ RANDOM"
+      },
+      "unmetForEdge2": [
+        "holdout ciego positivo",
+        "q ≤ 0.05 tras Benjamini-Hochberg (q = 0.949)",
+        "sensibilidad a hiperparámetros estable",
+        "2 replicaciones positivas (hay 0)"
+      ]
+    }
+  },
+  "global_verdict": "NO_EDGE"
+};
+
+// La evidencia que enseña la app pasa a ser la del EdgeDetector 2.1, que
+// exige holdout ciego, q ≤ 0.05, sensibilidad estable, 2 replicaciones y
+// dirección consistente. Si el juego no está en el estudio, se cae al
+// veredicto de V2, que ya era NO_EDGE.
+function mgV3Evidence(game) {
+  game = game || state.currentGame;
+  var base = mgV2Evidence(game);
+  var e = MG_V3_STUDY && MG_V3_STUDY.games && MG_V3_STUDY.games[game];
+  if (!e) { base.v3 = null; return base; }
+  var veredicto = MG_SCI_V3.EdgeDetector21.evaluate({
+    delta: e.holdout.delta, holdoutDelta: e.holdout.delta,
+    qValue: e.fdr.q_ensemble,
+    sensitivityVerdict: e.sensitivity.verdict,
+    replicationsPositive: e.replications.positive,
+    consistentDirection: e.replications.consistentDirection,
+    windows: 10, stability: e.holdout.stability,
+    beatsRandomBaseline: e.aiVsRandom.delta > 0 && e.aiVsRandom.q <= 0.05,
+    multipleComparisonControlled: true,
+    outOfSampleRepeats: e.replications.positive
+  });
+  base.edge = veredicto;          // el veredicto que manda es el de 2.1
+  base.v3 = e;
+  base.protocol = MG_V3_STUDY.protocol_version;
+  base.manifestHash = MG_V3_STUDY.manifest_hash;
+  return base;
+}
+
+// El banner de V2 sigue igual; sólo cambia de dónde saca la evidencia, y
+// añade la línea de validación ciega cuando el juego está en el estudio.
+// OJO con el izado: si aquí se DECLARARA otra `function mgRenderEvidenceBanner`,
+// la declaración se izaría al inicio de este bloque y pisaría a la de V2 ANTES
+// de que esta línea corriera — el fallback acabaría llamándose a sí mismo. Por
+// eso V3 declara un nombre propio y reasigna al final, en tiempo de ejecución.
+var mgRenderEvidenceBannerV2 = mgRenderEvidenceBanner;
+function mgRenderEvidenceBannerV3() {
+  var host = document.getElementById('mg-evidence-banner');
+  if (!host) return;
+  var e;
+  try { e = mgV3Evidence(state.currentGame); } catch (err) {
+    try { return mgRenderEvidenceBannerV2(); } catch (e2) { host.innerHTML = ''; return; }
+  }
+  var edge = e.edge, conf = e.confidence;
+  var color = edge.isEdge ? '#22c55e' : '#ffb020';
+  var v3 = e.v3;
+  host.innerHTML =
+    '<div class="glass card" style="margin-bottom:12px;border-left:3px solid ' + color + ';">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+        '<span style="font-size:16px;">🔬</span>' +
+        '<strong style="font-size:12.5px;">ESTADO DE LA EVIDENCIA</strong>' +
+        '<span style="font-size:9.5px;font-weight:700;letter-spacing:.4px;padding:2px 6px;' +
+        'border-radius:4px;background:' + (edge.isEdge ? 'rgba(34,197,94,.16)' : 'rgba(255,176,32,.16)') +
+        ';color:' + color + ';">' + edge.state + '</span>' +
+        (v3 ? '<span style="font-size:9px;color:var(--text-3);margin-left:auto;">validación ciega ' +
+              e.protocol + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:11.5px;line-height:1.55;margin-bottom:8px;">' + edge.statement + '</div>' +
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;">' +
+        '<span>Calidad de señal: <strong>' + (e.delta > 0 ? '+' : '') + e.delta.toFixed(4) +
+          '</strong> vs baseline ' + e.baseline.toFixed(4) + '</span>' +
+        '<span>Observaciones' + (e.memorySource === 'global' ? ' globales' : ' locales') +
+          ': <strong>' + e.observations + '</strong></span>' +
+        '<span>Consenso de modelos: <strong>' + (e.agreement * 100).toFixed(0) + '%</strong></span>' +
+        '<span>Incertidumbre: <strong>' + (e.disagreement * 100).toFixed(0) + '%</strong></span>' +
+      '</div>' +
+      (v3 ?
+        '<div style="margin-top:8px;padding:7px;border-radius:6px;background:rgba(255,255,255,.04);' +
+        'font-size:10.5px;line-height:1.6;">' +
+        '<strong>Validación ciega · ' + v3.holdout.n + ' sorteos reservados antes de ajustar nada</strong><br>' +
+        'Holdout Δ <strong>' + (v3.holdout.delta >= 0 ? '+' : '') + v3.holdout.delta.toFixed(4) + '</strong>' +
+        ' · q tras Benjamini-Hochberg <strong>' + v3.fdr.q_ensemble.toFixed(3) + '</strong>' +
+        ' (' + v3.fdr.significant + '/' + v3.fdr.n + ' hipótesis significativas)' +
+        ' · sensibilidad <strong>' + v3.sensitivity.verdict + '</strong>' +
+        ' · replicaciones <strong>' + v3.replications.positive + '/' + v3.replications.n + '</strong><br>' +
+        'IA ' + v3.aiVsRandom.ai.toFixed(4) + ' vs azar ' + v3.aiVsRandom.random.toFixed(4) +
+        ' → <strong>' + v3.aiVsRandom.verdict + '</strong> (q ' + v3.aiVsRandom.q.toFixed(3) + ')' +
+        '</div>' : '') +
+      '<div style="margin-top:6px;font-size:11px;">Confianza del sistema: <strong>' +
+        conf.band + '</strong> (' + (conf.score * 100).toFixed(0) + '%)' +
+        '<span style="color:var(--text-3);"> — ' + conf.disclaimer + '</span></div>' +
+      (edge.isEdge ? '' :
+        '<div style="margin-top:8px;padding:7px;border-radius:6px;background:rgba(255,176,32,.09);' +
+        'border:1px solid rgba(255,176,32,.25);font-size:10.5px;color:#ffb020;line-height:1.5;">' +
+        '<strong>NO_EDGE</strong> · No se encontró evidencia reproducible de ventaja predictiva. ' +
+        'Los boletos de abajo son una cartera diversificada, no una predicción con ventaja ' +
+        'demostrada. ' + (edge.unmetForEdge2 && edge.unmetForEdge2.length
+          ? 'Falta: ' + edge.unmetForEdge2.join(' · ') + '.' : '') +
+        '</div>') +
+    '</div>';
+}
+mgRenderEvidenceBanner = mgRenderEvidenceBannerV3;
 </script>
 
 </body>
