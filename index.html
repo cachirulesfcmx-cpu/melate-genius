@@ -3054,6 +3054,7 @@ body.light-mode .mg-strip-meta .tag { background: rgba(0,0,0,0.06); }
         </div>
         <div id="collective-panel" style="display:none;"></div>
         <div id="mg-evidence-banner"></div>
+        <div id="mg-future-panel"></div>
         
         <div class="slider-wrap">
           <div class="slider-head">
@@ -24491,6 +24492,766 @@ function mgRenderEvidenceBannerV3() {
     '</div>';
 }
 mgRenderEvidenceBanner = mgRenderEvidenceBannerV3;
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  🔭 MELATE GENIUS · FUTURE LEARNING V4 · scientific-v4.0.0
+//
+//  El holdout histórico de V3 está quemado. La única validación ciega que
+//  queda es el futuro: sorteos que todavía no han ocurrido cuando el sistema
+//  predice. V4 construye el ciclo que lo hace posible, y —más importante— el
+//  que impide hacer trampa sin darse cuenta:
+//
+//      PREDICT → SEAL → OBSERVE → EVALUATE → LEARN
+//
+//  Nunca RESULTADO → AJUSTE → PREDICCIÓN DEL MISMO RESULTADO.
+//
+//  V4 no busca ventaja. Construye el aparato que la detectaría si apareciera
+//  frente a datos realmente futuros, y que la rechaza si es una racha.
+//
+//  Compone V2 y V3; no reimplementa ni toca el motor predictivo.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_SCI_V4 = (function () {
+  'use strict';
+  var VERSION = 'scientific-v4.0.0';
+  var PROTOCOL = 'mg-v4-future-1.0.0';
+
+  // ── utilidades (mismas reglas que V3, para que los hashes sean comparables)
+  function canon(v) {
+    if (v === undefined || v === null) return 'null';
+    if (typeof v === 'number') return isFinite(v) ? JSON.stringify(v) : 'null';
+    if (typeof v === 'boolean' || typeof v === 'string') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (typeof v !== 'object') return 'null';
+    var keys = Object.keys(v).filter(function (k) { return v[k] !== undefined; }).sort();
+    return '{' + keys.map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+  }
+  function fnv1a(s) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return ('00000000' + h.toString(16)).slice(-8);
+  }
+  function hashOf(o) { var s = canon(o); return fnv1a(s) + fnv1a(s.split('').reverse().join('')); }
+  function mean(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : 0; }
+  function sd(a) {
+    if (a.length < 2) return 0;
+    var m = mean(a);
+    return Math.sqrt(a.reduce(function (s, x) { return s + (x - m) * (x - m); }, 0) / (a.length - 1));
+  }
+  function err(code, detail) {
+    var e = new Error(code + (detail ? ': ' + detail : ''));
+    e.code = code; e.detail = detail || null;
+    return e;
+  }
+
+  // ═══ 1 · FUTURE HOLDOUT ══════════════════════════════════════════════════
+  // Una máquina de estados que sólo avanza. Cada paso exige que el anterior
+  // haya ocurrido, así que el resultado oficial no puede alcanzar al predictor
+  // por ningún atajo.
+  var STATES = ['RESERVED', 'PREDICTED', 'SEALED', 'RESULT_AVAILABLE',
+                'EVALUATED', 'RELEASED_TO_LEARNING'];
+  var NEXT = {
+    RESERVED: ['PREDICTED'],
+    PREDICTED: ['SEALED'],
+    SEALED: ['RESULT_AVAILABLE'],
+    RESULT_AVAILABLE: ['EVALUATED'],
+    EVALUATED: ['RELEASED_TO_LEARNING'],
+    RELEASED_TO_LEARNING: []
+  };
+  // Estado especial, fuera de la cadena: el juego no tiene identidad oficial
+  // con la que reservar. No se inventa un número de concurso.
+  var AWAITING = 'AWAITING_OFFICIAL_IDENTITY';
+
+  function reserve(input) {
+    var i = input || {};
+    if (!i.game) throw err('GAME_REQUIRED');
+    // §12 · la identidad canónica es (game, official_contest_number). Si el
+    // registro oficial no ancla el juego, se reserva SIN número y el bloque
+    // queda a la espera: inventarlo sería peor que no tenerlo.
+    if (i.official_contest_number == null) {
+      return {
+        protocol_version: PROTOCOL, game: i.game,
+        official_contest_number: null, state: AWAITING,
+        reason: i.reason || 'el registro oficial no ancla la numeración de este juego',
+        reserved_at: i.reserved_at || null, version: VERSION,
+        history: [{ state: AWAITING, at: i.reserved_at || null }]
+      };
+    }
+    if (!Number.isInteger(i.official_contest_number)) {
+      throw err('INVALID_CONTEST_NUMBER', String(i.official_contest_number));
+    }
+    var e = {
+      protocol_version: PROTOCOL, game: i.game,
+      official_contest_number: i.official_contest_number,
+      state: 'RESERVED',
+      reserved_at: i.reserved_at || null,
+      anchor: i.anchor || null,          // de dónde salió el número
+      version: VERSION,
+      snapshot: null, snapshot_hash: null,
+      result: null, result_hash: null,
+      evaluation: null,
+      history: [{ state: 'RESERVED', at: i.reserved_at || null }]
+    };
+    e.entry_hash = hashOf({ game: e.game, contest: e.official_contest_number,
+                            protocol: PROTOCOL });
+    return e;
+  }
+
+  function key(e) { return e.game + ':' + e.official_contest_number; }
+
+  // Un mismo sorteo es UNA entrada. Da igual cuántos usuarios lo observen.
+  function addUnique(registro, entrada) {
+    var lista = registro || [];
+    if (entrada.state === AWAITING) return lista.concat([entrada]);
+    for (var i = 0; i < lista.length; i++) {
+      if (lista[i].state !== AWAITING && key(lista[i]) === key(entrada)) {
+        throw err('DUPLICATE_CONTEST', key(entrada));
+      }
+    }
+    return lista.concat([entrada]);
+  }
+
+  function transition(e, destino, extra) {
+    if (!e) throw err('ENTRY_REQUIRED');
+    if (e.state === AWAITING) {
+      throw err('MISSING_OFFICIAL_IDENTITY',
+        e.game + ' no tiene número de concurso oficial con el que avanzar');
+    }
+    var permitidos = NEXT[e.state] || [];
+    if (permitidos.indexOf(destino) < 0) {
+      throw err('INVALID_TRANSITION', e.state + ' → ' + destino +
+        (destino === 'RELEASED_TO_LEARNING' && e.state !== 'EVALUATED'
+          ? ' (LEARNING_BEFORE_EVALUATION)' : ''));
+    }
+    var n = {};
+    Object.keys(e).forEach(function (k) { n[k] = e[k]; });
+    Object.keys(extra || {}).forEach(function (k) { n[k] = extra[k]; });
+    n.state = destino;
+    n.history = (e.history || []).concat([{ state: destino, at: (extra && extra.at) || null }]);
+    return n;
+  }
+
+  // ── los tres guardianes que pide la §2 ──────────────────────────────────
+  // Un sorteo del holdout futuro no puede entrar en selección ni en
+  // entrenamiento NUNCA, y en aprendizaje sólo después de EVALUATED.
+  function selectionGuard(e) {
+    if (!e) return true;
+    if (e.state !== 'RELEASED_TO_LEARNING') {
+      throw err('FUTURE_HOLDOUT_LEAK',
+        'el sorteo ' + key(e) + ' está en ' + e.state + ' y no puede usarse para seleccionar');
+    }
+    return true;
+  }
+  function trainingGuard(e) {
+    if (!e) return true;
+    if (e.state !== 'RELEASED_TO_LEARNING') {
+      throw err('FUTURE_HOLDOUT_LEAK',
+        'el sorteo ' + key(e) + ' está en ' + e.state + ' y no puede entrar al entrenamiento');
+    }
+    return true;
+  }
+  function learningGuard(e) {
+    if (!e) throw err('ENTRY_REQUIRED');
+    if (e.state === AWAITING) throw err('MISSING_OFFICIAL_IDENTITY', e.game);
+    if (e.state === 'SEALED' || e.state === 'PREDICTED' || e.state === 'RESERVED') {
+      throw err('LEARNING_BEFORE_EVALUATION',
+        key(e) + ' está en ' + e.state + '; falta resultado y evaluación');
+    }
+    if (e.state === 'RESULT_AVAILABLE') {
+      throw err('LEARNING_BEFORE_EVALUATION',
+        key(e) + ' tiene resultado pero no se ha evaluado');
+    }
+    if (e.state === 'EVALUATED' || e.state === 'RELEASED_TO_LEARNING') return true;
+    throw err('LEARNING_BEFORE_EVALUATION', e.state);
+  }
+
+  // ═══ 2 · SNAPSHOT CIENTÍFICO ═════════════════════════════════════════════
+  // Lo que el sistema sabía ANTES del resultado. Los 17 campos de la §3.
+  // Nada de secretos: el snapshot es público por construcción.
+  var CAMPOS = ['game', 'official_contest_number', 'protocol_version', 'predictor_version',
+    'artifact_hash', 'dataset_hash', 'model_versions', 'ensemble_weights',
+    'calibration_state', 'confidence_state', 'portfolio_config', 'edge_status_before_draw',
+    'random_baseline_seed', 'predicted_at', 'input_range', 'history_max_used',
+    'feature_schema_hash'];
+  var PROHIBIDOS = /(^|_)(key|token|secret|password|jwt|apikey|api_key|anon_key|bearer|email|user_id|uid)($|_)/i;
+
+  function snapshotCreate(input) {
+    var i = input || {}, s = {}, faltan = [];
+    CAMPOS.forEach(function (c) {
+      if (i[c] === undefined || i[c] === null) faltan.push(c);
+      s[c] = i[c] === undefined ? null : i[c];
+    });
+    s.protocol_version = PROTOCOL;
+    s.version = VERSION;
+    if (faltan.length) s.incomplete_fields = faltan;   // se declara, no se disimula
+    // cortafuegos: si alguien intenta meter un secreto, se rechaza el snapshot
+    var fuga = [];
+    (function barrer(o, ruta) {
+      if (!o || typeof o !== 'object') return;
+      Object.keys(o).forEach(function (k) {
+        if (PROHIBIDOS.test(k)) fuga.push(ruta + k);
+        if (o[k] && typeof o[k] === 'object') barrer(o[k], ruta + k + '.');
+      });
+    })(i, '');
+    if (fuga.length) throw err('SNAPSHOT_WOULD_LEAK_SECRETS', fuga.join(', '));
+    s.snapshot_hash = hashOf(s);
+    return s;
+  }
+
+  // Un snapshot sellado no se puede tocar. Ni un número.
+  function snapshotVerify(s, esperado) {
+    if (!s) return { ok: false, reason: 'SNAPSHOT_MISSING' };
+    var copia = {};
+    Object.keys(s).forEach(function (k) { if (k !== 'snapshot_hash') copia[k] = s[k]; });
+    if (hashOf(copia) !== s.snapshot_hash) {
+      return { ok: false, reason: 'PREDICTION_ALREADY_MUTATED',
+               detail: 'el snapshot no coincide con su propio hash' };
+    }
+    var e = esperado || {};
+    if (e.artifact_hash && s.artifact_hash !== e.artifact_hash) {
+      return { ok: false, reason: 'ARTIFACT_CHANGED',
+               detail: String(s.artifact_hash).slice(0, 12) + ' → ' + String(e.artifact_hash).slice(0, 12) };
+    }
+    if (e.dataset_hash && s.dataset_hash !== e.dataset_hash) {
+      return { ok: false, reason: 'DATASET_CHANGED',
+               detail: String(s.dataset_hash).slice(0, 12) + ' → ' + String(e.dataset_hash).slice(0, 12) };
+    }
+    return { ok: true, reason: 'SNAPSHOT_VALID' };
+  }
+
+  // ═══ 3 · EVALUACIÓN POST-RESULTADO ═══════════════════════════════════════
+  // Sólo corre con un resultado OFICIAL y verificado. Sin eso no se evalúa y
+  // no se aprende: es la §5, literal.
+  function evaluate(input) {
+    var i = input || {};
+    var e = i.entry, s = i.snapshot, of = i.official;
+    if (!e) throw err('ENTRY_REQUIRED');
+    if (e.state !== 'RESULT_AVAILABLE') {
+      throw err('RESULT_NOT_SEALED',
+        'se esperaba RESULT_AVAILABLE y está en ' + e.state);
+    }
+    if (!of || !of.verified || !Array.isArray(of.result) || !of.result.length) {
+      throw err('OFFICIAL_RESULT_NOT_CONFIRMED',
+        'sin resultado oficial confiable no se evalúa ni se aprende');
+    }
+    if (of.game !== e.game || of.official_contest_number !== e.official_contest_number) {
+      throw err('CONTEST_MISMATCH',
+        of.game + ':' + of.official_contest_number + ' ≠ ' + key(e));
+    }
+    var v = snapshotVerify(s, { artifact_hash: i.artifact_hash, dataset_hash: i.dataset_hash });
+    if (!v.ok) throw err(v.reason, v.detail);
+
+    var N = i.N, k = i.k;
+    var base = (typeof mgTheoreticalMean === 'function') ? mgTheoreticalMean(N, k) : (k * k) / N;
+    var set = {}; of.result.forEach(function (n) { set[n] = 1; });
+    var cuenta = function (t) { return (t || []).filter(function (x) { return set[x]; }).length; };
+
+    var porModelo = {};
+    Object.keys(i.model_picks || {}).forEach(function (m) { porModelo[m] = cuenta(i.model_picks[m]); });
+    var boletos = (i.tickets || []).map(cuenta);
+    var hitsAI = boletos.length ? Math.max.apply(null, boletos) : 0;
+    var mediaAI = mean(boletos);
+
+    // el azar se genera con la seed SELLADA en el snapshot, no con una nueva
+    var seed = (s && s.random_baseline_seed) != null ? s.random_baseline_seed : 0;
+    var rnd = (typeof MG_SCI_V2 !== 'undefined')
+      ? MG_SCI_V2._internal.mulberry32(seed)
+      : (function () { var x = seed; return function () { x = (x * 1103515245 + 12345) % 2147483648; return x / 2147483648; }; })();
+    var aleatorios = [];
+    for (var t = 0; t < Math.max(1, boletos.length); t++) {
+      var pool = []; for (var n = 1; n <= N; n++) pool.push(n);
+      for (var a = pool.length - 1; a > 0; a--) {
+        var b = Math.floor(rnd() * (a + 1)), tmp = pool[a]; pool[a] = pool[b]; pool[b] = tmp;
+      }
+      aleatorios.push(cuenta(pool.slice(0, k)));
+    }
+
+    var ensemble = i.ensemble_ticket ? cuenta(i.ensemble_ticket) : null;
+    var solape = 0;
+    for (var p = 0; p < (i.tickets || []).length; p++) {
+      for (var q = p + 1; q < i.tickets.length; q++) {
+        var inter = i.tickets[p].filter(function (x) { return i.tickets[q].indexOf(x) >= 0; }).length;
+        if (inter > solape) solape = inter;
+      }
+    }
+
+    var ev = {
+      protocol_version: PROTOCOL, evaluation_version: VERSION,
+      game: e.game, official_contest_number: e.official_contest_number,
+      official_result: of.result.slice().sort(function (x, y) { return x - y; }),
+      baseline: base,
+      hits_ai: hitsAI, hits_ai_mean: mediaAI, hits_by_ticket: boletos,
+      hits_random: mean(aleatorios), hits_random_by_ticket: aleatorios,
+      hits_by_model: porModelo, ensemble_hits: ensemble,
+      delta_vs_baseline: mediaAI - base,
+      delta_vs_random: mediaAI - mean(aleatorios),
+      // Con UN sorteo no hay contraste posible, y decirlo es parte del trabajo.
+      p_value: null, q_value: null,
+      inference_note: 'un solo sorteo no admite contraste: p y q se calculan ' +
+                      'sobre la serie acumulada, no sobre una observación',
+      confidence_bucket: (s && s.confidence_state && s.confidence_state.band) || null,
+      calibration_error: (s && s.calibration_state && s.calibration_state.ece) != null
+        ? s.calibration_state.ece : null,
+      portfolio_overlap: solape,
+      portfolio_seed: (s && s.portfolio_config && s.portfolio_config.seed) != null
+        ? s.portfolio_config.seed : null,
+      snapshot_hash: s ? s.snapshot_hash : null,
+      result_hash: hashOf({ game: e.game, contest: e.official_contest_number,
+                            result: of.result.slice().sort(function (x, y) { return x - y; }) }),
+      evaluated_at: i.evaluated_at || null,
+      source: 'future_evaluated'
+    };
+    ev.evaluation_hash = hashOf(ev);
+    return ev;
+  }
+
+  // ═══ 4 · LEARNING GATE ═══════════════════════════════════════════════════
+  // El aprendizaje es lento a propósito. El shrinkage n/(n+40) de computeWeights
+  // ya lo era; esto añade un tope duro POR EVENTO encima, y deja constancia.
+  var MAX_WEIGHT_DELTA = 0.01;      // 1 punto porcentual por sorteo, como mucho
+  var MIN_OBS_FOR_ADAPTATION = 10;  // por debajo, sólo se acumula evidencia
+
+  function canLearn(e) {
+    try { learningGuard(e); return { ok: true, reason: null }; }
+    catch (ex) { return { ok: false, reason: ex.code, detail: ex.detail }; }
+  }
+
+  // before y after los produce el computeWeights REAL. Aquí no se inventa
+  // ninguna fórmula: se limita el paso y se renormaliza.
+  function applyWeightUpdate(before, after, opts) {
+    var o = opts || {};
+    var limite = o.maxDelta == null ? MAX_WEIGHT_DELTA : o.maxDelta;
+    var minObs = o.minObservations == null ? MIN_OBS_FOR_ADAPTATION : o.minObservations;
+    var n = o.observations == null ? 0 : o.observations;
+    var ids = Object.keys(before || {});
+    if (!ids.length) throw err('WEIGHTS_REQUIRED');
+
+    var recortados = 0, out = {};
+    if (n < minObs) {
+      // Muestra insuficiente: se conserva el estado previo. No es pereza, es
+      // que con 3 observaciones cualquier movimiento es ruido.
+      ids.forEach(function (id) { out[id] = before[id]; });
+      return {
+        weights: out, applied: false, reason: 'INSUFFICIENT_OBSERVATIONS',
+        observations: n, minObservations: minObs, clamped: 0,
+        maxAbsChange: 0, sum: ids.reduce(function (s, id) { return s + out[id]; }, 0),
+        version: VERSION
+      };
+    }
+    ids.forEach(function (id) {
+      var d = (after[id] == null ? before[id] : after[id]) - before[id];
+      if (d > limite) { d = limite; recortados++; }
+      else if (d < -limite) { d = -limite; recortados++; }
+      out[id] = before[id] + d;
+    });
+    // normalizar, y respetar FLOOR/CAP con la proyección que ya existe
+    var suma = ids.reduce(function (s, id) { return s + out[id]; }, 0);
+    if (suma > 0) ids.forEach(function (id) { out[id] = out[id] / suma; });
+    if (typeof projectCapFloor === 'function' && typeof MG_COLLECTIVE !== 'undefined') {
+      try { out = projectCapFloor(out, MG_COLLECTIVE.FLOOR, MG_COLLECTIVE.CAP, ids); }
+      catch (e2) { /* si la firma no cuadra, se deja la normalización simple */ }
+    }
+    var maxCambio = 0;
+    ids.forEach(function (id) {
+      var c = Math.abs(out[id] - before[id]);
+      if (c > maxCambio) maxCambio = c;
+    });
+    return {
+      weights: out, applied: true, reason: null,
+      observations: n, minObservations: minObs,
+      clamped: recortados, maxDelta: limite, maxAbsChange: maxCambio,
+      sum: ids.reduce(function (s, id) { return s + out[id]; }, 0),
+      winnerTakeAll: false,
+      version: VERSION
+    };
+  }
+
+  // Todo cambio de pesos deja un evento de auditoría con el antes y el después.
+  function auditEvent(input) {
+    var i = input || {};
+    var ev = {
+      kind: 'WEIGHT_UPDATE', protocol_version: PROTOCOL,
+      game: i.game, official_contest_number: i.official_contest_number,
+      entry_state: i.entry_state || null,
+      observations: i.observations == null ? null : i.observations,
+      weights_before: i.before || null, weights_after: i.after || null,
+      max_abs_change: i.maxAbsChange == null ? null : i.maxAbsChange,
+      clamped_models: i.clamped == null ? null : i.clamped,
+      max_delta_allowed: i.maxDelta == null ? MAX_WEIGHT_DELTA : i.maxDelta,
+      applied: !!i.applied, reason: i.reason || null,
+      evaluation_hash: i.evaluation_hash || null,
+      snapshot_hash: i.snapshot_hash || null,
+      at: i.at || null, version: VERSION
+    };
+    ev.event_hash = hashOf(ev);
+    return ev;
+  }
+
+  // ═══ 5 · EVALUATION STATE vs LEARNING STATE ══════════════════════════════
+  // Dos objetos distintos, por construcción. El de después NUNCA se mezcla con
+  // el de antes: split() devuelve copias, y contaminated() lo comprueba.
+  function split(input) {
+    var i = input || {};
+    var antes = {
+      phase: 'PRE_DRAW',
+      edge_status: i.edge_status_before || null,
+      weights: i.weights_before ? JSON.parse(JSON.stringify(i.weights_before)) : null,
+      predictor_version: i.predictor_version || null,
+      prediction: i.prediction ? JSON.parse(JSON.stringify(i.prediction)) : null,
+      snapshot_hash: i.snapshot_hash || null
+    };
+    var despues = {
+      phase: 'POST_DRAW',
+      official_result: i.official_result ? i.official_result.slice() : null,
+      hits: i.hits == null ? null : i.hits,
+      baseline: i.baseline == null ? null : i.baseline,
+      delta: i.delta == null ? null : i.delta,
+      weights: i.weights_after ? JSON.parse(JSON.stringify(i.weights_after)) : null,
+      collective_version: i.collective_version == null ? null : i.collective_version,
+      evaluation_hash: i.evaluation_hash || null
+    };
+    antes.state_hash = hashOf(antes);
+    despues.state_hash = hashOf(despues);
+    return { evaluation: antes, learning: despues, version: VERSION };
+  }
+
+  // ¿El estado PRE-DRAW sigue siendo el que era? Si alguien lo tocó después
+  // del sorteo, esto lo dice.
+  function contaminated(par, snapshotOriginal) {
+    if (!par || !par.evaluation) return { ok: false, reason: 'SPLIT_MISSING' };
+    var copia = {};
+    Object.keys(par.evaluation).forEach(function (k) {
+      if (k !== 'state_hash') copia[k] = par.evaluation[k];
+    });
+    if (hashOf(copia) !== par.evaluation.state_hash) {
+      return { ok: false, reason: 'EVALUATION_STATE_MUTATED' };
+    }
+    if (snapshotOriginal && par.evaluation.snapshot_hash &&
+        par.evaluation.snapshot_hash !== snapshotOriginal.snapshot_hash) {
+      return { ok: false, reason: 'EVALUATION_STATE_MUTATED',
+               detail: 'el snapshot referenciado no es el sellado' };
+    }
+    return { ok: true, reason: 'EVALUATION_STATE_INTACT' };
+  }
+
+  // ═══ 6 · FUTURE EVIDENCE ═════════════════════════════════════════════════
+  // Métricas acumuladas sobre sorteos REALMENTE futuros, y el veredicto de
+  // cuatro estados que pide la §9. Una racha no es una ventaja.
+  var MIN_FUTURE_DRAWS = 30;        // por debajo: INSUFFICIENT_FUTURE_EVIDENCE
+  var MIN_FUTURE_STABILITY = 0.6;   // fracción de bloques futuros por encima
+  var MIN_CONFIRM_DRAWS = 60;       // para EDGE_CONFIRMED
+
+  function erf(x) {
+    var s = x < 0 ? -1 : 1; x = Math.abs(x);
+    var t = 1 / (1 + 0.3275911 * x);
+    var y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+      - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return s * y;
+  }
+  function pTwoSided(z) { return 1 - erf(Math.abs(z) / Math.SQRT2); }
+
+  // La estabilidad futura: partir la serie en bloques consecutivos y contar
+  // en cuántos la IA supera al azar. Un pico aislado no la mueve.
+  function futureStability(diffs, bloques) {
+    var B = bloques || 5;
+    if (diffs.length < B * 2) return { value: 0, blocks: 0, positive: 0, enough: false };
+    var tam = Math.floor(diffs.length / B), pos = 0, hechos = 0;
+    for (var b = 0; b < B; b++) {
+      var seg = diffs.slice(b * tam, (b + 1) * tam);
+      if (!seg.length) continue;
+      hechos++;
+      if (mean(seg) > 0) pos++;
+    }
+    return { value: hechos ? pos / hechos : 0, blocks: hechos, positive: pos, enough: hechos >= B };
+  }
+
+  function futureEvidence(evaluaciones, opts) {
+    var o = opts || {};
+    var evs = (evaluaciones || []).filter(function (e) { return e && e.source === 'future_evaluated'; });
+    var n = evs.length;
+    var ai = evs.map(function (e) { return e.hits_ai_mean; });
+    var rd = evs.map(function (e) { return e.hits_random; });
+    var base = n ? evs[0].baseline : null;
+    var diffs = [];
+    for (var i = 0; i < n; i++) diffs.push(ai[i] - rd[i]);
+
+    var m = mean(diffs), s = sd(diffs), se = n ? s / Math.sqrt(n) : 0;
+    var degenerado = se === 0;
+    var z = !degenerado ? m / se : (m === 0 ? 0 : (m > 0 ? Infinity : -Infinity));
+    var p = n < 2 ? null : (degenerado ? (m === 0 ? 1 : 0) : pTwoSided(z));
+    var est = futureStability(diffs, o.blocks || 5);
+    var positivas = diffs.filter(function (d) { return d > 0; }).length;
+    var mismoSigno = n > 0 && (diffs.every(function (d) { return d > 0; })
+                            || diffs.every(function (d) { return d < 0; }));
+
+    var minN = o.minDraws == null ? MIN_FUTURE_DRAWS : o.minDraws;
+    var faltan = [];
+    if (n < minN) faltan.push(n + '/' + minN + ' sorteos futuros evaluados');
+    if (!(m > 0)) faltan.push('la IA no supera al azar en el acumulado');
+    if (!(est.value >= MIN_FUTURE_STABILITY)) {
+      faltan.push('estabilidad futura ' + (est.value * 100).toFixed(0) + '% < ' +
+                  (MIN_FUTURE_STABILITY * 100) + '%');
+    }
+    if (!(p != null && p <= 0.05)) {
+      faltan.push('p ≤ 0.05' + (p == null ? ' (muestra insuficiente)' : ' (p = ' + p.toFixed(3) + ')'));
+    }
+
+    var estado, veredicto, nota;
+    if (n < minN) {
+      estado = 'INSUFFICIENT_FUTURE_EVIDENCE';
+      veredicto = 'NO_EDGE';
+      nota = 'Todavía no hay sorteos futuros suficientes. Esto NO significa que ' +
+             'haya ventaja ni que no la haya: significa que aún no se puede saber.';
+    } else if (faltan.length === 0 && n >= MIN_CONFIRM_DRAWS) {
+      estado = 'EDGE_CONFIRMED'; veredicto = 'EDGE_CONFIRMED';
+      nota = 'Ventaja sostenida en datos realmente futuros.';
+    } else if (faltan.length === 0) {
+      estado = 'EDGE_CANDIDATE'; veredicto = 'NO_EDGE';
+      nota = 'Señal en datos futuros, aún sin el tamaño para confirmarla. ' +
+             'CANDIDATE no es EDGE.';
+    } else {
+      estado = 'NO_EDGE'; veredicto = 'NO_EDGE';
+      nota = 'No hay ventaja sostenida frente al azar en los sorteos futuros evaluados.';
+    }
+
+    return {
+      protocol_version: PROTOCOL,
+      game: o.game || (n ? evs[0].game : null),
+      futureEvaluations: n, baseline: base,
+      aiMeanHits: mean(ai), randomMeanHits: mean(rd),
+      cumulativeDelta: m, sd: s, se: se, z: n < 2 ? null : z, p_value: p,
+      positiveEvaluations: positivas, negativeEvaluations: n - positivas,
+      consistentSign: mismoSigno,
+      futureStability: est.value, stabilityBlocks: est.blocks,
+      state: estado, verdict: veredicto, isEdge: estado === 'EDGE_CONFIRMED',
+      unmet: faltan, note: nota,
+      isWinProbability: false,
+      requirements: { minDraws: minN, minStability: MIN_FUTURE_STABILITY,
+                      minConfirmDraws: MIN_CONFIRM_DRAWS, maxP: 0.05 },
+      version: VERSION
+    };
+  }
+
+  return {
+    VERSION: VERSION, PROTOCOL: PROTOCOL,
+    FutureHoldout: {
+      STATES: STATES, TRANSITIONS: NEXT, AWAITING: AWAITING,
+      reserve: reserve, addUnique: addUnique, transition: transition, key: key,
+      selectionGuard: selectionGuard, trainingGuard: trainingGuard, learningGuard: learningGuard
+    },
+    Snapshot: { FIELDS: CAMPOS, create: snapshotCreate, verify: snapshotVerify },
+    Evaluation: { evaluate: evaluate },
+    LearningGate: {
+      canLearn: canLearn, applyWeightUpdate: applyWeightUpdate, auditEvent: auditEvent,
+      MAX_WEIGHT_DELTA: MAX_WEIGHT_DELTA, MIN_OBS_FOR_ADAPTATION: MIN_OBS_FOR_ADAPTATION
+    },
+    StateSeparation: { split: split, contaminated: contaminated },
+    FutureEvidence: {
+      compute: futureEvidence, stability: futureStability,
+      MIN_FUTURE_DRAWS: MIN_FUTURE_DRAWS, MIN_CONFIRM_DRAWS: MIN_CONFIRM_DRAWS,
+      MIN_FUTURE_STABILITY: MIN_FUTURE_STABILITY
+    },
+    _internal: { canon: canon, hashOf: hashOf, mean: mean, sd: sd, pTwoSided: pTwoSided, err: err }
+  };
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RESERVA V4 · congelada y versionada en el repo (scientific/v4-future-holdout.json).
+//  Existe en el historial de git ANTES de que hubiera una sola predicción.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_V4_RESERVE = {
+ "protocol_version": "mg-v4-future-1.0.0",
+ "reserved_at": "2026-09-25T00:00:00Z",
+ "manifest_hash": "6b09dd241afc8d82",
+ "states": [
+  "RESERVED",
+  "PREDICTED",
+  "SEALED",
+  "RESULT_AVAILABLE",
+  "EVALUATED",
+  "RELEASED_TO_LEARNING"
+ ],
+ "awaiting_state": "AWAITING_OFFICIAL_IDENTITY",
+ "limitation": "El registro oficial melate_sorteos sólo contiene melate y retro. Revancha y Chispazo quedan reservados SIN número de concurso, en AWAITING_OFFICIAL_IDENTITY: se les puede predecir, pero no se les puede sellar una identidad oficial ni aprender de ellos hasta que el registro los ancle. No se inventa numeración.",
+ "reserved": {
+  "melate": {
+   "state": "RESERVED",
+   "n": 12,
+   "from": 4269,
+   "to": 4280,
+   "reason": null
+  },
+  "revancha": {
+   "state": "AWAITING_OFFICIAL_IDENTITY",
+   "n": 1,
+   "from": null,
+   "to": null,
+   "reason": "melate_sorteos no contiene ninguna fila de revancha, así que no hay numeración oficial con la que reservar. Inventar un número rompería la identidad canónica (game, official_contest_number)."
+  },
+  "retro": {
+   "state": "RESERVED",
+   "n": 12,
+   "from": 1671,
+   "to": 1682,
+   "reason": null
+  },
+  "chispazo": {
+   "state": "AWAITING_OFFICIAL_IDENTITY",
+   "n": 1,
+   "from": null,
+   "to": null,
+   "reason": "melate_sorteos no contiene ninguna fila de chispazo, así que no hay numeración oficial con la que reservar. Inventar un número rompería la identidad canónica (game, official_contest_number)."
+  }
+ }
+};
+
+// Evidencia futura del juego. Hoy, cero sorteos futuros evaluados: eso no es
+// un fallo, es el punto de partida honesto de un protocolo que empieza.
+function mgV4FutureEvidence(game) {
+  game = game || state.currentGame;
+  var evals = [];
+  try {
+    if (typeof MG_GLOBAL !== 'undefined') {
+      var cache = MG_GLOBAL.readCache ? MG_GLOBAL.readCache(game) : null;
+      var futuras = (cache && cache.future_evaluations) || [];
+      evals = futuras.filter(function (e) { return e && e.source === 'future_evaluated'; });
+    }
+  } catch (e) {}
+  var ev = MG_SCI_V4.FutureEvidence.compute(evals, { game: game });
+  ev.reserve = (MG_V4_RESERVE.reserved && MG_V4_RESERVE.reserved[game]) || null;
+  ev.protocol = MG_V4_RESERVE.protocol_version;
+  ev.reservedAt = MG_V4_RESERVE.reserved_at;
+  ev.manifestHash = MG_V4_RESERVE.manifest_hash;
+  return ev;
+}
+
+// §7 · lo que el sistema sabía ANTES, separado de lo que sabe DESPUÉS.
+function mgV4PrePost(game) {
+  game = game || state.currentGame;
+  var antes = null, despues = null;
+  try {
+    var e = mgV3Evidence(game);
+    var st = (typeof MG_GLOBAL !== 'undefined') ? MG_GLOBAL.status(game) : {};
+    antes = {
+      edge_status_before: e.edge ? e.edge.state : null,
+      predictor_version: (typeof MG_VERSION !== 'undefined') ? MG_VERSION : null,
+      weights_before: null, prediction: null, snapshot_hash: null
+    };
+    despues = { collective_version: st ? st.version : null };
+  } catch (err) {}
+  return MG_SCI_V4.StateSeparation.split({
+    edge_status_before: antes && antes.edge_status_before,
+    predictor_version: antes && antes.predictor_version,
+    collective_version: despues && despues.collective_version
+  });
+}
+
+// §8 · el panel de EVIDENCIA FUTURA. Va después del banner de evidencia y
+// antes de la cartera, para que se lea en el orden en que importa.
+function mgRenderFuturePanel() {
+  var host = document.getElementById('mg-future-panel');
+  if (!host) return;
+  var f;
+  try { f = mgV4FutureEvidence(state.currentGame); } catch (e) { host.innerHTML = ''; return; }
+  var r = f.reserve;
+  var esperando = r && r.state === MG_V4_RESERVE.awaiting_state;
+  var color = f.state === 'EDGE_CONFIRMED' ? '#22c55e'
+            : f.state === 'EDGE_CANDIDATE' ? '#60a5fa' : '#8b8ba7';
+
+  var reservaTxt = !r ? 'este juego no está en la reserva'
+    : esperando ? 'sin numeración oficial: no se puede sellar identidad (' +
+                  (r.reason || '').slice(0, 90) + ')'
+    : r.n + ' sorteos reservados · concursos ' + r.from + '…' + r.to;
+
+  host.innerHTML =
+    '<div class="glass card" style="margin-bottom:12px;border-left:3px solid ' + color + ';">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+        '<span style="font-size:16px;">🔭</span>' +
+        '<strong style="font-size:12.5px;">VALIDACIÓN FUTURA</strong>' +
+        '<span style="font-size:9.5px;font-weight:700;letter-spacing:.4px;padding:2px 6px;' +
+        'border-radius:4px;background:rgba(139,139,167,.16);color:' + color + ';">' +
+        f.state + '</span>' +
+        '<span style="font-size:9px;color:var(--text-3);margin-left:auto;">' + f.protocol + '</span>' +
+      '</div>' +
+      '<div style="font-size:11.5px;line-height:1.55;margin-bottom:8px;">' + f.note + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-3);line-height:1.7;">' +
+        'Reserva sellada el ' + String(f.reservedAt).slice(0, 10) +
+        ' · hash <code>' + f.manifestHash + '</code><br>' +
+        reservaTxt + '<br>' +
+        'Sorteos futuros evaluados: <strong>' + f.futureEvaluations + '</strong>' +
+        ' de ' + f.requirements.minDraws + ' necesarios' +
+        (f.futureEvaluations
+          ? ' · IA ' + f.aiMeanHits.toFixed(4) + ' vs azar ' + f.randomMeanHits.toFixed(4) +
+            ' · Δ ' + (f.cumulativeDelta >= 0 ? '+' : '') + f.cumulativeDelta.toFixed(4) +
+            ' · estabilidad futura ' + (f.futureStability * 100).toFixed(0) + '%'
+          : '') +
+      '</div>' +
+      (f.unmet.length
+        ? '<div style="margin-top:8px;padding:7px;border-radius:6px;' +
+          'background:rgba(139,139,167,.09);border:1px solid rgba(139,139,167,.25);' +
+          'font-size:10.5px;line-height:1.5;">Falta para poder afirmar algo: ' +
+          f.unmet.join(' · ') + '.</div>'
+        : '') +
+      '<div style="margin-top:8px;font-size:10px;color:var(--text-3);line-height:1.5;">' +
+      'El ciclo es PREDICT → SEAL → OBSERVE → EVALUATE → LEARN. El resultado de un ' +
+      'sorteo nunca puede influir en la predicción que lo evalúa. ' +
+      'INSUFFICIENT_FUTURE_EVIDENCE no dice que no haya ventaja: dice que todavía ' +
+      'no se puede saber.</div>' +
+    '</div>';
+}
+
+// El dashboard de Ajustes suma la fila futura, sin quitar nada de lo que había.
+var mgRenderScienceDashboardV3 = mgRenderScienceDashboard;
+function mgRenderScienceDashboardV4() {
+  mgRenderScienceDashboardV3();
+  var host = document.getElementById('mg-settings-body');
+  if (!host) return;
+  var prev = document.getElementById('mg-future-card');
+  if (prev) prev.remove();
+  var juegos = ['melate', 'revancha', 'retro', 'chispazo'];
+  function fila(g) {
+    var f; try { f = mgV4FutureEvidence(g); } catch (e) { return ''; }
+    var r = f.reserve, esperando = r && r.state === MG_V4_RESERVE.awaiting_state;
+    return '<div style="padding:6px 0;border-top:1px solid var(--border);">' +
+      '<div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:600;">' +
+        '<span>' + g + '</span><span style="color:var(--text-3);">' + f.state + '</span></div>' +
+      '<div style="font-size:10.5px;color:var(--text-3);line-height:1.6;">' +
+        (esperando ? 'sin numeración oficial en el registro — no se puede reservar identidad'
+                   : (r ? r.n + ' sorteos reservados (' + r.from + '…' + r.to + ')' : 'sin reserva')) +
+        ' · evaluados <strong>' + f.futureEvaluations + '</strong>/' + f.requirements.minDraws +
+        ' · IA ' + f.aiMeanHits.toFixed(4) + ' vs azar ' + f.randomMeanHits.toFixed(4) +
+      '</div></div>';
+  }
+  var card = document.createElement('div');
+  card.className = 'glass card mg-group';
+  card.id = 'mg-future-card';
+  card.innerHTML =
+    '<div class="card-head"><div class="card-title"><span class="card-title-icon">🔭</span> ' +
+    'Validación futura · ' + MG_SCI_V4.VERSION + '</div></div>' +
+    '<div class="mg-group-desc">Sorteos reservados ANTES de predecirlos. El holdout ' +
+    'histórico está quemado; lo único ciego que queda es el futuro.</div>' +
+    juegos.map(fila).join('') +
+    '<div style="padding:8px 4px 4px;font-size:10px;color:var(--text-3);line-height:1.5;">' +
+    'NO_EDGE sin ventaja sostenida · INSUFFICIENT_FUTURE_EVIDENCE cuando aún no hay ' +
+    'sorteos suficientes · EDGE_CANDIDATE con señal sin tamaño para confirmarla · ' +
+    'EDGE_CONFIRMED sólo con ventaja sostenida en datos realmente futuros. ' +
+    'Ninguna de estas cifras es una probabilidad de ganar.</div>';
+  host.appendChild(card);
+}
+mgRenderScienceDashboard = mgRenderScienceDashboardV4;
+
+// El banner de evidencia pinta también el panel futuro, justo detrás.
+var mgRenderEvidenceBannerPreV4 = mgRenderEvidenceBanner;
+function mgRenderEvidenceBannerV4() {
+  mgRenderEvidenceBannerPreV4();
+  try { mgRenderFuturePanel(); } catch (e) { console.warn('MG-V4: panel futuro', e); }
+}
+mgRenderEvidenceBanner = mgRenderEvidenceBannerV4;
 </script>
 
 </body>
