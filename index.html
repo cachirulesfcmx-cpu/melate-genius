@@ -13098,6 +13098,22 @@ function generatePredictions() {
     mgCollectiveFreeze(_collectivePrep, tickets);
   }
 
+  // 🔐 PR #14 · PREDICT → SEAL. Si este juego tiene un concurso reservado en
+  // el holdout futuro, se construye el snapshot PRE-DRAW y se sella EN EL
+  // SERVIDOR antes de que exista resultado oficial. La predicción no cuenta
+  // como evidencia científica hasta que vuelve SEALED; si falla, se dice.
+  // No bloquea la generación: los boletos ya están y se pintan igual.
+  try {
+    MG_V4_SEAL.seal(state.currentGame, _collectivePrep, tickets, {
+      predicted_at: new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn('MG-SEAL: el sellado automático falló', e);
+    try { MG_V4_SEAL._mark(state.currentGame, {
+      status: 'NOT_SEALED', sealed: false, code: 'FUTURE_PREDICTION_NOT_SEALED',
+      detail: String((e && e.message) || e) }); } catch (e2) {}
+  }
+
   renderPredictionsView();
   try { mgRenderCollectivePanel(); } catch (e) {}
   const _r = tickets[0] && tickets[0].research;
@@ -25252,6 +25268,255 @@ function mgRenderEvidenceBannerV4() {
   try { mgRenderFuturePanel(); } catch (e) { console.warn('MG-V4: panel futuro', e); }
 }
 mgRenderEvidenceBanner = mgRenderEvidenceBannerV4;
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  🔐 SELLADO AUTOMÁTICO · PR #14 · cierra PREDICT → SEAL
+//
+//  El hueco que dejó V4: la maquinaria estaba y nadie la llamaba. Esto es el
+//  cable, y sólo el cable. No toca el motor, no toca pesos, no toca el Global
+//  Brain, no añade modelos.
+//
+//  La regla que implementa, sin atajos:
+//
+//    RESERVED → generatePredictions() → PREDICTED → snapshot → validar → SEALED
+//
+//  Una predicción NO es evidencia científica hasta que vuelve SEALED del
+//  servidor. Si el sellado falla, se dice: FUTURE_PREDICTION_NOT_SEALED.
+// ═══════════════════════════════════════════════════════════════════════════
+var MG_V4_SEAL = (function () {
+  'use strict';
+  var VERSION = 'sealing-v1.0.0';
+  var PROTOCOL = 'mg-v4-future-1.0.0';
+
+  // Estado del último intento por juego. Es metadato de UI: no entra en ningún
+  // snapshot ni en ninguna evaluación.
+  var ultimo = {};
+
+  function estado(game) {
+    return ultimo[game] || { status: 'NONE', game: game, version: VERSION };
+  }
+  function marcar(game, o) {
+    ultimo[game] = Object.assign({ game: game, version: VERSION, at: null }, o);
+    try { if (typeof mgRenderFuturePanel === 'function') mgRenderFuturePanel(); } catch (e) {}
+    return ultimo[game];
+  }
+
+  // ¿Este juego tiene reserva futura utilizable? La respuesta sale del
+  // manifiesto sellado que viaja en el artefacto, no de una suposición.
+  function reservaDe(game) {
+    try {
+      var r = MG_V4_RESERVE && MG_V4_RESERVE.reserved && MG_V4_RESERVE.reserved[game];
+      if (!r) return null;
+      if (r.state === MG_V4_RESERVE.awaiting_state) {
+        return { awaiting: true, reason: r.reason || 'sin numeración oficial' };
+      }
+      return { awaiting: false, from: r.from, to: r.to, n: r.n };
+    } catch (e) { return null; }
+  }
+
+  // El snapshot PRE-DRAW, construido con lo que la preparación colectiva YA
+  // calculó. No se recalcula nada: se fotografía.
+  //
+  // `contest` lo decide el SERVIDOR (el más bajo reservado). El cliente lo
+  // recibe antes de construir el snapshot para que el hash cuadre; por eso
+  // esta función lo recibe como argumento y nunca lo infiere.
+  function construirSnapshot(game, contest, prep, tickets, opts) {
+    var o = opts || {};
+    var cfg = (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG[game]) || {};
+    var ids = (typeof MG_COLLECTIVE !== 'undefined' && MG_COLLECTIVE.MODEL_IDS) || [];
+    var versiones = {};
+    ids.forEach(function (id) { versiones[id] = prep.engine_version; });
+
+    var edgeAntes = null;
+    try {
+      var e = mgV3Evidence(game);
+      edgeAntes = e && e.edge ? e.edge.state : null;
+    } catch (err) { edgeAntes = null; }
+
+    var calib = null, conf = null;
+    try {
+      var ev = mgV2Evidence(game);
+      conf = ev && ev.confidence
+        ? { band: ev.confidence.band, score: ev.confidence.score,
+            isWinProbability: false }
+        : null;
+      calib = { method: 'not_fitted_at_prediction_time',
+                observations: prep.observations == null ? 0 : prep.observations,
+                note: 'la calibración se mide sobre la serie, no sobre una predicción' };
+    } catch (err) {}
+
+    var semilla = null;
+    try {
+      var t0 = tickets && tickets[0] && tickets[0].research;
+      semilla = (t0 && t0.seed != null) ? t0.seed
+              : (MG_COLLECTIVE._lastSnap && MG_COLLECTIVE._lastSnap.seed) || null;
+    } catch (err) {}
+
+    var bruto = {
+      game: game,
+      official_contest_number: contest,
+      protocol_version: PROTOCOL,
+      predictor_version: prep.engine_version,
+      artifact_hash: o.artifact_hash || (MG_V4_RESERVE && MG_V4_RESERVE.manifest_hash) || null,
+      dataset_hash: o.dataset_hash || null,
+      model_versions: versiones,
+      ensemble_weights: prep.weights,
+      calibration_state: calib,
+      confidence_state: conf,
+      portfolio_config: {
+        overlapLimit: 1,
+        ticketCount: (tickets && tickets.length) || 0,
+        seed: semilla,
+        optimizer: (typeof MG_SCI_V2 !== 'undefined') ? MG_SCI_V2.VERSION : null
+      },
+      edge_status_before_draw: edgeAntes,
+      random_baseline_seed: semilla == null ? 0 : semilla,
+      predicted_at: o.predicted_at || null,
+      input_range: [0, prep.snapshot_upto],
+      history_max_used: prep.snapshot_upto,
+      feature_schema_hash: MG_SCI_V4._internal.hashOf({
+        models: ids, N: cfg.maxNum || prep.N, k: cfg.pick || prep.k,
+        engine: prep.engine_version, memory_source: prep.memory_source
+      })
+    };
+    // MG_SCI_V4.Snapshot.create pone el hash y ejecuta el cortafuegos de
+    // secretos. Si algo huele a credencial, lanza y no se sella nada.
+    return MG_SCI_V4.Snapshot.create(bruto);
+  }
+
+  // El ciclo completo, en dos llamadas y sin ambigüedad:
+  //
+  //   1 · action 'next'  → el SERVIDOR dice qué concurso toca. Sólo lee.
+  //   2 · action 'seal'  → se manda el snapshot de ESE concurso. El UPDATE
+  //                        atómico ... WHERE state='RESERVED' arbitra la
+  //                        carrera: si dos pestañas sellan a la vez, una gana
+  //                        y la otra recibe ALREADY_SEALED. Nunca dos sellos.
+  //
+  // Devuelve una promesa que SIEMPRE resuelve: los fallos se reportan como
+  // estado, no como excepción, para no romper la generación de boletos.
+  function sellar(game, prep, tickets, opts) {
+    var o = opts || {};
+    var r = reservaDe(game);
+
+    if (!r) {
+      return Promise.resolve(marcar(game, {
+        status: 'NOT_APPLICABLE', code: 'NOT_IN_FUTURE_HOLDOUT', sealed: false,
+        detail: game + ' no está en el holdout futuro; comportamiento anterior intacto'
+      }));
+    }
+    if (r.awaiting) {
+      return Promise.resolve(marcar(game, {
+        status: 'BLOCKED', code: 'MISSING_OFFICIAL_IDENTITY', sealed: false,
+        detail: r.reason
+      }));
+    }
+    if (!prep) {
+      // §9 · se degrada, pero se dice. Sin preparación colectiva no existen
+      // los pesos que el experimento evalúa: no hay nada que sellar.
+      return Promise.resolve(marcar(game, {
+        status: 'NOT_SEALED', code: 'NO_COLLECTIVE_PREPARATION', sealed: false,
+        detail: 'el sellado científico requiere el modo Ensamble Colectivo, ' +
+                'que es donde nacen los pesos que el experimento evalúa'
+      }));
+    }
+
+    marcar(game, { status: 'SEALING', code: null, sealed: false,
+                   detail: 'preguntando al servidor qué concurso toca' });
+
+    function invocar(cuerpo) {
+      if (typeof sb === 'undefined' || !sb.functions || !sb.functions.invoke) {
+        return Promise.reject({ code: 'SEAL_UNREACHABLE', detail: 'sin cliente de servidor' });
+      }
+      return sb.functions.invoke('future-seal', { body: cuerpo }).then(function (res) {
+        var d = res && res.data;
+        if (!d) {
+          throw { code: 'SEAL_UNREACHABLE',
+                  detail: (res && res.error && (res.error.message || String(res.error))) ||
+                          'el servidor no respondió' };
+        }
+        if (d.ok === false) throw { code: d.code, detail: d.detail };
+        return d;
+      });
+    }
+
+    return invocar({ game: game, action: 'next' })
+      .then(function (next) {
+        var contest = next.official_contest_number;
+        marcar(game, { status: 'SEALING', code: 'NEXT_CONTEST', sealed: false,
+                       official_contest_number: contest,
+                       detail: 'construyendo el snapshot PRE-DRAW de ' + game + ':' + contest });
+        var snap = construirSnapshot(game, contest, prep, tickets, o);
+        return invocar({ game: game, action: 'seal', snapshot: snap });
+      })
+      .then(function (d) {
+        return marcar(game, {
+          status: 'SEALED', code: d.code, sealed: true,
+          official_contest_number: d.official_contest_number,
+          snapshot_hash: d.snapshot_hash, sealed_at: d.sealed_at,
+          alreadySealed: !!d.already_sealed, raced: !!d.raced,
+          remaining: d.remaining_reserved, detail: d.detail
+        });
+      })
+      .catch(function (e) {
+        // §9 · si falla el sellado, la predicción NO es evidencia científica.
+        // Se deja constancia del porqué y no se avanza ningún estado.
+        return marcar(game, {
+          status: 'NOT_SEALED', sealed: false,
+          code: (e && e.code) || 'FUTURE_PREDICTION_NOT_SEALED',
+          detail: (e && e.detail) || String((e && e.message) || e)
+        });
+      });
+  }
+
+  return {
+    VERSION: VERSION, PROTOCOL: PROTOCOL,
+    status: estado, reserveFor: reservaDe,
+    buildSnapshot: construirSnapshot, seal: sellar,
+    _mark: marcar
+  };
+})();
+
+// ── El panel futuro muestra el estado del sellado ────────────────────────
+// Se envuelve el de V4 en vez de reescribirlo: si PR #14 fallara, el panel
+// sigue pintando exactamente lo que pintaba antes.
+var mgRenderFuturePanelPreSeal = mgRenderFuturePanel;
+function mgRenderFuturePanelWithSeal() {
+  mgRenderFuturePanelPreSeal();
+  var host = document.getElementById('mg-future-panel');
+  if (!host || !host.firstElementChild) return;
+  var st;
+  try { st = MG_V4_SEAL.status(state.currentGame); } catch (e) { return; }
+  if (!st || st.status === 'NONE') return;
+
+  var color = st.status === 'SEALED' ? '#22c55e'
+            : st.status === 'SEALING' ? '#60a5fa'
+            : st.status === 'NOT_APPLICABLE' ? '#8b8ba7' : '#ffb020';
+  var titulo = st.status === 'SEALED'
+      ? 'PREDICTION SEALED · PRE-DRAW'
+      : st.status === 'SEALING' ? 'SELLANDO…'
+      : st.status === 'BLOCKED' ? 'MISSING_OFFICIAL_IDENTITY'
+      : st.status === 'NOT_APPLICABLE' ? 'fuera del holdout futuro'
+      : 'FUTURE PREDICTION NOT SEALED';
+
+  var caja = document.createElement('div');
+  caja.style.cssText = 'margin-top:8px;padding:7px;border-radius:6px;font-size:10.5px;' +
+    'line-height:1.55;border:1px solid ' + color + '44;background:' + color + '14;';
+  caja.innerHTML =
+    '<strong style="color:' + color + ';">' + titulo + '</strong>' +
+    (st.official_contest_number != null
+      ? ' · concurso <strong>' + st.official_contest_number + '</strong>' : '') +
+    (st.snapshot_hash ? ' · snapshot <code>' + st.snapshot_hash + '</code>' : '') +
+    (st.sealed_at ? '<br>sellado ' + String(st.sealed_at).replace('T', ' ').slice(0, 19) +
+                    ' — antes de que exista resultado oficial' : '') +
+    (st.alreadySealed ? '<br>ya estaba sellado: no se creó un segundo snapshot' : '') +
+    (st.code && !st.sealed ? '<br><code>' + st.code + '</code> · ' + (st.detail || '') : '') +
+    (!st.sealed && st.status !== 'NOT_APPLICABLE'
+      ? '<br><em>Esta predicción NO cuenta como evidencia científica futura.</em>' : '');
+  host.firstElementChild.appendChild(caja);
+}
+mgRenderFuturePanel = mgRenderFuturePanelWithSeal;
 </script>
 
 </body>
